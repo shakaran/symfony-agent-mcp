@@ -63,6 +63,12 @@ jobs:
           head -1 dist/server.js | grep -qx '#!/usr/bin/env node' \
             || { echo "::error::dist/server.js is missing its shebang"; exit 1; }
 
+      # Scorecard's Pinned-Dependencies check flags the `npm install` below as
+      # an unpinned npm command, costing one point. That is kept deliberately:
+      # installing the real tarball with the real client is what reproduces the
+      # failure this step exists to catch, and the alternatives (hand-building
+      # node_modules, or switching to pnpm so the heuristic stops matching)
+      # would test something other than what an `npx` user actually does.
       - name: Verify the packed tarball starts and speaks MCP
         run: |
           set -euo pipefail
