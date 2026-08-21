@@ -26,6 +26,8 @@ paths = [
   # `scanText(<fixture>)` / `redactText(<fixture>)` assertions.
   '''^src/tests/dlp-detector\.test\.ts$''',
   '''^src/tests/output-sanitizer\.test\.ts$''',
+  # Asserts sanitizeLogOutput() redacts emails and API keys out of log lines.
+  '''^src/tests/security\.test\.ts$''',
 ]
 
 regexes = [

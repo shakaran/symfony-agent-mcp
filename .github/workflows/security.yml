@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           # Extended security queries — covers OWASP Top 10
@@ -46,7 +46,7 @@ jobs:
           pnpm run build
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: '/language:javascript-typescript'
 
@@ -66,6 +66,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Required for orgs
           GITLEAKS_CONFIG: .gitleaks.toml
+          # Pinned: the action otherwise installs whatever is latest, so a new
+          # rule release silently turns a green build red. Keep this in step
+          # with the version used to validate .gitleaks.toml locally.
+          GITLEAKS_VERSION: 8.29.0
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
           GITLEAKS_ENABLE_SUMMARY: "true"
 
@@ -73,7 +77,7 @@ jobs:
       # a scanner crash surfaces as the gitleaks failure rather than as a
       # confusing "file not found" in the upload step.
       - name: Upload Gitleaks SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('results.sarif') != ''
         with:
           sarif_file: results.sarif
