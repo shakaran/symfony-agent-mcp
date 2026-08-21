@@ -92,9 +92,6 @@ const RATE_LIMIT_RETRY_THRESHOLD = 8; // rate-limit retries per window
 const calledToolsInWindow: Map<string, Set<string>> = new Map();
 
 function trackToolCall(clientKey: string, toolName: string): number {
-  const now = Date.now();
-  const window = getWindowMs();
-
   let set = calledToolsInWindow.get(clientKey);
   if (!set) {
     set = new Set();
@@ -105,7 +102,6 @@ function trackToolCall(clientKey: string, toolName: string): number {
   // Prune periodically — rebuild based on time-filtered counter
   // (simplified: just count distinct tools, not time-windowed per-tool)
   return set.size;
-  void now; void window; // suppress unused warning
 }
 
 /** Clear tool scan tracking (for testing). */

@@ -163,3 +163,20 @@ describe('listLogFiles — unreadable directory', () => {
     expect(listLogFiles(appDir)).toEqual([]);
   });
 });
+
+describe('attribute routes in a file with no type declaration', () => {
+  test('the class-level prefix comes back empty rather than throwing', () => {
+    // A stray PHP file under src/Controller holding a route attribute but no
+    // type declaration. The prefix extractor looks for the declaration keyword
+    // and must cope with not finding one. (The fixture avoids that keyword
+    // entirely — the extractor matches inside comments too.)
+    write('src/Controller/Stray.php', `<?php
+namespace App\\Controller;
+
+#[Route('/stray', name: 'stray_route', methods: ['GET'])]
+function stray(): Response {}
+`);
+
+    expect(() => parseRoutes(appDir)).not.toThrow();
+  });
+});

@@ -264,12 +264,16 @@ const TOOL_SCHEMAS: Record<string, ToolSchema> = {
 
 // ─── Validators per type ──────────────────────────────────────────────────────
 
+// The empty-string checks in these three validators are unreachable while
+// every name/query/path parameter is declared `required`, since the required
+// check in validateToolArgs catches '' first. They are kept deliberately: add
+// one optional parameter of these types and they become the guard that stops
+// an empty value reaching a tool.
 function validatePath(value: unknown, paramName: string): ValidationResult {
   if (typeof value !== 'string') return { valid: false, reason: `${paramName}: must be a string` };
   if (value.length === 0) return { valid: false, reason: `${paramName}: must not be empty` };
   if (value.length > 4096) return { valid: false, reason: `${paramName}: exceeds max length (4096)` };
   if (!PATH_SAFE.test(value)) return { valid: false, reason: `${paramName}: contains unsafe characters` };
-  if (value.includes('\0')) return { valid: false, reason: `${paramName}: contains null byte` };
   return { valid: true };
 }
 
@@ -308,7 +312,6 @@ function validateInteger(value: unknown, paramName: string, schema: ParamSchema)
 }
 
 function validateEnum(value: unknown, paramName: string, schema: ParamSchema): ValidationResult {
-  if (value === undefined || value === null) return { valid: true }; // optional enum
   if (!schema.values?.includes(String(value))) {
     return { valid: false, reason: `${paramName}: must be one of [${schema.values?.join(', ')}]` };
   }
