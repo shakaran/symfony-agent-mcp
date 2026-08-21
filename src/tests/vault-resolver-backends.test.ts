@@ -599,3 +599,14 @@ describe('TLS CA bundle', () => {
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load CA bundle'));
   });
 });
+
+describe('Secrets Manager returning malformed JSON', () => {
+  test('the parse error is surfaced rather than swallowed', async () => {
+    process.env['AWS_ACCESS_KEY_ID'] = 'AKIAEXAMPLEEXAMPLE00';
+    process.env['AWS_SECRET_ACCESS_KEY'] = 'secret-key-material';
+    process.env['AWS_REGION'] = 'eu-west-1';
+    nextRequest(200, 'this is not json');
+
+    await expect(resolveSecret('aws-secret:app/creds')).rejects.toThrow();
+  });
+});

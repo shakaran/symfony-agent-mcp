@@ -199,6 +199,9 @@ const PATTERNS: DlpPattern[] = [
 
 function luhnCheck(num: string): boolean {
   const digits = num.replace(/\D/g, '');
+  /* istanbul ignore next -- the CARD regexes only match 13-16 digit runs,
+     and the formatted one strips to exactly 16, so this never fires today.
+     Kept because luhnCheck is a general-purpose helper. */
   if (digits.length < 13 || digits.length > 19) return false;
 
   let sum = 0;

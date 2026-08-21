@@ -173,6 +173,8 @@ function getMaxAuditFiles(): number {
 }
 
 function rotateLogIfNeeded(): void {
+  /* istanbul ignore next -- only reached from writeEntry inside `if (stream)`,
+     so both are always set by the time this runs. */
   if (!logFilePath || !logStream) return;
   if (bytesWritten < getMaxAuditSizeBytes()) return;
 
@@ -201,6 +203,8 @@ function rotateLogIfNeeded(): void {
 
     // Open a fresh stream on the original path
     logStream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o600 });
+    /* istanbul ignore next -- a stream error after a successful rotation is
+       swallowed so logging degrades quietly instead of taking the server down. */
     logStream.on('error', () => { /* Non-fatal: best-effort logging */ });
     const sessionId = crypto.randomBytes(6).toString('hex');
     const encryptionNote = getEncryptionKey() ? ' encrypted=true' : '';

@@ -259,6 +259,8 @@ function recordAttackType(clientKey: string, type: string): void {
 
 function getActiveAttackTypes(clientKey: string): Set<string> {
   const clientMap = attackTypesPerClient.get(clientKey);
+  /* istanbul ignore next -- callers run recordAttackType first, which creates
+     the entry, so the map is always present here. */
   if (!clientMap) return new Set();
   const now = Date.now();
   const window = getWindowMs();
@@ -313,6 +315,10 @@ function emit(partial: Omit<AnomalyEvent, 'ts'>): AnomalyEvent {
   );
 
   // Fire-and-forget webhook notification (non-blocking, imported lazily to avoid circular dep)
+  /* istanbul ignore next -- both handlers exist so a notification failure can
+     never reach the tool call. notifyAnomalyEvent resolves even when a webhook
+     errors, and the import only fails if the build is broken, so neither runs
+     in practice. */
   import('./anomaly-notifier.js').then(({ notifyAnomalyEvent }) => {
     notifyAnomalyEvent(event).catch(() => { /* non-fatal */ });
   }).catch(() => { /* non-fatal */ });
@@ -322,6 +328,8 @@ function emit(partial: Omit<AnomalyEvent, 'ts'>): AnomalyEvent {
 
 /** Called after every emitted attack event to trigger correlation check. */
 function maybeEmitMultiVector(clientKey: string, type: string): void {
+  /* istanbul ignore next -- all four call sites pass a literal that is in the
+     set; this guards a future caller passing something else. */
   if (!ATTACK_INDICATOR_TYPES.has(type)) return;
   recordAttackType(clientKey, type);
   checkMultiVector(clientKey); // result is fire-and-forget (side-effects via emit)

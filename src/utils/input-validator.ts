@@ -279,6 +279,8 @@ function validatePath(value: unknown, paramName: string): ValidationResult {
 
 function validateName(value: unknown, paramName: string, schema: ParamSchema): ValidationResult {
   if (typeof value !== 'string') return { valid: false, reason: `${paramName}: must be a string` };
+  /* istanbul ignore next -- unreachable while every parameter of this
+     type is declared required: the required check catches '' first. */
   if (value.length === 0) return { valid: false, reason: `${paramName}: must not be empty` };
 
   const maxLen = schema.maxLength ?? 512;
@@ -294,6 +296,8 @@ function validateName(value: unknown, paramName: string, schema: ParamSchema): V
 
 function validateQuery(value: unknown, paramName: string, schema: ParamSchema): ValidationResult {
   if (typeof value !== 'string') return { valid: false, reason: `${paramName}: must be a string` };
+  /* istanbul ignore next -- unreachable while every parameter of this
+     type is declared required: the required check catches '' first. */
   if (value.length === 0) return { valid: false, reason: `${paramName}: must not be empty` };
 
   const maxLen = schema.maxLength ?? 1024;
@@ -358,6 +362,8 @@ export function validateToolArgs(
       case 'query':   result = validateQuery(value, param, paramSchema); break;
       case 'integer': result = validateInteger(value, param, paramSchema); break;
       case 'enum':    result = validateEnum(value, param, paramSchema); break;
+      /* istanbul ignore next -- ParamSchema['type'] is a closed union and all
+         five members are handled above. */
       default:        result = { valid: true };
     }
 

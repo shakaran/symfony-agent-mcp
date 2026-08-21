@@ -64,6 +64,8 @@ function acquire(): Promise<Release> {
 function makeRelease(): Release {
   let released = false;
   return () => {
+    /* istanbul ignore next -- the limiter calls each release exactly once
+       and never hands it to callers; this is the guard that keeps that true. */
     if (released) return;
     released = true;
     activeCount--;

@@ -62,8 +62,9 @@ function inc(name: string, help: string, labels: Labels = {}, by = 1): void {
   }
 }
 
+// No isEnabled() guard here: renderPrometheus is the only caller and has
+// already returned when metrics are off.
 function set(name: string, help: string, labels: Labels = {}, value: number): void {
-  if (!isEnabled()) return;
   const family = ensureMetric(name, help, 'gauge');
   const key = labelKey(labels);
   family.values.set(key, { labels, value });

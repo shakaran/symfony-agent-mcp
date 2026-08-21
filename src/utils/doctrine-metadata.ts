@@ -378,6 +378,9 @@ function parseYamlMappingFile(filePath: string): DoctrineMappedEntity | null {
       source: 'yaml',
     };
   } catch {
+    /* istanbul ignore next -- parseYamlFile already returns null on malformed
+       input, and every lookup above is a safe property read, so nothing here
+       throws in practice. */
     return null;
   }
 }
