@@ -140,21 +140,30 @@ function parseXmlMappingFile(filePath: string): DoctrineMappedEntity | null {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
 
-    const classMatch = /entity[^>]+class="([^"]+)"/.exec(content);
-    if (!classMatch) return null;
+    // Read the <entity> opening tag as a whole and pull its attributes out
+    // with the shared parser. A bare /entity[^>]+class="([^"]+)"/ backtracks
+    // to the *last* class= in the tag, which is the one inside
+    // repository-class= — so every mapping that declares a repository used to
+    // report the repository as the entity's own class name.
+    const entityTagMatch = /<entity\s([^>]*)>/.exec(content);
+    if (!entityTagMatch) return null;
 
-    const fullClass = classMatch[1];
+    const entityAttrs = parseXmlAttributes(entityTagMatch[1]);
+    const fullClass = entityAttrs['class'] ?? entityAttrs['name'];
+    if (!fullClass) return null;
+
     const shortName = fullClass.split('\\').pop() ?? fullClass;
-    const tableMatch = /table="([^"]+)"/.exec(content);
-    const repoMatch = /repository-class="([^"]+)"/.exec(content);
-    const inheritMatch = /inheritance-type="([^"]+)"/.exec(content);
+    const tableName = entityAttrs['table'];
+    const repositoryClass = entityAttrs['repository-class'];
+    const inheritanceType = entityAttrs['inheritance-type'];
     const discColMatch = /discriminator-column[^>]+name="([^"]+)"/.exec(content);
 
     const properties: DoctrineMappedProperty[] = [];
 
     // Parse <id ...> fields
-    for (const m of content.matchAll(/<id\s([^>]+?)(?:\/>|>)/gs)) {
+    for (const m of content.matchAll(/<id\s([^>]*?)(?:\/>|>([\s\S]*?)<\/id>)/g)) {
       const attrs = parseXmlAttributes(m[1]);
+      const idBody = m[2] ?? '';
       properties.push({
         fieldName: attrs['name'] ?? '',
         columnName: attrs['column'] ?? attrs['name'] ?? '',
@@ -162,7 +171,7 @@ function parseXmlMappingFile(filePath: string): DoctrineMappedEntity | null {
         nullable: false,
         unique: true,
         isId: true,
-        generatedValue: m[0].includes('generator') ? 'AUTO' : undefined,
+        generatedValue: /<generator\b/.test(idBody) ? 'AUTO' : undefined,
       });
     }
 
@@ -234,14 +243,14 @@ function parseXmlMappingFile(filePath: string): DoctrineMappedEntity | null {
     return {
       name: fullClass,
       shortName,
-      tableName: tableMatch ? tableMatch[1] : classToSnake(shortName),
-      repositoryClass: repoMatch ? repoMatch[1] : undefined,
+      tableName: tableName ?? classToSnake(shortName),
+      repositoryClass,
       readOnly: content.includes('read-only="true"'),
       properties,
       relationships,
       indexes,
       uniqueConstraints,
-      inheritanceType: inheritMatch ? inheritMatch[1] : undefined,
+      inheritanceType,
       discriminatorColumn: discColMatch ? discColMatch[1] : undefined,
       source: 'xml',
     };

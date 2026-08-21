@@ -561,7 +561,10 @@ export function readLogFile(appPath: string, fileName: string, lines: number = 5
   try {
     if (!fs.existsSync(filePath)) return [];
     const content = fs.readFileSync(filePath, 'utf-8');
-    return content.split('\n').slice(-lines).filter((line) => line.trim() !== '');
+    // Drop blank lines before taking the tail, not after. Every log file ends
+    // with a newline, so slicing first spent one of the requested slots on the
+    // resulting empty string and returned lines-1 entries.
+    return content.split('\n').filter((line) => line.trim() !== '').slice(-lines);
   } catch {
     return [];
   }

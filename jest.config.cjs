@@ -39,10 +39,10 @@ module.exports = {
   // does not. Raise them when coverage genuinely improves.
   coverageThreshold: {
     './src/utils/': {
-      branches: 58,
-      functions: 70,
-      lines: 70,
-      statements: 70,
+      branches: 72,
+      functions: 79,
+      lines: 80,
+      statements: 80,
     },
   },
 };
