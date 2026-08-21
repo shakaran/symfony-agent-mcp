@@ -318,8 +318,13 @@ function deserialise(line: string): AuditEntry | null {
       const parts = raw.split('|');
       if (parts.length < 8) return null;
       const ext = parts.slice(7).join('|');
+      // A CEF extension value runs until the next `key=` or the end of the
+      // line. `[^ ]+` stopped at the first space, which truncated every error
+      // message to its first token — errorMsg is `String(err)`, so it always
+      // begins "Error: " and always contains a space. The forensic detail was
+      // being dropped on read-back.
       const get = (field: string): string => {
-        const m = new RegExp(`${field}=([^ ]+)`).exec(ext);
+        const m = new RegExp(`${field}=(.*?)(?= [A-Za-z][A-Za-z0-9_]*=|$)`).exec(ext);
         return m ? m[1] : '';
       };
       return {
