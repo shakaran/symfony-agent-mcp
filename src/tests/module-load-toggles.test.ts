@@ -1,3 +1,9 @@
+/* eslint-disable @typescript-eslint/no-require-imports --
+ * jest.isolateModules works by re-requiring inside its callback; a static
+ * import would be hoisted out of the isolated registry and defeat the point.
+ * require() is the intended API here, not a CommonJS leftover.
+ */
+
 /**
  * Toggles read once, at module load.
  *
