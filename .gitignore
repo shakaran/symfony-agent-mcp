@@ -19,3 +19,6 @@ build/
 # Claude Code local state — only .claude/commands/ is shared
 .claude/*
 !.claude/commands/
+
+# npm pack output
+*.tgz

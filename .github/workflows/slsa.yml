@@ -4,7 +4,7 @@ name: SLSA Provenance
 # and every published release. Attestations are stored in the repository's
 # GitHub attestations store and can be verified with:
 #
-#   gh attestation verify dist/server.js --repo <owner>/<repo>
+#   gh attestation verify <package>.tgz --repo <owner>/<repo>
 #
 # Reference: https://slsa.dev/spec/v1.0/
 # Action:    https://github.com/actions/attest-build-provenance
@@ -47,18 +47,31 @@ jobs:
           find . -name '*.js' | sort | xargs sha256sum | tee ../artifact-hashes.sha256
           echo "Artifact hashes computed."
 
+      - name: Pack the distributable tarball
+        id: pack
+        run: |
+          TARBALL=$(pnpm pack | tail -1)
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          sha256sum "$TARBALL"
+
+      # Attest the packed tarball — one subject, and the exact artifact a
+      # consumer installs. The previous `dist/**/*.js` attested 853 separate
+      # subjects, which meant 853 Sigstore signatures and a job that never
+      # finished. The per-file SHA-256 manifest is still published below for
+      # anyone who wants to check an individual compiled file.
       - name: Attest build provenance (SLSA v1.0)
         id: attest
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v2
         with:
-          # Attest every compiled JS file in dist/
-          subject-path: dist/**/*.js
+          subject-path: ${{ steps.pack.outputs.tarball }}
 
       - name: Upload artifact hashes as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: artifact-hashes-${{ github.sha }}
-          path: artifact-hashes.sha256
+          path: |
+            artifact-hashes.sha256
+            *.tgz
           retention-days: 90
 
       - name: Print attestation bundle ID
