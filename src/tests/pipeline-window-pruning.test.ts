@@ -47,7 +47,7 @@ afterEach(() => {
 describe('tool rate limiter — window pruning', () => {
   test('an expired window lets a caller through again', async () => {
     process.env['SYMFONY_MCP_RATE_LIMIT'] = '2';
-    process.env['SYMFONY_MCP_RATE_WINDOW_MS'] = '60';
+    process.env['SYMFONY_MCP_RATE_WINDOW_MS'] = '300';
     resetRateLimits();
 
     expect(checkRateLimit('list_routes').allowed).toBe(true);
@@ -55,22 +55,22 @@ describe('tool rate limiter — window pruning', () => {
     expect(checkRateLimit('list_routes').allowed).toBe(false);
 
     // Let the whole window lapse: every timestamp is now out of range.
-    await new Promise((r) => setTimeout(r, 90));
+    await new Promise((r) => setTimeout(r, 450));
 
     expect(checkRateLimit('list_routes').allowed).toBe(true);
   });
 
   test('a partially expired window drops only the old timestamps', async () => {
     process.env['SYMFONY_MCP_RATE_LIMIT'] = '3';
-    process.env['SYMFONY_MCP_RATE_WINDOW_MS'] = '120';
+    process.env['SYMFONY_MCP_RATE_WINDOW_MS'] = '600';
     resetRateLimits();
 
     checkRateLimit('list_routes');                   // t0
-    await new Promise((r) => setTimeout(r, 80));
+    await new Promise((r) => setTimeout(r, 400));
     checkRateLimit('list_routes');                   // t0 + 80
 
     // t0 has now aged out but t0+80 has not: one slot should have been freed.
-    await new Promise((r) => setTimeout(r, 60));
+    await new Promise((r) => setTimeout(r, 300));
 
     expect(checkRateLimit('list_routes').allowed).toBe(true);
     expect(checkRateLimit('list_routes').allowed).toBe(true);
@@ -234,7 +234,7 @@ describe('request signer — nonce store pruning', () => {
 
   test('drops nonces past the replay window, so the store cannot grow forever', async () => {
     process.env['SYMFONY_MCP_SIGNING_SECRET'] = 's'.repeat(32);
-    process.env['SYMFONY_MCP_REPLAY_WINDOW_MS'] = '40';
+    process.env['SYMFONY_MCP_REPLAY_WINDOW_MS'] = '200';
     clearNonceCache();
 
     const first = signRequest('list_routes', { app_path: '/app' })!;
@@ -244,7 +244,7 @@ describe('request signer — nonce store pruning', () => {
     expect(verifyRequest('list_routes', { app_path: '/app', _signature: first }).valid).toBe(false);
 
     // Once the window lapses, the stored nonce is pruned on the next check.
-    await new Promise((r) => setTimeout(r, 70));
+    await new Promise((r) => setTimeout(r, 350));
     const second = signRequest('list_routes', { app_path: '/app' })!;
     expect(verifyRequest('list_routes', { app_path: '/app', _signature: second }).valid).toBe(true);
   });
