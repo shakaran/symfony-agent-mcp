@@ -107,7 +107,7 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for a step-by-step guide including 
 
 | Client | Install |
 | --- | --- |
-| **Cursor** | [![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0=) |
+| **Cursor** | <a href="https://cursor.com/install-mcp?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0="><picture><source media="(prefers-color-scheme: dark)" srcset="https://cursor.com/deeplink/mcp-install-dark.svg"><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-light.svg"></picture></a> |
 | **VS Code** | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_Server-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22symfony-agent-mcp%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22%40shakaran%2Fsymfony-agent-mcp%22%5D%7D) |
 | **VS Code Insiders** | [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_MCP_Server-24bfa5?style=for-the-badge&logo=visualstudiocode&logoColor=white)](vscode-insiders:mcp/install?%7B%22name%22%3A%22symfony-agent-mcp%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22%40shakaran%2Fsymfony-agent-mcp%22%5D%7D) |
 | **Windsurf** | [![Install in Windsurf](https://img.shields.io/badge/Windsurf-Install_MCP_Server-00B8A9?style=for-the-badge&logo=codeium&logoColor=white)](https://windsurf.com/editor/directory/mcp/install?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0=) |

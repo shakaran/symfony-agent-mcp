@@ -33,12 +33,16 @@ module.exports = {
   // src/tools/, which have no unit tests of their own, dragging the number to
   // ~1.6% and making the gate unenforceable. Scoping it keeps a real floor
   // (currently ~61% statements) that cannot silently regress.
+  //
+  // Floors sit just under the measured values so an accidental regression
+  // fails the build, while a normal refactor that shifts a few statements
+  // does not. Raise them when coverage genuinely improves.
   coverageThreshold: {
     './src/utils/': {
-      branches: 50,
-      functions: 50,
-      lines: 50,
-      statements: 50,
+      branches: 58,
+      functions: 70,
+      lines: 70,
+      statements: 70,
     },
   },
 };
