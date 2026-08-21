@@ -1,0 +1,10 @@
+# pnpm 11 requires an explicit decision for every dependency that ships a
+# postinstall build script, rather than running them implicitly.
+#
+# unrs-resolver is a native module pulled in by jest-resolve (jest 30). Its
+# build step is declined here: the test suite passes without it, and a
+# security-oriented project has no reason to execute arbitrary install-time
+# scripts in CI when the JavaScript fallback is sufficient. Revisit only if
+# jest's resolution actually regresses.
+allowBuilds:
+  unrs-resolver: false
