@@ -48,13 +48,21 @@ const cache = new Map<string, CacheEntry>();
 
 // TTL: configurable via SYMFONY_MCP_SECRET_TTL_MS (default: 60s)
 function getCacheTtlMs(): number {
-  return parseInt(process.env['SYMFONY_MCP_SECRET_TTL_MS'] ?? '60000', 10) || 60_000;
+  // `|| 60_000` would swallow an explicit 0: .env.example promises "lower =
+  // fresher secrets", so an operator setting 0 to disable caching silently
+  // got the 60s default instead — the opposite of what they asked for. Only
+  // a value that does not parse falls back.
+  const raw = parseInt(process.env['SYMFONY_MCP_SECRET_TTL_MS'] ?? '', 10);
+  return Number.isFinite(raw) ? raw : 60_000;
 }
 
 function cached(key: string): string | null {
   const entry = cache.get(key);
   if (!entry) return null;
-  if (entry.expiresAt < Date.now()) {
+  // `<=`, not `<`: with a TTL of 0 the entry expires the instant it is
+  // written, and a strict comparison would still serve it within the same
+  // millisecond — so "don't cache" would cache after all.
+  if (entry.expiresAt <= Date.now()) {
     cache.delete(key);
     return null;
   }
