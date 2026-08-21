@@ -2,7 +2,7 @@
  * Tool Discovery meta-tools.
  *
  * These 5 tools are ALWAYS included in tools/list, regardless of session state.
- * They allow the LLM to explore and activate the remaining 819 tools on demand
+ * They allow the LLM to explore and activate the remaining tools on demand
  * instead of receiving all definitions at once.
  *
  * Flow:
@@ -207,7 +207,7 @@ export function activateCategory(sessionId: string, category: string, force: boo
           text: [
             result.message,
             '',
-            'All 819 tools are now active. The MCP client will reflect this on the next tools/list refresh.',
+            `All ${toolRegistry.getAllTools().length} tools are now active. The MCP client will reflect this on the next tools/list refresh.`,
             `Total estimated tokens: ~${result.totalTokens}`,
           ].join('\n'),
         },
@@ -274,7 +274,7 @@ export function getActiveTools(sessionId: string): McpToolResult {
           text: [
             'No tool categories are currently active.',
             '',
-            `All 819 tools are available but not yet exposed (~${totalAll} total tokens).`,
+            `All ${toolRegistry.getAllTools().length} tools are available but not yet exposed (~${totalAll} total tokens).`,
             '',
             'To activate tools:',
             '  list_tool_categories()    — see all categories',

@@ -1,5 +1,5 @@
 /**
- * ToolRegistry — singleton that holds all 819 tool definitions, assigns
+ * ToolRegistry — singleton that holds every tool definition, assigns
  * categories, and provides search + category-query functionality.
  *
  * Initialized once at server startup from the raw allTools array.

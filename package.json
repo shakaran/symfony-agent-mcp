@@ -48,6 +48,9 @@
   ],
   "author": "Ángel Guzmán Maeso <angel@guzmanmaeso.com>",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",

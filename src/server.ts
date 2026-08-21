@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * MCP Server Implementation
  * Model Context Protocol server for Symfony applications
