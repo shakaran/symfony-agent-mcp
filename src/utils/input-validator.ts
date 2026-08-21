@@ -36,7 +36,11 @@ export interface ValidationResult {
 // ─── Allowed character patterns ───────────────────────────────────────────────
 
 // Filesystem path: printable ASCII except null bytes and shell metacharacters
-const PATH_SAFE = /^[^\0|&;`$()<>]+$/;
+// Blocks shell metacharacters, NUL, and newlines. Newlines matter because a
+// rejected path is echoed back in the failure reason and written to the
+// audit log; an embedded \n would let a caller forge a log line. Found by
+// the property test in src/tests/property-security.test.ts.
+const PATH_SAFE = /^[^\0|&;`$()<>\r\n]+$/;
 
 // Safe identifier for names (routes, tables, entities, controllers, services)
 const NAME_SAFE = /^[\w\-.:/\\@\s]+$/;

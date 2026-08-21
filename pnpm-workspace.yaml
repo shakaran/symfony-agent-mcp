@@ -8,3 +8,12 @@
 # jest's resolution actually regresses.
 allowBuilds:
   unrs-resolver: false
+
+# Transitive advisories inside jest's babel/istanbul coverage chain. Both fixes
+# are patch releases within the same major, so the APIs those packages rely on
+# (js-yaml 3's safeLoad, brace-expansion 1's expand) are unchanged. The
+# selectors are range-scoped so this cannot touch the js-yaml 5 that this
+# project depends on directly.
+overrides:
+  js-yaml@3: ^3.15.1
+  brace-expansion@1: ^1.1.18

@@ -1,5 +1,5 @@
 # ── Stage 1: build ────────────────────────────────────────────────────────────
-FROM node:22-alpine3.22 AS builder
+FROM node:22-alpine3.22@sha256:cd7807368cf24826297cbad5dca1a44972ccfd770647db52a8c7589eb4599ac8 AS builder
 
 WORKDIR /build
 
@@ -7,7 +7,7 @@ WORKDIR /build
 RUN apk upgrade --no-cache
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@11.5.1 --activate
 
 # Copy manifests first for layer cache efficiency
 COPY package.json pnpm-lock.yaml ./
@@ -25,7 +25,7 @@ RUN pnpm prune --prod
 
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM node:22-alpine3.22 AS runtime
+FROM node:22-alpine3.22@sha256:cd7807368cf24826297cbad5dca1a44972ccfd770647db52a8c7589eb4599ac8 AS runtime
 
 # Apply available Alpine security patches before adding users
 RUN apk upgrade --no-cache

@@ -1,0 +1,96 @@
+name: Publish to npm
+
+# Publishes the package when a GitHub release is published, and can be run
+# manually for a dry run. Publishing from CI rather than a laptop means the
+# tarball is built from a known commit by a known workflow, and npm records a
+# signed provenance attestation linking the two — visible as the "Provenance"
+# panel on the package page.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Pack and validate without publishing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, verify and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # required for npm provenance and the attestation below
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The full gate runs again here: a release must not ship code that would
+      # have failed CI on main.
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build
+
+      # Guards the failure mode that would otherwise only show up once a user
+      # ran `npx @shakaran/symfony-agent-mcp`: npm links `bin` straight into
+      # node_modules/.bin, so a missing shebang yields an unrunnable command.
+      - name: Verify the bin entry is executable
+        run: |
+          head -1 dist/server.js | grep -qx '#!/usr/bin/env node' \
+            || { echo "::error::dist/server.js is missing its shebang"; exit 1; }
+
+      - name: Verify the packed tarball starts and speaks MCP
+        run: |
+          set -euo pipefail
+          TARBALL=$(npm pack --silent | tail -1)
+          WORK=$(mktemp -d)
+          mv "$TARBALL" "$WORK/"
+          cd "$WORK"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "./$TARBALL" >/dev/null
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            | timeout 30 ./node_modules/.bin/symfony-agent-mcp 2>/dev/null \
+            | grep -q '"serverInfo"' \
+            || { echo "::error::installed package did not complete an MCP handshake"; exit 1; }
+          echo "Installed package responds to initialize."
+
+      - name: Publish to npm (with provenance)
+        if: github.event_name == 'release'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Dry run
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish --dry-run --access public
+
+      - name: Attest the published tarball
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: '*.tgz'

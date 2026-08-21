@@ -16,23 +16,29 @@ on:
     - cron: '0 8 * * 1'
   workflow_dispatch:
 
+# Default to read-only; jobs elevate only what they actually use.
+permissions:
+  contents: read
+
 jobs:
   sbom:
     name: Generate SBOM
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # to upload SBOM artifact
-      security-events: write  # to submit to Dependency Graph / GHAS
+      # The dependency-graph submission API is the only write here. Uploading
+      # an artifact needs no extra scope, and nothing in this job writes a
+      # SARIF report, so security-events is gone.
+      contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -43,7 +49,7 @@ jobs:
       # ── CycloneDX SBOM ──────────────────────────────────────────────────
       - name: Generate CycloneDX SBOM (JSON)
         run: |
-          pnpm dlx @cyclonedx/cyclonedx-npm \
+          pnpm dlx @cyclonedx/cyclonedx-npm@6.0.1 \
             --output-format JSON \
             --output-file sbom.cyclonedx.json \
             --package-lock-only
@@ -51,7 +57,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM (XML)
         run: |
-          pnpm dlx @cyclonedx/cyclonedx-npm \
+          pnpm dlx @cyclonedx/cyclonedx-npm@6.0.1 \
             --output-format XML \
             --output-file sbom.cyclonedx.xml \
             --package-lock-only
@@ -59,12 +65,12 @@ jobs:
 
       # ── SPDX SBOM ───────────────────────────────────────────────────────
       - name: Generate SPDX SBOM
-        run: |
-          pnpm dlx spdx-sbom-generator \
-            -p . \
-            -o spdx-sbom.json \
-            -f json || true
-        continue-on-error: true
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: spdx-sbom.json
+          upload-artifact: false
 
       # ── npm audit ───────────────────────────────────────────────────────
       - name: Run npm audit
@@ -76,7 +82,7 @@ jobs:
 
       # ── Upload artifacts ─────────────────────────────────────────────────
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-${{ github.sha }}
           path: |
@@ -88,19 +94,21 @@ jobs:
 
       # ── Publish to GitHub Dependency Graph ────────────────────────────
       - name: Submit SBOM to GitHub Dependency Graph
-        uses: anchore/sbom-action/publish-sbom@v0
+        uses: anchore/sbom-action/publish-sbom@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         if: ${{ hashFiles('sbom.cyclonedx.json') != '' }}
         continue-on-error: true
 
   audit:
     name: Vulnerability Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: 'pnpm'
