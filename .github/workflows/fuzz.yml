@@ -19,6 +19,9 @@ on:
       - 'src/utils/app-guard.ts'
       - 'src/fuzz/**'
       - 'src/tests/fuzz-*.test.ts'
+      - 'src/tests/property-*.test.ts'
+      - '.github/workflows/fuzz.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
