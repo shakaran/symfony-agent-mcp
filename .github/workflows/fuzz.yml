@@ -49,12 +49,15 @@ jobs:
           node node_modules/jest/bin/jest.js
           --maxWorkers=1
           --forceExit
-          --testPathPattern "fuzz-security"
+          --testPathPatterns "fuzz-security|property-security"
           --testTimeout=120000
           --verbose
         env:
           FUZZ_ITERATIONS: '5000'
-          NODE_OPTIONS: '--max-old-space-size=256'
+          # 256 MB was viable under jest 29 but sits below jest 30's own
+          # baseline footprint — the corpus suite OOMs before running a
+          # single property. 768 MB is the measured floor; 1 GB leaves headroom.
+          NODE_OPTIONS: '--max-old-space-size=1024'
 
       - name: Upload fuzz failure artefacts (if any)
         if: failure()

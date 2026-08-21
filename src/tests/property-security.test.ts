@@ -41,7 +41,7 @@ beforeAll(() => {
 describe('DLP detector — invariants over arbitrary text', () => {
   test('scanText never throws, whatever the input', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         scanText(s);
       }),
       opts
@@ -52,7 +52,7 @@ describe('DLP detector — invariants over arbitrary text', () => {
     // `unit: 'binary'` reaches lone surrogates and unpaired code units, which
     // is exactly where a regex engine tends to misbehave.
     fc.assert(
-      fc.property(fc.string({ unit: 'binary' }), (s: string) => {
+      fc.property(fc.string({ unit: 'binary', maxLength: 256 }), (s: string) => {
         scanText(s);
       }),
       opts
@@ -61,7 +61,7 @@ describe('DLP detector — invariants over arbitrary text', () => {
 
   test('redactText is idempotent — redacting twice changes nothing', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         const once = redactText(s);
         expect(redactText(once)).toBe(once);
       }),
@@ -71,7 +71,7 @@ describe('DLP detector — invariants over arbitrary text', () => {
 
   test('redactText leaves text without secrets untouched', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         if (scanText(s).length === 0) {
           expect(redactText(s)).toBe(s);
         }
@@ -95,7 +95,7 @@ describe('DLP detector — invariants over arbitrary text', () => {
         // Delimiters only. The patterns are \b-anchored and length-exact by
         // design, so a secret glued to adjacent word characters is a different
         // string and legitimately not a match.
-        fc.stringMatching(/^[ \t"'=:,(\[]*$/),
+        fc.stringMatching(/^[ \t"'=:,([]*$/),
         fc.stringMatching(/^[ \t"'.,)\]]*$/),
         (secret, prefix, suffix) => {
           const result = redactText(`${prefix}${secret}${suffix}`);
@@ -108,7 +108,7 @@ describe('DLP detector — invariants over arbitrary text', () => {
 
   test('containsDlpViolation agrees with scanText on plain strings', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         expect(containsDlpViolation(s)).toBe(scanText(s).length > 0);
       }),
       opts
@@ -133,7 +133,7 @@ describe('DLP detector — invariants over arbitrary text', () => {
 describe('Error sanitizer — invariants', () => {
   test('never throws and never grows the message', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         const out = sanitizeErrorMessage(s);
         expect(typeof out).toBe('string');
         expect(out.length).toBeLessThanOrEqual(s.length);
@@ -144,7 +144,7 @@ describe('Error sanitizer — invariants', () => {
 
   test('is idempotent', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         const once = sanitizeErrorMessage(s);
         expect(sanitizeErrorMessage(once)).toBe(once);
       }),
@@ -156,7 +156,7 @@ describe('Error sanitizer — invariants', () => {
 describe('Path guard — invariants', () => {
   test('never throws on arbitrary strings', () => {
     fc.assert(
-      fc.property(fc.string(), (s) => {
+      fc.property(fc.string({ maxLength: 256 }), (s) => {
         const r = guardAppPath(s);
         expect(typeof r.allowed).toBe('boolean');
       }),
@@ -191,8 +191,12 @@ describe('Input validator — invariants', () => {
   test('never throws for any tool name and argument bag', () => {
     fc.assert(
       fc.property(
-        fc.string(),
-        fc.dictionary(fc.string(), fc.oneof(fc.string(), fc.integer(), fc.boolean())),
+        fc.string({ maxLength: 256 }),
+        fc.dictionary(
+          fc.string({ maxLength: 32 }),
+          fc.oneof(fc.string({ maxLength: 64 }), fc.integer(), fc.boolean()),
+          { maxKeys: 8 }
+        ),
         (tool, args) => {
           const r = validateToolArgs(tool, args);
           expect(typeof r.valid).toBe('boolean');
@@ -206,7 +210,7 @@ describe('Input validator — invariants', () => {
     fc.assert(
       fc.property(
         fc.constantFrom(';', '|', '&', '$', '`', '>', '<', '\n'),
-        fc.string({ minLength: 1 }),
+        fc.string({ minLength: 1, maxLength: 64 }),
         (meta, rest) => {
           const r = validateToolArgs('list_routes', { app_path: `/app${meta}${rest}` });
           expect(r.valid).toBe(false);
