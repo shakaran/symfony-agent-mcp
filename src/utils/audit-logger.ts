@@ -66,17 +66,15 @@ function getEncryptionKey(): Buffer | null {
   const keyB64 = process.env['SYMFONY_MCP_AUDIT_KEY'];
   if (!keyB64) return null;
 
-  try {
-    const key = Buffer.from(keyB64, 'base64');
-    if (key.length !== 32) {
-      process.stderr.write('[symfony-mcp][warn] SYMFONY_MCP_AUDIT_KEY must be a 32-byte base64 string. Encryption disabled.\n');
-      return null;
-    }
-    return key;
-  } catch {
-    process.stderr.write('[symfony-mcp][warn] SYMFONY_MCP_AUDIT_KEY is not valid base64. Encryption disabled.\n');
+  // Buffer.from(_, 'base64') decodes what it can and silently ignores the
+  // rest — it never throws — so malformed input surfaces as the wrong length
+  // rather than as an exception.
+  const key = Buffer.from(keyB64, 'base64');
+  if (key.length !== 32) {
+    process.stderr.write('[symfony-mcp][warn] SYMFONY_MCP_AUDIT_KEY must be a 32-byte base64 string. Encryption disabled.\n');
     return null;
   }
+  return key;
 }
 
 /**
@@ -89,12 +87,8 @@ function getPrevEncryptionKey(): Buffer | null {
 
   const keyB64 = process.env['SYMFONY_MCP_AUDIT_KEY_PREV'];
   if (!keyB64) return null;
-  try {
-    const key = Buffer.from(keyB64, 'base64');
-    return key.length === 32 ? key : null;
-  } catch {
-    return null;
-  }
+  const key = Buffer.from(keyB64, 'base64');
+  return key.length === 32 ? key : null;
 }
 
 /**
@@ -539,11 +533,8 @@ export function rotateAuditKey(): void {
  */
 export function reencryptAuditLog(newKeyB64: string): { reencrypted: number; skipped: number; errors: number } {
   // Validate key first — before any file I/O so callers get an immediate error
-  let newKey: Buffer;
-  try {
-    newKey = Buffer.from(newKeyB64, 'base64');
-    if (newKey.length !== 32) throw new Error('wrong length');
-  } catch {
+  const newKey = Buffer.from(newKeyB64, 'base64');
+  if (newKey.length !== 32) {
     throw new Error('reencryptAuditLog: newKeyB64 must be a 32-byte base64 string');
   }
 
