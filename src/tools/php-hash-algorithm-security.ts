@@ -340,10 +340,5 @@ export function getPhpHashAlgorithmSecurityTools(): Array<{
       description: 'Statistics for PHP insecure hash algorithm findings: total count, bySeverity (critical/high/medium/low), byPattern breakdown, filesAffected count — returned as both human-readable text and JSON',
       inputSchema: { type: 'object', properties: prop, required: ['app_path'] },
     },
-    {
-      name: 'get_php_hash_algorithm_security_tools',
-      description: 'List available PHP hash algorithm security tool definitions for MCP registration',
-      inputSchema: { type: 'object', properties: {}, required: [] },
-    },
   ];
 }

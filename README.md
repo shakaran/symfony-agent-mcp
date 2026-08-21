@@ -32,16 +32,16 @@ security, Doctrine, Messenger, Twig, API Platform, and much more.
 
 ## Features
 
-### 1,679 Tools across 16 Categories
+### 1,677 Tools across 16 Categories
 
 ```text
-Available tool categories (16 categories, 1,679 tools total, ~164,729 tokens if all active)
+Available tool categories (16 categories, 1,677 tools total, ~164,615 tokens if all active)
 
   Category         │ Tools      │ Est. tokens    │ Description
-  ─────────────────┼────────────┼────────────────┼────────────────────────────────────────────────────────
-  symfony-core     │  549 tools │ ~ 53995 tokens │ Routes, services, controllers, events, commands, bundles, DI container, kernel
+  ─────────────────┼────────────┼───────────────┼────────────────────────────────────────────────────────
+  symfony-core     │  548 tools │ ~ 53939 tokens │ Routes, services, controllers, events, commands, bundles, DI container, kernel
   database         │  176 tools │ ~ 17121 tokens │ Entities, migrations, Doctrine ORM, relationships, query patterns, indexes, DBAL
-  security         │  133 tools │ ~ 13008 tokens │ Voters, firewalls, authenticators, JWT, OAuth, CSRF, access control, secrets vault
+  security         │  132 tools │ ~ 12950 tokens │ Voters, firewalls, authenticators, JWT, OAuth, CSRF, access control, secrets vault
   frontend         │  121 tools │ ~ 11568 tokens │ Twig, translations, asset mapper, Symfony UX, Turbo, live components, Webpack
   testing          │  110 tools │ ~ 10559 tokens │ PHPUnit, Behat, Cypress, Playwright, Psalm, PHPStan, Rector, static analysis
   integrations     │  106 tools │ ~ 10939 tokens │ Stripe, Slack, Sentry, Elasticsearch, Twilio, SendGrid, Mailgun, Datadog, OpenAI
@@ -218,7 +218,7 @@ All configuration is done via environment variables passed to the MCP server pro
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SYMFONY_MCP_DYNAMIC_TOOLS` | `true` | Enable dynamic tool discovery. When `true`, `tools/list` returns only 5 meta-tools instead of all 1,679. Set to `false` to restore the legacy behaviour (all tools always visible). |
+| `SYMFONY_MCP_DYNAMIC_TOOLS` | `true` | Enable dynamic tool discovery. When `true`, `tools/list` returns only 5 meta-tools instead of all 1,677. Set to `false` to restore the legacy behaviour (all tools always visible). |
 | `SYMFONY_MCP_TOKEN_BUDGET` | `40000` | Maximum estimated tokens that can be activated per session. Activation is blocked when this limit would be exceeded; pass `force=true` in `activate_category` to override. |
 
 ### Security & Access
@@ -396,7 +396,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide: architectur
 | Document | Description |
 | --- | --- |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Step-by-step setup, Node.js prerequisites, troubleshooting |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, security pipeline, component overview, all 1,679 tools across 16 categories documented |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, security pipeline, component overview, all 1,677 tools across 16 categories documented |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development workflow, adding tools, testing, contributing |
 | [SECURITY.md](SECURITY.md) | Threat model, DLP pipeline, responsible disclosure policy |
 | [CHANGELOG.md](CHANGELOG.md) | Release history and roadmap |

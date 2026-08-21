@@ -21,7 +21,7 @@
 │                                                              │
 │  ┌────────────────┐  ┌─────────────────┐  ┌─────────────┐  │
 │  │  Tool Registry │  │  Session Store  │  │ Rate Limiter│  │
-│  │ 1,679 tools    │  │ (active cats)   │  │ sliding win │  │
+│  │ 1,677 tools    │  │ (active cats)   │  │ sliding win │  │
 │  └────────────────┘  └─────────────────┘  └─────────────┘  │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -90,7 +90,7 @@ Implemented in `src/utils/output-sanitizer.ts` — multi-layer DLP:
 
 ## Dynamic Tool Discovery
 
-All 1,679 tools are registered at startup in `src/utils/tool-registry.ts` with category
+All 1,677 tools are registered at startup in `src/utils/tool-registry.ts` with category
 metadata. With `SYMFONY_MCP_DYNAMIC_TOOLS=true` (default), the server's `tools/list`
 response exposes only five meta-tools until the client activates categories:
 
@@ -126,7 +126,7 @@ Response: [{name: "app_home", path: "/", methods: ["GET"], controller: "…"}]
 | --- | --- |
 | `src/server.ts` | MCP server entry, tool registry, security pipeline |
 | `src/index.ts` | Public exports |
-| `src/tools/*.ts` | 820 tool files (1,679 tools across 16 categories) |
+| `src/tools/*.ts` | 820 tool files (1,677 tools across 16 categories) |
 | `src/utils/security.ts` | Path validation helpers |
 | `src/utils/app-guard.ts` | `guardAppPath` middleware |
 | `src/utils/audit-logger.ts` | `withAudit` middleware |

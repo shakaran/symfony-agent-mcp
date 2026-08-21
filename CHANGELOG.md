@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-08-21
+
+### Fixed
+
+- Three tools were advertised in `tools/list` but had no handler, so calling
+  them returned `Unknown tool` after the client had already offered them:
+  - `get_php_dnf_type_stats` was missing the plural its handler and its
+    implementation both use. Renamed to `get_php_dnf_types_stats`.
+  - `get_php_hash_algorithm_security_tools` and
+    `get_php_socket_programming_tools` were "list my own definitions" entries
+    that were never implemented. Removed — `list_tool_categories` and
+    `search_tools` already do this properly.
+
+  Tool count goes from 1,679 to 1,677 as a result.
+
+### Added
+
+- `tool-registry-integrity` test suite, asserting that every advertised tool
+  has a handler, every handler is advertised or is a discovery meta-tool, and
+  no name is advertised twice. The tool list and the handler map are built in
+  different places with nothing tying them together; this is what would have
+  caught the above.
+
 ## [1.0.0] - 2026-06-16
 
 ### MCP Server

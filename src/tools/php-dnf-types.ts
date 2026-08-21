@@ -271,7 +271,7 @@ export function getPhpDnfTypesTools(): Array<{ name: string; description: string
       inputSchema: { type: 'object', properties: prop, required: ['app_path'] },
     },
     {
-      name: 'get_php_dnf_type_stats',
+      name: 'get_php_dnf_types_stats',
       description: 'Statistics for PHP 8.2 DNF type issues: total count, files affected, breakdown by severity (high/medium/low) and by pattern type, PHP version requirement from composer.json',
       inputSchema: { type: 'object', properties: prop, required: ['app_path'] },
     },

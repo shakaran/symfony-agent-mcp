@@ -103,7 +103,7 @@ The MCP server uses stdio, not a TCP port — no port configuration needed.
 symfony-agent-mcp/
 ├── src/
 │   ├── server.ts           # MCP server entry point
-│   ├── tools/              # 820 tool files (1,679 tools)
+│   ├── tools/              # 820 tool files (1,677 tools)
 │   └── utils/              # Security, parsing, audit utilities
 ├── dist/                   # Compiled JavaScript (generated)
 ├── docs/architecture/      # Per-category tool documentation
@@ -113,7 +113,7 @@ symfony-agent-mcp/
 
 ## Tool Categories
 
-1,679 tools organized in 16 categories — see [docs/architecture/tool-categories.md](docs/architecture/tool-categories.md)
+1,677 tools organized in 16 categories — see [docs/architecture/tool-categories.md](docs/architecture/tool-categories.md)
 for the full reference.
 
 | Category | Tools |

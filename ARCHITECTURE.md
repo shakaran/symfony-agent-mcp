@@ -6,7 +6,7 @@
 into Symfony applications. It works by parsing configuration files, reading the file system, and
 providing structured information to AI assistants and other MCP clients.
 
-**Version:** 1.0.0 | **Tools:** 1,679 | **Categories:** 16
+**Version:** 1.0.0 | **Tools:** 1,677 | **Categories:** 16
 
 ## Architecture Documents
 
@@ -63,7 +63,7 @@ providing structured information to AI assistants and other MCP clients.
 | --- | --- |
 | `src/server.ts` | MCP server entry point, tool registry, security pipeline |
 | `src/index.ts` | Public exports for all tool functions |
-| `src/tools/*.ts` | Individual tool implementations (1,679 tools across 16 categories) |
+| `src/tools/*.ts` | Individual tool implementations (1,677 tools across 16 categories) |
 | `src/utils/symfony-parser.ts` | YAML/config parsing utilities |
 | `src/utils/security.ts` | Path validation, output sanitization |
 

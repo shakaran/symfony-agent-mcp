@@ -427,10 +427,5 @@ export function getPhpSocketProgrammingTools(): Array<{
       description: 'Statistics for PHP socket programming findings: total count, bySeverity (critical/high/medium/low), byPattern breakdown, filesAffected count — returned as both human-readable text and JSON',
       inputSchema: { type: 'object', properties: prop, required: ['app_path'] },
     },
-    {
-      name: 'get_php_socket_programming_tools',
-      description: 'List available PHP socket programming tool definitions for MCP registration',
-      inputSchema: { type: 'object', properties: {}, required: [] },
-    },
   ];
 }
