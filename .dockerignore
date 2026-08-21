@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.github
+*.test.ts
+src/tests
+tsconfig.test.json
+jest.config.*
+coverage
+*.log
+.env
+.env.*
+!.env.example
+examples
+*.md
+!README.md

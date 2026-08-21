@@ -1,0 +1,116 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2026-06-16
+
+### MCP Server
+
+- Model Context Protocol server using stdio transport and `@modelcontextprotocol/sdk`
+- Tool registration and routing with 5-layer security pipeline:
+  `validateToolArgs → guardAppPath → withAudit → tool → sanitizeToolResult`
+- TypeScript 5+ strict mode, Node.js 22+, pnpm 11+
+- Full error handling with MCP-compliant structured error responses
+
+### Dynamic Tool Discovery
+
+- `SYMFONY_MCP_DYNAMIC_TOOLS` env var (default `true`) — enables dynamic tool exposure;
+  default `tools/list` returns 5 meta-tools instead of all 1,679
+- `activate_category(category, force?)` — activates a tool category for the current session;
+  triggers `notifications/tools/list_changed` so MCP clients re-fetch the tool list
+- `search_tools(query, limit?)` — full-text search across all 1,679 tool definitions using
+  an in-memory inverted index built at startup
+- `list_tool_categories()` — lists all 16 categories with tool counts and descriptions
+- `get_active_tools()` — shows currently active tool names and session token estimate
+- `deactivate_category(category)` — removes a category from the session to free context budget
+
+### Token Budget Guard
+
+- `SYMFONY_MCP_TOKEN_BUDGET` (default `40000`) — blocks category activation when it would
+  exceed the token budget; pass `force=true` to `activate_category` to override
+
+### Transport & Rate Limiting
+
+- HTTP/SSE transport via `SYMFONY_MCP_HTTP_PORT` — starts an HTTP server alongside stdio
+- `SYMFONY_MCP_STDIO` — toggle stdio transport independently
+- `SYMFONY_MCP_RATE_LIMIT` / `SYMFONY_MCP_RATE_WINDOW_MS` / `SYMFONY_MCP_RATE_BURST` —
+  configurable sliding-window rate limiting
+- `SYMFONY_MCP_TOOL_TIMEOUT_MS` — per-tool execution timeout in milliseconds
+
+### Access Control
+
+- `SYMFONY_MCP_ALLOWED_PATHS` — colon-separated list of allowed app roots
+- `SYMFONY_MCP_ALLOWED_TOOLS` — comma-separated allowlist; only listed tools are callable
+- `SYMFONY_MCP_BLOCKED_TOOLS` — comma-separated denylist; takes precedence over allowlist
+- `SYMFONY_MCP_SIGNING_SECRET` — 32+ char secret for HMAC-SHA256 request signing
+- `SYMFONY_MCP_SESSION_SECRET` / `SYMFONY_MCP_SESSION_TOKEN` / `SYMFONY_MCP_SESSION_STRICT` /
+  `SYMFONY_MCP_SESSION_WINDOW` — session token validation
+
+### 1,679 Tools across 16 Categories
+
+820 TypeScript files in `src/tools/`, one per tool domain:
+
+| Category | Tools | Description |
+| --- | --- | --- |
+| symfony-core | 549 | Routes, services, DI, events, commands, bundles, kernel, PHP patterns |
+| database | 176 | Doctrine ORM, entities, migrations, DBAL, relationships, query patterns |
+| security | 133 | Voters, firewalls, JWT, OAuth, CSRF, access control, secrets vault |
+| frontend | 121 | Twig, translations, asset mapper, Symfony UX, Turbo, live components |
+| testing | 110 | PHPUnit, Behat, Cypress, Playwright, Pest, mutation testing |
+| integrations | 106 | Stripe, Slack, Sentry, Elasticsearch, Twilio, SendGrid, OpenAI, OAuth |
+| serializer | 91 | Serializer, validation, forms, constraints, DTOs, normalizers |
+| messaging | 87 | Messenger, Notifier, Webhooks, Mercure, Mailer, transports |
+| api | 68 | API Platform, OpenAPI, GraphQL, REST patterns, versioning, Nelmio |
+| infrastructure | 68 | Docker, CI/CD, Kubernetes, Terraform, Helm, Nginx, serverless |
+| cache-sessions | 62 | Cache pools, HTTP cache, sessions, rate limiter, lock, warmers |
+| config | 35 | Env config, Monolog, CORS, locale, feature flags, PHP INI |
+| code-quality | 25 | PHPStan, Psalm, Rector, CS-Fixer, complexity, architecture rules |
+| cloud-aws | 18 | S3, SES, ECS, Lambda, Cognito, CloudFront, Parameter Store |
+| cloud-other | 16 | Azure, GCP, Firebase, DigitalOcean, Fly.io, Heroku, Render |
+| queues | 14 | RabbitMQ, Kafka, SQS, Redis Streams, Redis PubSub, Pusher |
+
+### Security Pipeline
+
+```text
+validateToolArgs → guardAppPath → withAudit → tool → sanitizeToolResult
+```
+
+- **validateToolArgs** — MCP schema validation; rejects wrong types before any code runs
+- **guardAppPath** — resolves `app_path`, validates against allowed roots, blocks symlink escapes
+- **withAudit** — structured audit log entry before execution; optional AES-256-GCM encryption
+- **tool** — pure `fs.readFileSync`, no exec/spawn/eval/network
+- **sanitizeToolResult** — multi-layer DLP: keywords, Base64, JWTs, SSH keys, cloud credentials,
+  DSN passwords, prompt injection patterns
+
+### 49 Security Enhancements
+
+Sensitive data redaction, path traversal prevention, app path authorization (`app-guard`),
+rate limiting (sliding window), audit logging, HMAC-SHA256 request signing, nonce-based
+replay prevention, session tokens (TOTP-style), secrets vault/SSM/Secrets Manager resolver,
+advanced DLP (structural patterns), anomaly/intrusion detection, Prometheus security metrics,
+audit log AES-256-GCM encryption, SIEM/CEF audit format, HTTP security headers, mTLS,
+request body size caps, SBOM + dependency scanning CI, npm package registry signature audit.
+
+See [SECURITY.md](SECURITY.md) for the full checklist.
+
+### Read-Only Design
+
+- No PHP execution — files parsed statically with regex and YAML parsing
+- No outbound network calls at runtime
+- No file writes, no shell commands
+- Symlink guards on all filesystem walkers
+
+### Supported Symfony Versions
+
+Symfony 5.4 LTS, 6.x, 7.x, 8.x — PHP 8.0+
+
+### Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system design and component overview
+- [SECURITY.md](SECURITY.md) — threat model, DLP pipeline, responsible disclosure
+- [DEVELOPMENT.md](DEVELOPMENT.md) — adding tools, code style, testing
+- [GETTING_STARTED.md](GETTING_STARTED.md) — step-by-step setup guide
+- [docs/architecture/](docs/architecture/) — 16 per-category tool reference files

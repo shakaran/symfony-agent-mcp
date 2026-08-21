@@ -1,0 +1,237 @@
+name: Security Analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan — Monday 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write  # Required for CodeQL + secret scanning results
+  actions: read
+
+jobs:
+  # ── 1. CodeQL SAST ────────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL SAST (JavaScript/TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # Extended security queries — covers OWASP Top 10
+          queries: security-extended,security-and-quality
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript'
+
+  # ── 2. Secret scanning (Gitleaks) ─────────────────────────────────────────
+  gitleaks:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for git log scanning)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history — detect secrets in any commit
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Required for orgs
+        with:
+          args: |
+            --redact
+            --exit-code=1
+            --report-format=sarif
+            --report-path=gitleaks-report.sarif
+
+      - name: Upload Gitleaks SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gitleaks-report.sarif
+          category: gitleaks
+
+  # ── 3. ESLint security plugin ──────────────────────────────────────────────
+  eslint-security:
+    name: ESLint Security Plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies (with security plugin)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm add -D eslint-plugin-security@latest --ignore-workspace-root-check || true
+
+      - name: Run ESLint with security rules
+        run: |
+          # Run standard lint first
+          pnpm run lint || true
+          # Run with security plugin if available
+          if pnpm list eslint-plugin-security --depth=0 2>/dev/null | grep -q eslint-plugin-security; then
+            pnpm exec eslint src --ext .ts \
+              --rule '{"security/detect-non-literal-fs-filename": "error", "security/detect-object-injection": "warn", "security/detect-possible-timing-attacks": "error"}' \
+              --plugin security \
+              --format json --output-file eslint-security.json || true
+          fi
+
+      - name: Upload ESLint report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eslint-security-${{ github.sha }}
+          path: eslint-security.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ── 4. License compliance ──────────────────────────────────────────────────
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check licenses
+        run: |
+          pnpm dlx license-checker \
+            --production \
+            --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;CC0-1.0;Unlicense;0BSD;CC-BY-3.0;CC-BY-4.0;Python-2.0' \
+            --excludePackages '' \
+            --json > license-report.json
+          echo "License check passed"
+          cat license-report.json | pnpm exec ts-node -e "
+            const r = JSON.parse(require('fs').readFileSync('license-report.json','utf8'));
+            console.log('Packages checked:', Object.keys(r).length);
+          " || true
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report-${{ github.sha }}
+          path: license-report.json
+          retention-days: 90
+
+  # ── 5. Dependency review (PR only) ────────────────────────────────────────
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Block PRs that introduce HIGH or CRITICAL CVEs
+          fail-on-severity: high
+          # Block packages with known malicious behavior
+          deny-licenses: GPL-2.0,GPL-3.0,LGPL-2.0,LGPL-2.1,LGPL-3.0,AGPL-1.0,AGPL-3.0
+
+  # ── 6. pnpm audit ─────────────────────────────────────────────────────────
+  pnpm-audit:
+    name: pnpm Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit (strict — fail on HIGH+)
+        run: pnpm audit --prod --audit-level=high
+
+      - name: Audit (full report including dev)
+        run: pnpm audit --json > pnpm-audit-full.json || true
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pnpm-audit-${{ github.sha }}
+          path: pnpm-audit-full.json
+          retention-days: 30
+
+  # ── 7. Package registry signature verification (U) ────────────────────────
+  npm-audit-signatures:
+    name: Package Signature Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify npm registry package signatures (Sigstore)
+        # npm audit signatures checks that every installed package was signed
+        # by its publisher on the npm registry using Sigstore / TUF.
+        # Requires npm ≥9 (bundled with Node.js ≥18).
+        run: npm audit signatures

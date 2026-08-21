@@ -1,0 +1,81 @@
+{
+  "name": "@shakaran/symfony-agent-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for Symfony applications — read-only introspection of routes, services, entities, controllers, database schema, migrations, composer packages, and logs",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "symfony-agent-mcp": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    ".env.example"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/server.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "lint:md": "markdownlint-cli2 \"*.md\"",
+    "typecheck": "tsc --noEmit",
+    "prepare": "pnpm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "symfony",
+    "symfony6",
+    "symfony7",
+    "symfony8",
+    "doctrine",
+    "php",
+    "introspection",
+    "agent",
+    "ai-assistant",
+    "claude",
+    "cursor",
+    "llm",
+    "developer-tools",
+    "api-inspector"
+  ],
+  "author": "Ángel Guzmán Maeso <angel@guzmanmaeso.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "dotenv": "^16.3.1",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.10",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.2",
+    "@typescript-eslint/parser": "^6.13.2",
+    "eslint": "^8.55.0",
+    "jest": "^29.7.0",
+    "markdownlint-cli2": "^0.22.1",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "packageManager": "pnpm@11.5.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shakaran/symfony-agent-mcp"
+  },
+  "homepage": "https://github.com/shakaran/symfony-agent-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/shakaran/symfony-agent-mcp/issues"
+  }
+}

@@ -1,0 +1,63 @@
+name: Fuzz Security Pipeline
+
+# Runs property-based fuzz tests against the security pipeline.
+# Tests confirm that all security functions handle arbitrary/adversarial
+# inputs without crashing, leaking secrets, or violating invariants.
+#
+# On a schedule (weekly) and whenever security-critical modules change.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # Every Monday at 03:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - 'src/utils/dlp-detector.ts'
+      - 'src/utils/output-sanitizer.ts'
+      - 'src/utils/input-validator.ts'
+      - 'src/utils/prompt-injection-detector.ts'
+      - 'src/utils/app-guard.ts'
+      - 'src/fuzz/**'
+      - 'src/tests/fuzz-*.test.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Property-based fuzz tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run fuzz tests (extended iterations)
+        run: >
+          node node_modules/jest/bin/jest.js
+          --maxWorkers=1
+          --forceExit
+          --testPathPattern "fuzz-security"
+          --testTimeout=120000
+          --verbose
+        env:
+          FUZZ_ITERATIONS: '5000'
+          NODE_OPTIONS: '--max-old-space-size=256'
+
+      - name: Upload fuzz failure artefacts (if any)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures-${{ github.sha }}
+          path: |
+            fuzz-corpus/
+            jest-results.json
+          if-no-files-found: ignore
+          retention-days: 14

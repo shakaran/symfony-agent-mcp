@@ -1,0 +1,160 @@
+{
+  "_comment": "Docker seccomp security profile for symfony-agent-mcp (Node.js 20 on Linux x86_64). Uses an allowlist-compatible denylist strategy: defaults to ALLOW and blocks syscalls that are dangerous/unnecessary for an MCP server process. Derived from Docker's default profile with additional MCP-specific restrictions. Apply with: docker run --security-opt seccomp=docker/seccomp.json ...",
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "architectures": [
+    "SCMP_ARCH_X86_64",
+    "SCMP_ARCH_X86",
+    "SCMP_ARCH_X32",
+    "SCMP_ARCH_AARCH64",
+    "SCMP_ARCH_ARM"
+  ],
+  "syscalls": [
+    {
+      "names": ["ptrace"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block process injection. Node.js debugger (--inspect) requires ptrace — do not use that flag in production containers."
+    },
+    {
+      "names": [
+        "add_key",
+        "request_key",
+        "keyctl"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block kernel keyring manipulation — not used by Node.js stdlib."
+    },
+    {
+      "names": ["bpf"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block kernel BPF program loading — not needed and is a significant attack surface."
+    },
+    {
+      "names": ["perf_event_open"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block hardware performance counters — potential side-channel leak vector."
+    },
+    {
+      "names": [
+        "kexec_load",
+        "kexec_file_load"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block kernel exec — never needed in a container."
+    },
+    {
+      "names": [
+        "init_module",
+        "finit_module",
+        "delete_module"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block kernel module loading/unloading."
+    },
+    {
+      "names": [
+        "iopl",
+        "ioperm"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block direct I/O port access — hardware-level privilege escalation vector."
+    },
+    {
+      "names": [
+        "settimeofday",
+        "adjtimex",
+        "clock_adjtime",
+        "clock_settime"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block system clock modification — container should use host time."
+    },
+    {
+      "names": [
+        "reboot",
+        "swapon",
+        "swapoff"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block system-level operations irrelevant to an MCP server."
+    },
+    {
+      "names": [
+        "sethostname",
+        "setdomainname"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block hostname/domain modification."
+    },
+    {
+      "names": [
+        "mount",
+        "umount2",
+        "pivot_root"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block filesystem manipulation — container filesystem should be immutable."
+    },
+    {
+      "names": ["chroot"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block chroot — container already provides filesystem isolation."
+    },
+    {
+      "names": [
+        "acct",
+        "quotactl",
+        "nfsservctl",
+        "vhangup"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block legacy/admin syscalls not needed by Node.js."
+    },
+    {
+      "names": ["userfaultfd"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block user-space page-fault handling — exploitation primitive in several kernel CVEs."
+    },
+    {
+      "names": [
+        "mbind",
+        "set_mempolicy",
+        "get_mempolicy",
+        "migrate_pages",
+        "move_pages"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block NUMA memory policy syscalls — not used by Node.js and occasionally exploitable."
+    },
+    {
+      "names": ["modify_ldt"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block x86-specific LDT modification — historical exploitation vector."
+    },
+    {
+      "names": [
+        "io_uring_setup",
+        "io_uring_enter",
+        "io_uring_register"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "comment": "Block io_uring — large kernel attack surface; Node.js does not require it for standard I/O."
+    }
+  ]
+}

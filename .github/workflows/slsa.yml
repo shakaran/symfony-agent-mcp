@@ -1,0 +1,64 @@
+name: SLSA Provenance
+
+# Generates SLSA v1.0 build provenance attestations for every push to main
+# and every published release. Attestations are stored in the repository's
+# GitHub attestations store and can be verified with:
+#
+#   gh attestation verify dist/server.js --repo <owner>/<repo>
+#
+# Reference: https://slsa.dev/spec/v1.0/
+# Action:    https://github.com/actions/attest-build-provenance
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write      # required for OIDC token used to sign the attestation
+  attestations: write  # required to write attestations to the repo
+
+jobs:
+  provenance:
+    name: Build and attest SLSA provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript → dist/
+        run: npm run build
+
+      - name: Compute artifact hashes (SHA-256)
+        id: hash
+        run: |
+          cd dist
+          find . -name '*.js' | sort | xargs sha256sum | tee ../artifact-hashes.sha256
+          echo "Artifact hashes computed."
+
+      - name: Attest build provenance (SLSA v1.0)
+        id: attest
+        uses: actions/attest-build-provenance@v1
+        with:
+          # Attest every compiled JS file in dist/
+          subject-path: dist/**/*.js
+
+      - name: Upload artifact hashes as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-hashes-${{ github.sha }}
+          path: artifact-hashes.sha256
+          retention-days: 90
+
+      - name: Print attestation bundle ID
+        run: |
+          echo "Attestation bundle: ${{ steps.attest.outputs.bundle-path }}"
+          echo "Attestation URL:    ${{ steps.attest.outputs.attestation-url }}"

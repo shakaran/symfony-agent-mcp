@@ -1,0 +1,8 @@
+Contact: mailto:angel@guzmanmaeso.com
+Contact: https://github.com/shakaran/symfony-agent-mcp/security/advisories/new
+Expires: 2027-06-07T00:00:00.000Z
+Encryption: https://github.com/shakaran.gpg
+Preferred-Languages: en, es
+Canonical: https://github.com/shakaran/symfony-agent-mcp/blob/main/.well-known/security.txt
+Scope: https://github.com/shakaran/symfony-agent-mcp
+Policy: https://github.com/shakaran/symfony-agent-mcp/blob/main/SECURITY.md
