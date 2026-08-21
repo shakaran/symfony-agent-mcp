@@ -39,6 +39,7 @@ ignore:
   # as the jest gate in jest.config.cjs — one number, one meaning — and it
   # stays visible as its own component below. Remove this line once it has
   # tests, which would raise the badge rather than lower it.
+  - src/transport/
 
 component_management:
   individual_components:
