@@ -1,0 +1,41 @@
+# Gitleaks configuration.
+#
+# This repository is itself a secret-detection tool, so its test corpus is full
+# of credential-shaped strings on purpose: every DLP pattern in
+# `src/utils/dlp-detector.ts` needs a fixture that provably matches it. Gitleaks
+# reads those fixtures as leaks, which is the correct behaviour for a generic
+# scanner and the wrong answer here.
+#
+# The exclusions below are deliberately narrow — individual files whose only
+# content is fixtures, plus two specific false-positive patterns. Application
+# code is never excluded by path, so a credential committed anywhere that
+# matters still fails the build.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic DLP fixtures and known false positives"
+
+paths = [
+  # Fixture modules: credential-shaped values assembled for the detector tests.
+  # See the header of secret-fixtures.ts for why the literals are split.
+  '''^src/fuzz/secret-fixtures\.ts$''',
+  '''^src/fuzz/generators\.ts$''',
+  # The two suites that assert the detectors fire. Both consist entirely of
+  # `scanText(<fixture>)` / `redactText(<fixture>)` assertions.
+  '''^src/tests/dlp-detector\.test\.ts$''',
+  '''^src/tests/output-sanitizer\.test\.ts$''',
+]
+
+regexes = [
+  # The jwt.io sample token — the canonical public example, used across the
+  # suite and in SECURITY.md to document what the JWT detector catches.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.[A-Za-z0-9_-]+''',
+  # `bitbucket-client-id` matches the word "Bitbucket" next to a long
+  # identifier, which fires on ordinary import lines such as
+  # `getBitbucketPipelinesConfigTools, listBitbucketPipelinesConfig, ...`.
+  '''(get|list)Bitbucket[A-Za-z]+''',
+  # AWS's own published example key, used in documentation worldwide.
+  '''AKIAIOSFODNN7EXAMPLE''',
+]
