@@ -1,4 +1,11 @@
 module.exports = {
+  // Jest defaults its cache to /tmp, which on this machine is a 15 GB tmpfs —
+  // i.e. RAM. A full coverage run over 43 suites grew it past 1 GB and pushed
+  // the filesystem to its limit, at which point unrelated writes started
+  // failing with EDQUOT and runs failed for reasons that looked like code
+  // errors. Keeping the cache on disk costs nothing and removes the trap.
+  cacheDirectory: '<rootDir>/node_modules/.cache/jest',
+
   preset: 'ts-jest',
   testEnvironment: 'node',
   maxWorkers: 1,
