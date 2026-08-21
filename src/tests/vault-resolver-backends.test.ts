@@ -10,6 +10,9 @@
  */
 
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 jest.mock('https');
 jest.mock('http');
@@ -61,8 +64,8 @@ function fakeRequest(): EventEmitter & { setTimeout: jest.Mock; destroy: jest.Mo
 // https.get and http.get share one FIFO queue: the resolver picks the library
 // from the URL scheme, so per-mock `mockImplementationOnce` would leave the
 // unused one primed and desynchronise every later test.
-const getQueue: Array<{ status: number; body: string }> = [];
-const requestQueue: Array<{ status: number; body: string }> = [];
+const getQueue: Array<{ status: number; body: string; timeout?: boolean }> = [];
+const requestQueue: Array<{ status: number; body: string; timeout?: boolean }> = [];
 
 /** Queues one GET response, for whichever of http/https the resolver picks. */
 function nextGet(status: number, body: string): void {
@@ -72,6 +75,23 @@ function nextGet(status: number, body: string): void {
 /** Queues one POST (https.request) response. */
 function nextRequest(status: number, body: string): void {
   requestQueue.push({ status, body });
+}
+
+/** Queues a GET that never answers, so the 5s timeout guard fires instead. */
+function nextGetTimeout(): void {
+  getQueue.push({ status: 0, body: '', timeout: true });
+}
+
+/** Queues a POST that never answers. */
+function nextRequestTimeout(): void {
+  requestQueue.push({ status: 0, body: '', timeout: true });
+}
+
+/** A request whose setTimeout callback fires immediately. */
+function timingOutRequest(): ReturnType<typeof fakeRequest> {
+  const req = fakeRequest();
+  req.setTimeout = jest.fn((_ms: number, fn: () => void) => { setImmediate(fn); });
+  return req;
 }
 
 /** Total GET calls made across both libraries. */
@@ -85,6 +105,7 @@ function installGetMock(lib: typeof https | typeof http): void {
     (_url: unknown, optsOrCb: unknown, maybeCb?: (r: unknown) => void) => {
       const cb = typeof optsOrCb === 'function' ? (optsOrCb as (r: unknown) => void) : maybeCb!;
       const next = getQueue.shift() ?? { status: 500, body: 'no response queued' };
+      if (next.timeout) return timingOutRequest();
       cb(fakeResponse(next.status, next.body));
       return fakeRequest();
     }
@@ -104,6 +125,7 @@ beforeEach(() => {
   (https.request as unknown as jest.Mock).mockImplementation(
     (_opts: unknown, cb: (r: unknown) => void) => {
       const next = requestQueue.shift() ?? { status: 500, body: 'no response queued' };
+      if (next.timeout) return timingOutRequest();
       cb(fakeResponse(next.status, next.body));
       return fakeRequest();
     }
@@ -406,3 +428,174 @@ describe('resolveSecrets over a config map', () => {
   });
 });
 
+
+describe('timeouts', () => {
+  beforeEach(() => {
+    process.env['SYMFONY_MCP_VAULT_TOKEN'] = 'test-token';
+    process.env['SYMFONY_MCP_VAULT_ADDR'] = 'https://vault.example.com';
+  });
+
+  test('a Vault read that never answers is rejected, not left hanging', async () => {
+    nextGetTimeout();
+    await expect(resolveSecret('vault:secret/data/app#k')).rejects.toThrow(/timed out/i);
+  });
+
+  test('an AppRole login that never answers is rejected', async () => {
+    delete process.env['SYMFONY_MCP_VAULT_TOKEN'];
+    process.env['SYMFONY_MCP_VAULT_ROLE_ID'] = 'r';
+    process.env['SYMFONY_MCP_VAULT_SECRET_ID'] = 's';
+    nextRequestTimeout();
+
+    await expect(resolveSecret('vault:secret/data/app#k')).rejects.toThrow(/timed out/i);
+  });
+
+  test('an SSM request that never answers is rejected', async () => {
+    process.env['AWS_ACCESS_KEY_ID'] = 'AKIAEXAMPLEEXAMPLE00';
+    process.env['AWS_SECRET_ACCESS_KEY'] = 'k';
+    process.env['AWS_REGION'] = 'eu-west-1';
+    nextRequestTimeout();
+
+    await expect(resolveSecret('ssm:/app/db')).rejects.toThrow(/timed out/i);
+  });
+
+  test('a Secrets Manager request that never answers is rejected', async () => {
+    process.env['AWS_ACCESS_KEY_ID'] = 'AKIAEXAMPLEEXAMPLE00';
+    process.env['AWS_SECRET_ACCESS_KEY'] = 'k';
+    process.env['AWS_REGION'] = 'eu-west-1';
+    nextRequestTimeout();
+
+    await expect(resolveSecret('aws-secret:app/creds')).rejects.toThrow(/timed out/i);
+  });
+});
+
+describe('AppRole token reuse', () => {
+  beforeEach(() => {
+    delete process.env['SYMFONY_MCP_VAULT_TOKEN'];
+    process.env['SYMFONY_MCP_VAULT_ADDR'] = 'https://vault.example.com';
+    process.env['SYMFONY_MCP_VAULT_ROLE_ID'] = 'role-1';
+    process.env['SYMFONY_MCP_VAULT_SECRET_ID'] = 'secret-1';
+  });
+
+  test('logs in once and reuses the token for a second path', async () => {
+    nextRequest(200, JSON.stringify({ auth: { client_token: 'approle-token' } }));
+    nextGet(200, JSON.stringify({ data: { data: { a: '1' } } }));
+    nextGet(200, JSON.stringify({ data: { data: { b: '2' } } }));
+
+    await resolveSecret('vault:secret/data/one#a');
+    await resolveSecret('vault:secret/data/two#b');
+
+    expect((https.request as unknown as jest.Mock)).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects when the login succeeds but returns no token', async () => {
+    nextRequest(200, JSON.stringify({ auth: {} }));
+    await expect(resolveSecret('vault:secret/data/app#k'))
+      .rejects.toThrow(/returned no token/i);
+  });
+});
+
+describe('AWS extras', () => {
+  beforeEach(() => {
+    process.env['AWS_ACCESS_KEY_ID'] = 'AKIAEXAMPLEEXAMPLE00';
+    process.env['AWS_SECRET_ACCESS_KEY'] = 'secret-key-material';
+    process.env['AWS_REGION'] = 'eu-west-1';
+  });
+
+  afterEach(() => {
+    delete process.env['AWS_SESSION_TOKEN'];
+  });
+
+  test('forwards a session token when one is set', async () => {
+    process.env['AWS_SESSION_TOKEN'] = 'sts-session-token';
+    nextRequest(200, JSON.stringify({ Parameter: { Value: 'v' } }));
+
+    await resolveSecret('ssm:/app/db');
+
+    const opts = (https.request as unknown as jest.Mock).mock.calls[0][0] as {
+      headers: Record<string, string>;
+    };
+    expect(opts.headers['x-amz-security-token']).toBe('sts-session-token');
+  });
+
+  test('forwards a session token to Secrets Manager too', async () => {
+    process.env['AWS_SESSION_TOKEN'] = 'sts-session-token';
+    nextRequest(200, JSON.stringify({ SecretString: '{"a":"1"}' }));
+
+    await resolveSecret('aws-secret:app/creds');
+
+    const opts = (https.request as unknown as jest.Mock).mock.calls[0][0] as {
+      headers: Record<string, string>;
+    };
+    expect(opts.headers['x-amz-security-token']).toBe('sts-session-token');
+  });
+
+  test('surfaces malformed SSM JSON', async () => {
+    nextRequest(200, 'not json at all');
+    await expect(resolveSecret('ssm:/app/db')).rejects.toThrow();
+  });
+
+  test('rejects a Secrets Manager field that is absent', async () => {
+    nextRequest(200, JSON.stringify({ SecretString: '{"other":"x"}' }));
+    await expect(resolveSecret('aws-secret:app/creds#missing'))
+      .rejects.toThrow(/field "missing"/);
+  });
+
+  test('rejects a secret with no SecretString', async () => {
+    nextRequest(200, JSON.stringify({ SecretBinary: 'ignored' }));
+    await expect(resolveSecret('aws-secret:app/creds'))
+      .rejects.toThrow(/no SecretString/);
+  });
+
+  test('serves a repeated SSM lookup from cache', async () => {
+    nextRequest(200, JSON.stringify({ Parameter: { Value: 'v' } }));
+
+    await resolveSecret('ssm:/app/db');
+    await resolveSecret('ssm:/app/db');
+
+    expect(https.request as unknown as jest.Mock).toHaveBeenCalledTimes(1);
+  });
+
+  test('serves a repeated Secrets Manager lookup from cache', async () => {
+    nextRequest(200, JSON.stringify({ SecretString: '{"a":"1"}' }));
+
+    await resolveSecret('aws-secret:app/creds#a');
+    await resolveSecret('aws-secret:app/creds#a');
+
+    expect(https.request as unknown as jest.Mock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TLS CA bundle', () => {
+  const caPath = path.join(os.tmpdir(), `vault-ca-${process.pid}.pem`);
+
+  beforeEach(() => {
+    process.env['SYMFONY_MCP_VAULT_TOKEN'] = 'test-token';
+    process.env['SYMFONY_MCP_VAULT_ADDR'] = 'https://vault.example.com';
+  });
+
+  afterEach(() => {
+    delete process.env['SYMFONY_MCP_VAULT_CA_BUNDLE'];
+    fs.rmSync(caPath, { force: true });
+    resetVaultTlsAgent();
+  });
+
+  test('loads a CA bundle when one is configured', async () => {
+    fs.writeFileSync(caPath, '-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----\n');
+    process.env['SYMFONY_MCP_VAULT_CA_BUNDLE'] = caPath;
+    resetVaultTlsAgent();
+    nextGet(200, JSON.stringify({ data: { data: { k: 'v' } } }));
+
+    await resolveSecret('vault:secret/data/app#k');
+
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('CA bundle loaded'));
+  });
+
+  test('warns and falls back to system CAs when the bundle is unreadable', async () => {
+    process.env['SYMFONY_MCP_VAULT_CA_BUNDLE'] = path.join(os.tmpdir(), 'no-such-ca.pem');
+    resetVaultTlsAgent();
+    nextGet(200, JSON.stringify({ data: { data: { k: 'v' } } }));
+
+    await expect(resolveSecret('vault:secret/data/app#k')).resolves.toBe('v');
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load CA bundle'));
+  });
+});

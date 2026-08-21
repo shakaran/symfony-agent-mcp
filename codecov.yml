@@ -18,7 +18,7 @@ coverage:
     project:
       default:
         # The security pipeline must not regress.
-        target: 90%
+        target: 96%
         threshold: 1%
         paths:
           - src/utils/
