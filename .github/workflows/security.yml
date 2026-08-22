@@ -18,7 +18,7 @@ permissions:
 jobs:
   # ── 1. CodeQL SAST ────────────────────────────────────────────────────────
   codeql:
-    name: CodeQL SAST (JavaScript/TypeScript)
+    name: CodeQL SAST (JavaScript/TypeScript + Actions)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,10 +51,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
+      # No explicit `category`: the action derives /language:<lang> per analysed
+      # language. Pinning one name would merge both languages into a single
+      # category and, worse, orphan the alerts filed under the previous name —
+      # nothing refreshes a category that no run reports on any more.
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
-        with:
-          category: '/language:javascript-typescript-actions'
 
   # ── 2. Secret scanning (Gitleaks) ─────────────────────────────────────────
   gitleaks:
