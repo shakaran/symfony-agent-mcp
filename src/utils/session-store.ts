@@ -16,7 +16,7 @@ import { estimateToolTokens } from './token-counter.js';
 export const DEFAULT_SESSION = 'default';
 export const DEFAULT_TOKEN_BUDGET = 40_000;
 
-function getTokenBudget(): number {
+export function getTokenBudget(): number {
   const v = parseInt(process.env['SYMFONY_MCP_TOKEN_BUDGET'] ?? '', 10);
   return isNaN(v) ? DEFAULT_TOKEN_BUDGET : v;
 }

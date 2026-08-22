@@ -87,7 +87,8 @@ import { clearVaultCache } from './utils/vault-resolver.js';
 import { checkToolAccess, filterAllowedTools } from './utils/tool-access-control.js';
 import { withConcurrencyLimit } from './utils/concurrency-limiter.js';
 import { toolRegistry } from './utils/tool-registry.js';
-import { sessionStore } from './utils/session-store.js';
+import { sessionStore, getTokenBudget } from './utils/session-store.js';
+import { CATEGORY_DESCRIPTIONS } from './utils/tool-categories.js';
 import {
   getToolDiscoveryTools,
   listToolCategories,
@@ -3281,11 +3282,6 @@ async function main(): Promise<void> {
   // Emit session token instructions so the client can configure itself
   emitTokenInstructions();
 
-  const server = new Server(
-    { name: 'symfony-agent-mcp', version: SERVER_VERSION },
-    { capabilities: { tools: {} } }
-  );
-
   const allTools = [
     ...getRouteTools(),
     ...getServiceTools(),
@@ -4119,9 +4115,45 @@ async function main(): Promise<void> {
   // Initialise registry once — assigns categories and builds the search index
   toolRegistry.init(allTools);
 
+  const dynamicMode = process.env['SYMFONY_MCP_DYNAMIC_TOOLS'] !== 'false';
+
+  // Published in the initialize response. Without it a client sees five tools
+  // and no way to know the other ~1,670 exist: in dynamic mode tools/list
+  // deliberately advertises only the discovery meta-tools until a category is
+  // activated, which is invisible unless the server says so.
+  const instructions = [
+    `Read-only introspection for a Symfony application: ${allTools.length} tools across`,
+    `${Object.keys(CATEGORY_DESCRIPTIONS).length} categories (routes, controllers, services, entities, Doctrine,`,
+    'migrations, events, forms, security, Messenger, Twig, API Platform, testing,',
+    'infrastructure and third-party integrations).',
+    '',
+    dynamicMode
+      ? [
+          'Tools are discovered progressively. tools/list starts with five meta-tools only;',
+          'the rest become callable once you activate the categories you need, which keeps',
+          `the advertised schema inside a ${String(getTokenBudget()).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}-token budget.`,
+          '',
+          'Start with list_tool_categories to see what exists, or search_tools with a task',
+          'description to find the right one. Then activate_category to make a category',
+          'callable, get_active_tools to see what is currently exposed, and',
+          'deactivate_category to free budget. Set SYMFONY_MCP_DYNAMIC_TOOLS=false to',
+          'advertise every tool at once instead.',
+        ].join('\n')
+      : 'Every tool is advertised up front (SYMFONY_MCP_DYNAMIC_TOOLS=false).',
+    '',
+    'Every tool takes an app_path pointing at the root of the Symfony application.',
+    'Nothing is executed and nothing is written: the tools parse files and',
+    'configuration only, and results are scanned for credentials before they are',
+    'returned.',
+  ].join('\n');
+
+  const server = new Server(
+    { name: 'symfony-agent-mcp', version: SERVER_VERSION },
+    { capabilities: { tools: {} }, instructions }
+  );
+
   const toolHandlers = buildToolHandlers();
 
-  const dynamicMode = process.env['SYMFONY_MCP_DYNAMIC_TOOLS'] !== 'false';
 
   // M. Rate-limit + anomaly-detect tools/list to prevent tool enumeration / scanning
   server.setRequestHandler(ListToolsRequestSchema, async (request) => {

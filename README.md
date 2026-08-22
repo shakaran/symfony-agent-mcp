@@ -10,6 +10,7 @@
 [![Build Status](https://github.com/shakaran/symfony-agent-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/shakaran/symfony-agent-mcp/actions)
 [![Coverage](https://codecov.io/gh/shakaran/symfony-agent-mcp/graph/badge.svg)](https://codecov.io/gh/shakaran/symfony-agent-mcp)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/shakaran/symfony-agent-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/shakaran/symfony-agent-mcp)
+[![Glama score](https://glama.ai/mcp/servers/shakaran/symfony-agent-mcp/badges/score.svg)](https://glama.ai/mcp/servers/shakaran/symfony-agent-mcp)
 
 [Features](#features) • [Quick Start](#quick-start) • [Integration](#integration) • [Usage](#usage) • [Documentation](#documentation) • [Contributing](#contributing) • [License](#license)
 

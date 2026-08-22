@@ -81,6 +81,58 @@ function advertisedTools(): Promise<string[]> {
   });
 }
 
+/** The initialize result, which is where `instructions` is published. */
+function initializeResult(): Promise<{ instructions?: string; serverInfo?: { name: string } }> {
+  return new Promise((resolve, reject) => {
+    const proc: ChildProcessWithoutNullStreams = spawn('node', [serverPath()], {
+      env: {
+        ...process.env,
+        SYMFONY_MCP_STARTUP_AUDIT: 'false',
+        SYMFONY_MCP_AUDIT: 'false',
+        SYMFONY_MCP_ANOMALY: 'false',
+        SYMFONY_MCP_RATE_LIMIT: '0',
+        NODE_ENV: 'test',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let buffer = '';
+    const timer = setTimeout(() => {
+      proc.kill();
+      reject(new Error('timed out waiting for initialize'));
+    }, 20000);
+    timer.unref();
+
+    proc.stderr.on('data', () => { /* suppress server logs */ });
+    proc.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line) as { id?: number; result?: Record<string, unknown> };
+          if (msg.id === 1) {
+            clearTimeout(timer);
+            proc.kill();
+            resolve((msg.result ?? {}) as { instructions?: string });
+          }
+        } catch {
+          // partial line
+        }
+      }
+    });
+
+    proc.stdin.write(JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05', capabilities: {},
+        clientInfo: { name: 'integrity-test', version: '1.0.0' },
+      },
+    }) + '\n');
+  });
+}
+
 /** The five discovery meta-tools are handlers that the static list omits. */
 const DISCOVERY_META_TOOLS = [
   'list_tool_categories', 'search_tools', 'activate_category',
@@ -127,5 +179,38 @@ describe('tool registry integrity', () => {
   test('the advertised list is not empty', () => {
     if (!fs.existsSync(serverPath())) return;
     expect(advertised.length).toBeGreaterThan(1000);
+  });
+});
+
+describe('initialize instructions', () => {
+  // Without these a client sees five tools and no way to learn the other ~1,670
+  // exist — dynamic mode hides them from tools/list by design. Directories that
+  // introspect the server report it as a five-tool server too.
+  let result: { instructions?: string; serverInfo?: { name: string } };
+
+  beforeAll(async () => {
+    if (!fs.existsSync(serverPath())) return;
+    result = await initializeResult();
+  }, 30000);
+
+  test('the server publishes instructions', () => {
+    if (!fs.existsSync(serverPath())) return;
+    expect(result.instructions).toBeTruthy();
+  });
+
+  test('they state the real tool count rather than the five advertised', () => {
+    if (!fs.existsSync(serverPath())) return;
+    const count = /(\d+) tools across/.exec(result.instructions ?? '');
+
+    expect(count).not.toBeNull();
+    expect(Number(count?.[1])).toBeGreaterThan(1000);
+  });
+
+  test('they name every discovery meta-tool, so the client can act on them', () => {
+    if (!fs.existsSync(serverPath())) return;
+
+    for (const tool of DISCOVERY_META_TOOLS) {
+      expect(result.instructions).toContain(tool);
+    }
   });
 });
