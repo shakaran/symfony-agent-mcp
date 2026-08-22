@@ -15,6 +15,7 @@ import {
   sanitizeConfig,
   sanitizeEnvironment,
   isPathSafe,
+  sanitizeDatabaseUrl,
 } from '../utils/security';
 
 let tmpDir: string;
@@ -165,5 +166,35 @@ describe('isPathSafe', () => {
     } finally {
       fs.rmSync(link, { force: true });
     }
+  });
+});
+
+describe('sanitizeDatabaseUrl', () => {
+  test('redacts the password and keeps the rest of the DSN readable', () => {
+    const out = sanitizeDatabaseUrl('postgresql://appuser:hunter2@db.example.com:5432/appdb');
+
+    expect(out).not.toContain('hunter2');
+    expect(out).toContain('appuser');
+    expect(out).toContain('db.example.com');
+  });
+
+  test('leaves a DSN with no credentials alone', () => {
+    const dsn = 'sqlite:///var/data.db';
+    expect(sanitizeDatabaseUrl(dsn)).toBe(dsn);
+  });
+
+  test('handles an empty value', () => {
+    expect(sanitizeDatabaseUrl('')).toBe('');
+  });
+
+  test('a long credential-less string does not blow up the matcher', () => {
+    // The old pattern backtracked polynomially here: two open-ended character
+    // classes with no @ to anchor the end.
+    const hostile = 'postgresql://' + 'a'.repeat(50_000);
+
+    const start = Date.now();
+    sanitizeDatabaseUrl(hostile);
+
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 });

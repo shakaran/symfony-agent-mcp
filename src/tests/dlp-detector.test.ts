@@ -7,6 +7,7 @@ import {
   GCP_API_KEY,
   SLACK_BOT_TOKEN_SHORT,
   SLACK_WEBHOOK_URL,
+  AWS_STS_ACCESS_KEY,
 } from '../fuzz/secret-fixtures';
 
 
@@ -43,7 +44,7 @@ describe('AWS key detection', () => {
   });
 
   test('detects ASIA (STS) key prefix', () => {
-    const matches = scanText('ASIAIOSFODNN7EXAMPLE');
+    const matches = scanText(AWS_STS_ACCESS_KEY);
     expect(matches.some((m) => m.type === 'AWS_ACCESS_KEY')).toBe(true);
   });
 

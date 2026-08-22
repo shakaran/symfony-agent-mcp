@@ -22,11 +22,6 @@ function getPestVersion(appPath: string): string | undefined {
   } catch { return undefined; }
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function getAllPhpFiles(dir: string): string[] {
   const files: string[] = [];

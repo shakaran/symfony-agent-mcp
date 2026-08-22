@@ -153,7 +153,9 @@ export function sanitizeDatabaseUrl(url: string): string {
   if (!url) return url;
 
   // PostgreSQL, MySQL, etc.
-  const pattern = /(:\/\/[^:]+:)([^@]+)(@)/;
+  // Excluding / and @ from both halves keeps this linear: with a bare
+  // `[^:]+ ... [^@]+` a long DSN with no @ backtracks polynomially.
+  const pattern = /(:\/\/[^:@/]+:)([^@/]+)(@)/;
   return url.replace(pattern, '$1[REDACTED]$3');
 }
 

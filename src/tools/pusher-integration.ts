@@ -137,7 +137,7 @@ function buildPusherIntegrationInfos(appPath: string): PusherIntegrationInfo[] {
       if (hardcoded) {
         const ctorArgs = hardcoded[0];
         // Check if args look like raw strings rather than env references
-        if (!/getenv|\\$_ENV|\$this->|->get\(/.test(ctorArgs)) {
+        if (!/getenv|\$_ENV|\$this->|->get\(/.test(ctorArgs)) {
           results.push({
             source: relFile,
             type: 'php',

@@ -31,11 +31,6 @@ import * as path from 'path';
 import { parseYamlFile } from '../utils/symfony-parser.js';
 import { McpToolResult } from '../server.js';
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 interface FilterConfig {
   name: string;

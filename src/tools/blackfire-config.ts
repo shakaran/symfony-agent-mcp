@@ -40,11 +40,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function checkComposer(appPath: string): { sdkInstalled: boolean; sdkVersion?: string; extBlackfire: boolean } {
   const composerJson = path.join(appPath, 'composer.json');

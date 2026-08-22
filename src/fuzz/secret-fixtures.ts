@@ -76,3 +76,9 @@ export const GITHUB_PAT = token(
 
 /** GCP API key, `AIza` + 35 chars. */
 export const GCP_API_KEY = token('AIza', 'SyD_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456');
+
+// ─── AWS ──────────────────────────────────────────────────────────────────────
+
+/** AWS's published example key, temporary-credential (STS) variant. Split
+ *  because scanners allowlist the AKIA form but flag this one. */
+export const AWS_STS_ACCESS_KEY = token('AS', 'IA', 'IOSFODNN7EXAMPLE');

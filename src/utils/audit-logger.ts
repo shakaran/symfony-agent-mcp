@@ -270,7 +270,11 @@ function toCef(entry: AuditEntry): string {
     `appHash=${entry.appHash}`,
     `durationMs=${entry.durationMs}`,
     `outcome=${entry.success ? 'success' : 'failure'}`,
-    entry.errorMsg ? `msg=${entry.errorMsg.replace(/\|/g, '\\|').replace(/=/g, '\\=')}` : '',
+    // Backslash first: escaping | before \ would make an existing \| in the
+    // message indistinguishable from one this escaping produced.
+    entry.errorMsg
+      ? `msg=${entry.errorMsg.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/=/g, '\\=')}`
+      : '',
   ].filter(Boolean).join(' ');
 
   return `${CEF_HEADER}|${entry.tool}|${name}|${sev}|${ext}`;

@@ -25,11 +25,6 @@ import * as path from 'path';
 import { McpToolResult } from '../server.js';
 import { parseYamlFile } from '../utils/symfony-parser.js';
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 interface DoctrineChangeTrackingInfo {
   file: string;

@@ -122,6 +122,16 @@ describe('CEF output', () => {
     expect(content).toContain('a\\|b\\=c');
   });
 
+  test('escapes the backslash before the characters it introduces', async () => {
+    // A message that already contains \| must not become indistinguishable
+    // from one where the escaping produced it.
+    await fail('list_routes', 'path a\\|b');
+    const line = fs.readFileSync(logPath, 'utf-8')
+      .split('\n').find((l) => l.startsWith('CEF:'))!;
+
+    expect(line).toContain('a\\\\\\|b');
+  });
+
   test('raises the severity for a failure', async () => {
     await fail();
     // CEF severity is the 7th pipe-delimited field.

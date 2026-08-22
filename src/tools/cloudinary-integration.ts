@@ -134,7 +134,7 @@ function buildCloudinaryIntegrationInfos(appPath: string): CloudinaryIntegration
     const hardcodedSecret = /Cloudinary::config\s*\([^)]{0,500}api_secret[^)]{0,200}\)/.exec(content);
     if (hardcodedSecret) {
       const args = hardcodedSecret[0];
-      if (!/getenv|\\$_ENV|\$this->|->get\(|%env/.test(args)) {
+      if (!/getenv|\$_ENV|\$this->|->get\(|%env/.test(args)) {
         results.push({
           source: relFile,
           type: 'php',
