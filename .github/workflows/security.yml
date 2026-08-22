@@ -27,7 +27,20 @@ jobs:
         # `/language:<name>` category. Analysing both in a single job would
         # force them to share one category, and whichever uploaded second
         # would replace the other's results.
-        language: [javascript-typescript, actions]
+        include:
+          - language: javascript-typescript
+            category: '/language:javascript-typescript'
+          - language: actions
+            category: '/language:actions'
+          # TEMPORARY — remove after one green run. Two earlier commits
+          # uploaded under these names; the alerts filed there stay open until
+          # something reports on the same category again, and nothing does.
+          # Re-running the analysis under each supersedes the stale results
+          # with the current, fixed source, which closes them.
+          - language: javascript-typescript
+            category: '/language:javascript-typescript-actions'
+          - language: javascript-typescript
+            category: '.github/workflows/security.yml:codeql'
     permissions:
       contents: read
       security-events: write  # upload CodeQL results
@@ -64,7 +77,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
-          category: '/language:${{ matrix.language }}'
+          category: ${{ matrix.category }}
 
   # ── 2. Secret scanning (Gitleaks) ─────────────────────────────────────────
   gitleaks:
