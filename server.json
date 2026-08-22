@@ -1,0 +1,77 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.shakaran/symfony-agent-mcp",
+  "title": "Symfony Agent MCP",
+  "description": "Read-only Symfony introspection: routes, services, entities, Doctrine, security, Twig and more.",
+  "version": "1.0.2",
+  "websiteUrl": "https://github.com/shakaran/symfony-agent-mcp",
+  "repository": {
+    "url": "https://github.com/shakaran/symfony-agent-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@shakaran/symfony-agent-mcp",
+      "version": "1.0.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SYMFONY_MCP_DYNAMIC_TOOLS",
+          "description": "Progressive tool discovery. Left on, tools/list advertises five discovery meta-tools and the rest become callable once a category is activated (~828 tokens on connect). Set to false to advertise all 1,677 up front (~154,000).",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "boolean",
+          "default": "true"
+        },
+        {
+          "name": "SYMFONY_MCP_TOKEN_BUDGET",
+          "description": "Token ceiling for the schemas a session may have active at once.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "number",
+          "default": "40000"
+        },
+        {
+          "name": "SYMFONY_MCP_ALLOWED_PATHS",
+          "description": "Colon-separated allowlist of directories the server may read. Any app_path outside them is refused.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "filepath"
+        },
+        {
+          "name": "SYMFONY_MCP_SESSION_SECRET",
+          "description": "Enables session-token authentication. Unset, authentication is off.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SYMFONY_MCP_SESSION_TOKEN",
+          "description": "Client-side token, required only once SYMFONY_MCP_SESSION_SECRET is set.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SYMFONY_MCP_AUDIT",
+          "description": "Encrypted audit log of every tool call.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "boolean",
+          "default": "true"
+        },
+        {
+          "name": "SYMFONY_MCP_DLP",
+          "description": "Scan every result for credentials before returning it. Turning this off is reported as CRITICAL by the startup audit.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "boolean",
+          "default": "true"
+        }
+      ]
+    }
+  ]
+}

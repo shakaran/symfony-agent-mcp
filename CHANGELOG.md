@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-08-23
+
+### Added
+
+- The server now publishes `instructions` in its `initialize` response. With
+  progressive discovery on, `tools/list` advertises five meta-tools and hides
+  the other 1,672 until a category is activated — a client had no way to learn
+  they existed. The instructions carry the real tool count, the category count,
+  the five meta-tools by name, the `SYMFONY_MCP_DYNAMIC_TOOLS=false` escape
+  hatch, and the read-only guarantee. They cost 261 tokens; advertising every
+  schema up front costs about 154,000.
+
+- `server.json`, so the server can be published to the official MCP Registry,
+  and `mcpName` in `package.json`, which is how the registry verifies that the
+  npm package belongs to the claimed namespace.
+
+- `glama.json` naming the maintainer, and `smithery.yaml` describing how to
+  launch the server over stdio with its optional configuration.
+
+- `registry-metadata` test suite, asserting that `server.json` and
+  `package.json` agree on name, namespace, version and npm identifier, that
+  the description fits the registry's 100-character limit, and that no
+  environment variable is marked required. Three values have to be bumped
+  together in two files at every release; getting it wrong only surfaces as a
+  failed publish.
+
+### Fixed
+
+- `symfony-health-endpoint-security` only ever scanned files already named
+  `*health*`, `*ping*` or `*status*`: the filename check ran `continue` before
+  the route check, so the `HEALTH_PATHS` lookup below it could never change the
+  outcome. A health endpoint declared in a differently-named controller was
+  skipped. Either signal now qualifies.
+
+- `symfony-translation-yaml-lint` built its domain map as a plain object, so
+  `hasOwnProperty(map, '__proto__')` read false, the guarded assignment went
+  through the prototype setter, and the write landed on the map's prototype
+  instead of an own key. Both levels now have a null prototype.
+
+- `doctrine-dbal-driveroptions` and `php-gd-security` each tested the same
+  condition on both sides of an `||`.
+
+- `http-cache` coerced `trusted_proxies` and `trusted_headers` with `?? []`
+  inside an `if` that had already excluded nullish values; a non-array in YAML
+  passed straight through the cast. Both now check `Array.isArray`.
+
+### Changed
+
+- CodeQL scans GitHub Actions workflows alongside JavaScript/TypeScript, one
+  job per language so each keeps its own alert category.
+
 ## [1.0.1] - 2026-08-21
 
 ### Fixed

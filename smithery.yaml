@@ -1,0 +1,52 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+#
+# Nothing here is required to start the server: it runs with no configuration
+# at all. Every option below is opt-in hardening or tuning, so `required` is
+# deliberately absent from the schema.
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      dynamicTools:
+        type: boolean
+        default: true
+        description: >-
+          Progressive tool discovery. Left on, tools/list advertises five
+          discovery meta-tools and the other 1,672 become callable once a
+          category is activated — about 828 tokens on connect instead of
+          154,000. Turn off to advertise every tool up front.
+      tokenBudget:
+        type: number
+        default: 40000
+        description: >-
+          Token ceiling for the tool schemas a session may have active at once.
+      allowedPaths:
+        type: string
+        description: >-
+          Colon-separated allowlist of directories the server may read. Any
+          app_path outside them is refused.
+      sessionSecret:
+        type: string
+        description: >-
+          Enables session-token authentication. Left unset, authentication is
+          off.
+      auditLog:
+        type: boolean
+        default: true
+        description: Encrypted audit log of every tool call.
+  commandFunction:
+    |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', '@shakaran/symfony-agent-mcp@latest'],
+      env: {
+        ...(config.dynamicTools === false ? { SYMFONY_MCP_DYNAMIC_TOOLS: 'false' } : {}),
+        ...(config.tokenBudget ? { SYMFONY_MCP_TOKEN_BUDGET: String(config.tokenBudget) } : {}),
+        ...(config.allowedPaths ? { SYMFONY_MCP_ALLOWED_PATHS: config.allowedPaths } : {}),
+        ...(config.sessionSecret ? { SYMFONY_MCP_SESSION_SECRET: config.sessionSecret } : {}),
+        ...(config.auditLog === false ? { SYMFONY_MCP_AUDIT: 'false' } : {})
+      }
+    })
+  exampleConfig: {}
