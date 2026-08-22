@@ -161,7 +161,7 @@ function loadHttpCacheConfig(appPath: string): HttpCacheConfig {
   if (trustedHeaders) {
     config.trustedHeaders = typeof trustedHeaders === 'string'
       ? trustedHeaders.split(',').map((h) => h.trim())
-      : (trustedHeaders as string[]) ?? [];
+      : Array.isArray(trustedHeaders) ? (trustedHeaders as string[]) : [];
   }
 
   return config;

@@ -64,7 +64,7 @@ function parseLocaleAndDomain(filename: string): { locale: string; domain: strin
   return { locale: 'unknown', domain: parts[0] ?? 'messages', format: parts[parts.length - 1] ?? 'yaml' };
 }
 
-function parseYamlTranslations(content: string, prefix = ''): Map<string, string> {
+function parseYamlTranslations(content: string): Map<string, string> {
   const keys = new Map<string, string>();
   const lines = content.split('\n');
   const stack: Array<{ indent: number; key: string }> = [];
@@ -83,7 +83,7 @@ function parseYamlTranslations(content: string, prefix = ''): Map<string, string
     const key = kvMatch[2].trim();
     const val = kvMatch[3].trim();
     const parentKey = stack.length > 0 ? `${stack[stack.length - 1]?.key ?? ''}.` : '';
-    const fullKey = prefix ? `${prefix}.${parentKey}${key}` : `${parentKey}${key}`;
+    const fullKey = `${parentKey}${key}`;
 
     if (val !== '') {
       keys.set(fullKey, val.replace(/^['"]|['"]$/g, ''));

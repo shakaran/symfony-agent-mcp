@@ -70,12 +70,13 @@ function buildSymfonyHealthEndpointSecurityInfos(appPath: string): HealthEndpoin
     for (const file of getAllPhpFiles(srcDir)) {
       const fileName = path.basename(file).toLowerCase();
       const isHealthController = fileName.includes('health') || fileName.includes('ping') || fileName.includes('status');
-      if (!isHealthController) continue;
 
       const content = readFileSafe(file);
       const rel = path.relative(appPath, file);
 
-      // Check if file is a health controller via route annotation/attribute
+      // Either signal identifies a health endpoint: the filename, or a health
+      // route declared in an annotation/attribute. The filename check used to
+      // `continue` on its own, which made the route check below unreachable.
       const hasHealthRoute = HEALTH_PATHS.some((p) => content.includes(p));
       if (!hasHealthRoute && !isHealthController) continue;
 

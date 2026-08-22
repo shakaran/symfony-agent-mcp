@@ -83,7 +83,7 @@ function parseFirstClassCallableFile(filePath: string, appPath: string): FirstCl
   // Count array callables
   let arrayCallableCount = 0;
   const arrRe = /\[\s*(?:\$\w{1,80}|\$this|[A-Z]\w{0,80}::class)\s*,\s*['"][^'"]{1,80}['"]\s*\]/g;
-  while ((m = arrRe.exec(content)) !== null) {
+  while (arrRe.exec(content) !== null) {
     arrayCallableCount++;
   }
 

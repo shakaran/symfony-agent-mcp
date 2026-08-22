@@ -118,7 +118,7 @@ function analyzeConnection(connectionName: string, block: string, file: string):
     issues.push('PDO::ATTR_STRINGIFY_FETCHES is true — all column values returned as strings, losing PHP type safety for integers/booleans; set to false');
   }
 
-  if (charset === 'utf8' && (driver.includes('mysql') || driver.includes('mysql'))) {
+  if (charset === 'utf8' && driver.includes('mysql')) {
     issues.push('charset: utf8 is set — this does NOT reliably set the connection charset via PDO; use driverOptions with "SET NAMES utf8mb4" or charset: utf8mb4 and verify PDO behavior');
   }
 
