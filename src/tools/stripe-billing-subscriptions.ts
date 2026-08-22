@@ -195,16 +195,15 @@ function buildStripeBillingSubscriptionsInfos(appPath: string): StripeBillingSub
   });
 
   // Check for missing critical webhook event handlers
-  if (hasStripe) {
-    const criticalEvents: Array<[string, string]> = [
-      ['invoice.payment_failed', 'invoice.payment_failed not handled — payment failures go unnoticed causing silent subscription churn; handle this event to notify customers and trigger dunning logic'],
-      ['customer.subscription.deleted', 'customer.subscription.deleted not handled — subscription cancellation not detected; handle this event to revoke access and update user entitlements immediately'],
-    ];
+  // hasStripe is guaranteed above: the scan returns early without it.
+  const criticalEvents: Array<[string, string]> = [
+    ['invoice.payment_failed', 'invoice.payment_failed not handled — payment failures go unnoticed causing silent subscription churn; handle this event to notify customers and trigger dunning logic'],
+    ['customer.subscription.deleted', 'customer.subscription.deleted not handled — subscription cancellation not detected; handle this event to revoke access and update user entitlements immediately'],
+  ];
 
-    for (const [event, message] of criticalEvents) {
-      if (!detectedWebhookEvents.has(event)) {
-        results.push({ source: 'src/', type: 'webhook', detail: `Missing webhook: ${event}`, issue: message });
-      }
+  for (const [event, message] of criticalEvents) {
+    if (!detectedWebhookEvents.has(event)) {
+      results.push({ source: 'src/', type: 'webhook', detail: `Missing webhook: ${event}`, issue: message });
     }
   }
 

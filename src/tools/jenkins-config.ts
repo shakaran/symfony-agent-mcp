@@ -52,7 +52,7 @@ function parseJenkinsfile(content: string, relPath: string): JenkinsConfigInfo[]
     for (const line of lines) {
       const kvMatch = line.match(/^\s*(\w{1,80})\s*=\s*["']([^"']{0,200})["']/);
       if (!kvMatch) continue;
-      const [, envKey, envVal] = kvMatch;
+      const envKey = kvMatch[1];
       if (/password|secret|token|key|credential|\bpass\b|\bcert\b|\bdsn\b|auth/i.test(envKey) && !/credentials\(/.test(line)) {
         results.push({
           file: relPath,

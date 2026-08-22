@@ -31,7 +31,9 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
-          languages: javascript-typescript
+          # `actions` too, so findings about the workflows are re-evaluated
+          # when the workflows change rather than sticking at first scan.
+          languages: javascript-typescript,actions
           # Extended security queries — covers OWASP Top 10
           queries: security-extended,security-and-quality
 
@@ -52,7 +54,7 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
-          category: '/language:javascript-typescript'
+          category: '/language:javascript-typescript-actions'
 
   # ── 2. Secret scanning (Gitleaks) ─────────────────────────────────────────
   gitleaks:

@@ -197,7 +197,7 @@ export function getPhpGdSecurityStats(appPath: string): McpToolResult {
     const fromString = infos.filter((i) => i.fn === 'imagecreatefromstring').length;
     const missingValidation = infos.filter((i) => i.issue.includes('without nearby')).length;
     const filesUpload = infos.filter((i) => i.issue.includes('$_FILES')).length;
-    const variablePath = infos.filter((i) => i.issue.includes('variable path') || i.issue.includes('variable path')).length;
+    const variablePath = infos.filter((i) => i.issue.includes('variable path')).length;
     const imagick = infos.filter((i) => i.fn === 'new Imagick').length;
 
     const byFile = new Map<string, number>();

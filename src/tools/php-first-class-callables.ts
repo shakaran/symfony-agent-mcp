@@ -76,7 +76,7 @@ function parseFirstClassCallableFile(filePath: string, appPath: string): FirstCl
   // Count Closure::fromCallable
   let closureFromCallableCount = 0;
   const cloRe = /Closure::fromCallable\s*\([^)]{0,200}\)/g;
-  while ((m = cloRe.exec(content)) !== null) {
+  while (cloRe.exec(content) !== null) {
     closureFromCallableCount++;
   }
 

@@ -337,7 +337,7 @@ function detectUnusedCommands(appPath: string): UnusedCommand[] {
     // A command is "used" if its name appears in Makefile, CI, other PHP, or test files
     const isReferenced =
       combinedContent.includes(className) ||
-      (commandName && combinedContent.includes(commandName));
+      combinedContent.includes(commandName);
 
     if (!isReferenced) {
       unused.push({

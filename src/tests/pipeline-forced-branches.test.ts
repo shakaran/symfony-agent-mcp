@@ -11,11 +11,6 @@
  * server refuses to start, or a half-written audit log is cleaned up.
  */
 
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
 import {
   scanText, redactText,
 } from '../utils/dlp-detector';

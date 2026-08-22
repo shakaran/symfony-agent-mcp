@@ -51,7 +51,7 @@ describe('guardAppPath', () => {
   });
 
   test('rejects file path (not a directory)', () => {
-    const tmpFile = path.join(os.tmpdir(), 'test-file.txt');
+    const tmpFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'guard-file-')), 'test-file.txt');
     fs.writeFileSync(tmpFile, 'content');
     const result = guardAppPath(tmpFile);
     expect(result.allowed).toBe(false);

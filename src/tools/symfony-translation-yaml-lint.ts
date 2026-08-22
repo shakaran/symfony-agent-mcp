@@ -108,7 +108,12 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
   const files = collectTranslationFiles(translationsDir, appPath);
 
   // Per-file analysis
-  const domainLocaleKeys: Record<string, Record<string, string[]>> = {};
+  // Object.create(null) on both levels: `domain` comes from a filename and
+  // `locale` from its suffix, so messages.__proto__.yaml would otherwise reach
+  // the prototype setter and the write would land on the map's prototype
+  // instead of creating an own key.
+  const domainLocaleKeys: Record<string, Record<string, string[]>> =
+    Object.create(null) as Record<string, Record<string, string[]>>;
 
   for (const file of files) {
     const content = safeRead(file, appPath);
@@ -118,9 +123,7 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
     const { keys, emptyKeys } = extractFlatKeys(content);
 
     // Track for cross-locale comparison
-    // Object.create(null): `domain` comes from a filename, and a file called
-    // __proto__.en.yaml would otherwise write through the prototype.
-    if (!Object.prototype.hasOwnProperty.call(domainLocaleKeys, domain)) {
+    if (domainLocaleKeys[domain] === undefined) {
       domainLocaleKeys[domain] = Object.create(null) as Record<string, string[]>;
     }
     domainLocaleKeys[domain][locale] = keys;

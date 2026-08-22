@@ -154,7 +154,7 @@ function loadHttpCacheConfig(appPath: string): HttpCacheConfig {
   if (trusted) {
     config.trustedProxies = typeof trusted === 'string'
       ? [trusted]
-      : (trusted as string[]) ?? [];
+      : Array.isArray(trusted) ? (trusted as string[]) : [];
   }
 
   const trustedHeaders = fw['trusted_headers'];

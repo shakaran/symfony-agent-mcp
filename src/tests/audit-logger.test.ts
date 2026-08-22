@@ -7,7 +7,7 @@ import { withAudit, readRecentAuditEntries } from '../utils/audit-logger';
 let tmpLogFile: string;
 
 beforeEach(() => {
-  tmpLogFile = path.join(os.tmpdir(), `audit-test-${Date.now()}.log`);
+  tmpLogFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'audit-test-')), 'audit.log');
   process.env['SYMFONY_MCP_AUDIT_LOG'] = tmpLogFile;
   process.env['SYMFONY_MCP_AUDIT'] = 'true';
 

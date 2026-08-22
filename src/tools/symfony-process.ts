@@ -84,7 +84,7 @@ function extractProcessCalls(content: string): ProcessCall[] {
   // new Process([...]) — array form (safe)
   const arrayRe = /new\s+Process\s*\(\s*\[/g;
   let m: RegExpExecArray | null;
-  while ((m = arrayRe.exec(content)) !== null) {
+  while (arrayRe.exec(content) !== null) {
     calls.push({ type: 'array', hasShellInjectionRisk: false, usesShellEmulation: false });
   }
 
