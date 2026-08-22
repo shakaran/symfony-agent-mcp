@@ -294,7 +294,7 @@ function extractAttrValue(attrContent: string, keyOrPosition: string | number): 
   }
 
   // Named argument
-  const regex = new RegExp(`\\b${keyOrPosition}\\s*:\\s*['"]((?:[^'"\\\\]|\\\\.)*)['"']`);
+  const regex = new RegExp(`\\b${keyOrPosition}\\s*:\\s*['"]((?:[^'"\\\\]|\\\\.)*)['"]`);
   const match = regex.exec(attrContent);
   return match ? match[1] : '';
 }
@@ -504,7 +504,7 @@ function parseEntityRelationships(content: string): EntityRelationship[] {
       const attrArgs = match[1];
       const propName = match[2];
 
-      const targetMatch = /targetEntity\s*:\s*(?:(\w+)::class|['"]([\w\\]+)['"'])/i.exec(attrArgs);
+      const targetMatch = /targetEntity\s*:\s*(?:(\w+)::class|['"]([\w\\]+)['"])/i.exec(attrArgs);
       const targetEntity = targetMatch ? (targetMatch[1] || targetMatch[2]) : 'Unknown';
 
       const mappedByMatch = /mappedBy\s*:\s*['"]([\w]+)['"]/i.exec(attrArgs);

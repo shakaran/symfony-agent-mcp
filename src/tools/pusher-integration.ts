@@ -162,7 +162,7 @@ function buildPusherIntegrationInfos(appPath: string): PusherIntegrationInfo[] {
     }
 
     // Webhook signature validation missing
-    const isWebhookController = /webhook|pusher.*event|handle.*pusher/i.test(relFile) ||
+    const isWebhookController = /webhook|pusher[^/]{0,64}event|handle[^/]{0,64}pusher/i.test(relFile) ||
       /pusher.*webhook|handlePusher|pusherWebhook/i.test(content);
     if (isWebhookController) {
       const hasHmac = content.includes('hash_hmac') || content.includes('verifySignature') || content.includes('X-Pusher-Signature');

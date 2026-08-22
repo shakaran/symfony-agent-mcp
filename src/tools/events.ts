@@ -139,8 +139,8 @@ function parseAsEventListenerAttributes(
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(content)) !== null) {
     const args = m[1];
-    const eventMatch = /event\s*:\s*['"]([\w.]+)['"']/.exec(args);
-    const methodMatch = /method\s*:\s*['"]([\w]+)['"']/.exec(args);
+    const eventMatch = /event\s*:\s*['"]([\w.]+)['"]/.exec(args);
+    const methodMatch = /method\s*:\s*['"]([\w]+)['"]/.exec(args);
     const priorityMatch = /priority\s*:\s*(-?\d+)/.exec(args);
     if (eventMatch) {
       events.push({
@@ -167,7 +167,7 @@ function parseListenerFile(content: string, _filePath: string): EventListener[] 
   while ((m = attrPattern.exec(content)) !== null) {
     const args = m[1];
     const method = m[2];
-    const eventMatch = /event\s*:\s*['"]([\w.]+)['"']/.exec(args);
+    const eventMatch = /event\s*:\s*['"]([\w.]+)['"]/.exec(args);
     const priorityMatch = /priority\s*:\s*(-?\d+)/.exec(args);
     listeners.push({
       event: eventMatch ? eventMatch[1] : 'unknown',
@@ -183,7 +183,7 @@ function parseListenerFile(content: string, _filePath: string): EventListener[] 
     const classAttr = /#\[AsEventListener\(([^)]+)\)\][\s\S]*?class\s+\w+/.exec(content);
     if (classAttr) {
       const args = classAttr[1];
-      const eventMatch = /event\s*:\s*['"]([\w.]+)['"']/.exec(args);
+      const eventMatch = /event\s*:\s*['"]([\w.]+)['"]/.exec(args);
       if (eventMatch) {
         listeners.push({
           event: eventMatch[1],

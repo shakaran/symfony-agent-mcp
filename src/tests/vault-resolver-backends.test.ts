@@ -566,16 +566,21 @@ describe('AWS extras', () => {
 });
 
 describe('TLS CA bundle', () => {
-  const caPath = path.join(os.tmpdir(), `vault-ca-${process.pid}.pem`);
+  // A private directory rather than a guessable name in the shared temp dir:
+  // another user could pre-create that path and have the test read theirs.
+  let caDir: string;
+  let caPath: string;
 
   beforeEach(() => {
     process.env['SYMFONY_MCP_VAULT_TOKEN'] = 'test-token';
     process.env['SYMFONY_MCP_VAULT_ADDR'] = 'https://vault.example.com';
+    caDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-ca-'));
+    caPath = path.join(caDir, 'bundle.pem');
   });
 
   afterEach(() => {
     delete process.env['SYMFONY_MCP_VAULT_CA_BUNDLE'];
-    fs.rmSync(caPath, { force: true });
+    fs.rmSync(caDir, { recursive: true, force: true });
     resetVaultTlsAgent();
   });
 
@@ -591,7 +596,7 @@ describe('TLS CA bundle', () => {
   });
 
   test('warns and falls back to system CAs when the bundle is unreadable', async () => {
-    process.env['SYMFONY_MCP_VAULT_CA_BUNDLE'] = path.join(os.tmpdir(), 'no-such-ca.pem');
+    process.env['SYMFONY_MCP_VAULT_CA_BUNDLE'] = path.join(caDir, 'no-such-ca.pem');
     resetVaultTlsAgent();
     nextGet(200, JSON.stringify({ data: { data: { k: 'v' } } }));
 

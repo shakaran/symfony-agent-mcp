@@ -188,7 +188,7 @@ function buildPaypalCheckoutV2Infos(appPath: string): PaypalCheckoutV2Info[] {
 
     // Hardcoded client secret
     const hasHardcodedSecret = /(?:new\s+(?:Sandbox|Production)Environment|PayPalHttpClient)\s*\([^)]{0,200}(?:client_secret|secret)[^)]{0,100}\)/i.test(content) ||
-      /['""][A-Za-z0-9_-]{20,}['""]\s*,\s*['""][A-Za-z0-9_-]{20,}['""]\s*\)/.test(content);
+      /['"][A-Za-z0-9_-]{20,}['"]\s*,\s*['"][A-Za-z0-9_-]{20,}['"]\s*\)/.test(content);
     if (hasHardcodedSecret) {
       results.push({
         source: relFile,

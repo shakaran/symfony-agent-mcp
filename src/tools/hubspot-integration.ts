@@ -132,7 +132,7 @@ function buildHubspotIntegrationInfos(appPath: string): HubspotIntegrationInfo[]
     }
 
     // Webhook processing without HMAC validation
-    const isWebhookHandler = /webhook|hubspot.*event|handle.*hubspot/i.test(relFile) ||
+    const isWebhookHandler = /webhook|hubspot[^/]{0,64}event|handle[^/]{0,64}hubspot/i.test(relFile) ||
       /hubspot.*webhook|handleHubspot|hubspotWebhook/i.test(content);
     if (isWebhookHandler) {
       const hasHmac = content.includes('hash_hmac') || content.includes('X-HubSpot-Signature') || content.includes('hubspot_signature');

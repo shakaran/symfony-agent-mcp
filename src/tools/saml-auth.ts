@@ -11,7 +11,9 @@ interface SamlAuthInfo {
 }
 
 function safeKeyPath(p: string): string {
-  return p.replace(/\S+\.(key|p12|pfx|der|crt|pem)$/i, '[KEY-PATH]');
+  // Anchored: an unanchored `\S+` before the extension backtracks across the
+  // whole path on every near-miss.
+  return p.replace(/^\S+\.(key|p12|pfx|der|crt|pem)$/i, '[KEY-PATH]');
 }
 
 function buildSamlAuthInfos(appPath: string): SamlAuthInfo[] {

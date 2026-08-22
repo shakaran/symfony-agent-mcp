@@ -41,7 +41,7 @@ function scanRepositoryQueries(filePath: string, appPath: string): RepositoryQue
   if (!hasDql && !hasSql && !hasQb) return [];
   const hasMaxResults = content.includes('->setMaxResults(') || content.includes('setMaxResults');
   const hasFirstResult = content.includes('->setFirstResult(');
-  const hasSqlInjectionRisk = /createNativeQuery\s*\(\s*['""][^'"]*\.\s*\$/.test(content) || /getConnection\(\)->executeQuery\s*\(\s*['""][^'"]*\.\s*\$/.test(content);
+  const hasSqlInjectionRisk = /createNativeQuery\s*\(\s*['"][^'"]*\.\s*\$/.test(content) || /getConnection\(\)->executeQuery\s*\(\s*['"][^'"]*\.\s*\$/.test(content);
   const issues: string[] = [];
   if ((hasDql || hasQb) && !hasMaxResults) issues.push('DQL/QueryBuilder without setMaxResults() — unbounded query; set a page size');
   if (hasSqlInjectionRisk) issues.push('Native SQL with string concatenation — potential SQL injection; use parameterized queries');

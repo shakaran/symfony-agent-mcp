@@ -145,7 +145,7 @@ function parseCommandFile(content: string, filePath: string): ConsoleCommand | n
 function parseArguments(content: string): CommandArgument[] {
   const args: CommandArgument[] = [];
   // ->addArgument('name', InputArgument::REQUIRED, 'description', 'default')
-  const pattern = /->addArgument\(\s*['"](\w+)['"]\s*(?:,\s*(InputArgument::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"'])?\s*(?:,\s*['"]([^'"]*)['"'])?\s*\)/g;
+  const pattern = /->addArgument\(\s*['"](\w+)['"]\s*(?:,\s*(InputArgument::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"])?\s*(?:,\s*['"]([^'"]*)['"])?\s*\)/g;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(content)) !== null) {
     const modeStr = m[2] ?? 'InputArgument::OPTIONAL';
@@ -165,7 +165,7 @@ function parseArguments(content: string): CommandArgument[] {
 function parseOptions(content: string): CommandOption[] {
   const opts: CommandOption[] = [];
   // ->addOption('name', 'n', InputOption::VALUE_REQUIRED, 'description', 'default')
-  const pattern = /->addOption\(\s*['"](\w+)['"]\s*(?:,\s*(?:null|['"](\w+)['"']))?\s*(?:,\s*(InputOption::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"'])?\s*(?:,\s*['"]([^'"]*)['"'])?\s*\)/g;
+  const pattern = /->addOption\(\s*['"](\w+)['"]\s*(?:,\s*(?:null|['"](\w+)['"]))?\s*(?:,\s*(InputOption::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"])?\s*(?:,\s*['"]([^'"]*)['"])?\s*\)/g;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(content)) !== null) {
     const modeStr = m[3] ?? 'InputOption::VALUE_NONE';
