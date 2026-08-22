@@ -17,9 +17,6 @@ function safeRead(filePath: string, base: string): string | null {
   try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
 }
 
-function maskSecrets(value: string): string {
-  return value.replace(/([A-Za-z_][A-Za-z0-9_]*\s*=\s*)[^\s$#'"]{8,}/g, '$1***');
-}
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];
@@ -90,7 +87,8 @@ function buildLeagueOauth2ClientInfos(appPath: string): LeagueOauth2ClientInfo[]
       const m = varDef.pattern.exec(content);
       if (!m) continue;
       const raw = m[1].trim();
-      // M-10: sensitive vars always fully redacted regardless of length (maskSecrets requires {8,} which leaks short secrets)
+      // M-10: sensitive vars are fully redacted regardless of length. Partial
+      // masking was dropped because it needed {8,} and so leaked short secrets.
       const display = varDef.sensitive ? `${varDef.name}=***` : `${varDef.name}=${raw}`;
       // Derive provider from variable name
       const providerName = varDef.name.toLowerCase().includes('google') ? 'google'

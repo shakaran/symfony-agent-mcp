@@ -63,7 +63,7 @@ const DB_INDICATORS = [
 
 function estimateDbQueryCount(content: string): number {
   return DB_INDICATORS.reduce((count, indicator) => {
-    const re = new RegExp(indicator.replace('$', '\\$'), 'g');
+    const re = new RegExp(indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
     return count + (content.match(re) ?? []).length;
   }, 0);
 }

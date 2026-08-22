@@ -113,7 +113,7 @@ function buildOauth2ServerConfigInfos(appPath: string): Oauth2ServerConfigInfo[]
     // Private key handling — CryptKey
     if (content.includes('new CryptKey(') || content.includes('new \\League\\OAuth2\\Server\\CryptKey(')) {
       const cryptKeyMatch = /new\s+(?:\\League\\OAuth2\\Server\\)?CryptKey\s*\(\s*([^,)]{1,200})/.exec(content);
-      const keyArg = cryptKeyMatch ? cryptKeyMatch[1].trim().replace(/['"]/, '') : 'unknown';
+      const keyArg = cryptKeyMatch ? cryptKeyMatch[1].trim().replace(/['"]/g, '') : 'unknown';
       const isHardcoded = !keyArg.includes('$') && !keyArg.includes('%') && !keyArg.toLowerCase().includes('getenv') && !keyArg.toLowerCase().includes('env(');
       results.push({
         source: relFile,

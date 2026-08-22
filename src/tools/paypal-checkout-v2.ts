@@ -16,9 +16,6 @@ function safeRead(filePath: string, base: string): string | null {
   try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
 }
 
-function maskSecrets(value: string): string {
-  return value.replace(/([A-Za-z_][A-Za-z0-9_]*\s*=\s*)[^\s$#'"]{8,}/g, '$1***');
-}
 
 function scanPhpFiles(dir: string, base: string, callback: (filePath: string, content: string) => void): void {
   if (!fs.existsSync(dir)) return;
@@ -99,7 +96,9 @@ function buildPaypalCheckoutV2Infos(appPath: string): PaypalCheckoutV2Info[] {
       const rawValue = m[1].trim();
       let displayValue = rawValue;
       if (isSensitive) {
-        // M-13: always fully redact sensitive vars regardless of length (maskSecrets requires {8,} which leaks short/special-char secrets)
+        // M-13: sensitive vars are fully redacted regardless of length. Partial
+        // masking was dropped because it needed {8,} and leaked short or
+        // special-character secrets.
         displayValue = '***';
       }
 

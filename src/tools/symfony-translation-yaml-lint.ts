@@ -118,7 +118,11 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
     const { keys, emptyKeys } = extractFlatKeys(content);
 
     // Track for cross-locale comparison
-    if (!domainLocaleKeys[domain]) domainLocaleKeys[domain] = {};
+    // Object.create(null): `domain` comes from a filename, and a file called
+    // __proto__.en.yaml would otherwise write through the prototype.
+    if (!Object.prototype.hasOwnProperty.call(domainLocaleKeys, domain)) {
+      domainLocaleKeys[domain] = Object.create(null) as Record<string, string[]>;
+    }
     domainLocaleKeys[domain][locale] = keys;
 
     // Duplicate keys

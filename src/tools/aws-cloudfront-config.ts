@@ -16,9 +16,6 @@ function safeRead(filePath: string, base: string): string | null {
   try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
 }
 
-function maskSecrets(value: string): string {
-  return value.replace(/([A-Za-z_][A-Za-z0-9_]*\s*=\s*)[^\s$#'"]{8,}/g, '$1***');
-}
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];

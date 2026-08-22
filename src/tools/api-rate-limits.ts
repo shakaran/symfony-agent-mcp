@@ -78,7 +78,7 @@ function scanControllerRateLimits(appPath: string): RateLimitedEndpoint[] {
     const limitAttrs = ['#[RateLimit', '#[Throttle', '#[IsLimited', '#[ApiRateLimit'];
     for (const attr of limitAttrs) {
       if (content.includes(attr)) {
-        const methodM = new RegExp(`${attr.replace('[', '\\[')}[^)]*\\)\\s*(?:public\\s+function\\s+(\\w+))?`, 'g');
+        const methodM = new RegExp(`${attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^)]*\\)\\s*(?:public\\s+function\\s+(\\w+))?`, 'g');
         for (const m of content.matchAll(methodM)) {
           results.push({
             controller: classM[1],

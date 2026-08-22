@@ -41,9 +41,6 @@ interface HttpClientAuthInfo {
 
 const SENSITIVE_HEADER_RE = /^(authorization|x-api-key|x-auth-token|cookie|proxy-authorization|x-secret|x-token|set-cookie)$/i;
 
-function maskSensitiveHeaderValue(name: string, value: string): string {
-  return SENSITIVE_HEADER_RE.test(name) ? '***' : value;
-}
 
 function getAllPhpFiles(dir: string): string[] {
   const files: string[] = [];

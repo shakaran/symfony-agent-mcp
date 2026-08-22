@@ -98,7 +98,7 @@ function parseOperations(content: string): ApiOperation[] {
   // Match individual operation attributes:
   // #[Get], #[GetCollection], #[Post], #[Put], #[Patch], #[Delete]
   // Also handles fully qualified: #[ApiPlatform\Metadata\Get(...)]
-  const opPattern = /#\[\s*(?:ApiPlatform\\Metadata\\)?(Get|GetCollection|Post|Put|Patch|Delete)\s*(?:\(([^)]*(?:\([^)]*\)[^)]*)*)\))?\s*\]/g;
+  const opPattern = /#\[\s*(?:ApiPlatform\\Metadata\\)?(Get|GetCollection|Post|Put|Patch|Delete)\s*(?:\(([^)]{0,2000}(?:\([^)]{0,500}\)[^)]{0,2000}){0,20})\))?\s*\]/g;
   let m: RegExpExecArray | null;
 
   while ((m = opPattern.exec(content)) !== null) {
@@ -194,7 +194,7 @@ function parseApiResourceFile(filePath: string): ApiResource | null {
   const namespace = extractNamespace(content);
 
   // Parse #[ApiResource(...)] — grab full attribute block
-  const resourceMatch = /#\[(?:ApiPlatform\\Metadata\\)?ApiResource\s*(?:\(([^)]*(?:\([^)]*\)[^)]*)*)\))?\s*\]/.exec(content);
+  const resourceMatch = /#\[(?:ApiPlatform\\Metadata\\)?ApiResource\s*(?:\(([^)]{0,2000}(?:\([^)]{0,500}\)[^)]{0,2000}){0,20})\))?\s*\]/.exec(content);
   const resourceArgs = resourceMatch?.[1] ?? '';
 
   // shortName

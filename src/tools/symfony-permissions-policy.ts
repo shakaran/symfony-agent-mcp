@@ -191,7 +191,7 @@ function scanHtaccessForPermissionsPolicy(appPath: string): PermissionsPolicyInf
   for (const line of lines) {
     if (/Permissions-Policy/i.test(line)) {
       found = true;
-      const valueMatch = /Permissions-Policy['"]?\s+['"]?([^'""\n]+)/.exec(line);
+      const valueMatch = /Permissions-Policy['"]?\s+['"]?([^'"\n]+)/.exec(line);
       if (valueMatch) {
         const parsed = parsePermissionsPolicyHeader(valueMatch[1], relFile);
         results.push(...parsed);

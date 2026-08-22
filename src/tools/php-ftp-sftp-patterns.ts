@@ -35,9 +35,6 @@ function safeRead(filePath: string, base: string): string | null {
   try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
 }
 
-function maskSecrets(value: string): string {
-  return value.replace(/([A-Za-z_][A-Za-z0-9_]*\s*=\s*)[^\s$#'"]{8,}/g, '$1***');
-}
 
 function getAllPhpFiles(dir: string): string[] {
   const files: string[] = [];
@@ -78,7 +75,8 @@ function scanEnvFile(filePath: string, appPath: string): PhpFtpSftpInfo[] {
 
     // FTP_PASSWORD / SFTP_PASSWORD / SFTP_PASS — mask and flag
     if (/\bFTP_PASSWORD\s*=/.test(line) || /\bSFTP_PASSWORD\s*=/.test(line) || /\bSFTP_PASS\s*=/.test(line)) {
-      // M-14: always fully redact password vars regardless of length or special chars (maskSecrets requires {8,} and skips $#'" chars)
+      // M-14: password vars are fully redacted regardless of length. Partial
+      // masking was dropped because it needed {8,} and skipped $#'" chars.
       const varName = line.match(/\b(FTP_PASSWORD|SFTP_PASSWORD|SFTP_PASS)/)?.[1] ?? 'PASSWORD';
       const masked = `${varName}=***`;
       results.push({
