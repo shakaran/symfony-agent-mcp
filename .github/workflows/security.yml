@@ -32,15 +32,6 @@ jobs:
             category: '/language:javascript-typescript'
           - language: actions
             category: '/language:actions'
-          # TEMPORARY — remove after one green run. Two earlier commits
-          # uploaded under these names; the alerts filed there stay open until
-          # something reports on the same category again, and nothing does.
-          # Re-running the analysis under each supersedes the stale results
-          # with the current, fixed source, which closes them.
-          - language: javascript-typescript
-            category: '/language:javascript-typescript-actions'
-          - language: javascript-typescript
-            category: '.github/workflows/security.yml:codeql'
     permissions:
       contents: read
       security-events: write  # upload CodeQL results
