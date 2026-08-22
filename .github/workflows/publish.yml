@@ -85,8 +85,31 @@ jobs:
             || { echo "::error::installed package did not complete an MCP handshake"; exit 1; }
           echo "Installed package responds to initialize."
 
+      # Releases get tagged after the fact too, and a version already on the
+      # registry cannot be republished. Decide here rather than letting the
+      # publish step fail on a release that was only ever meant to record
+      # history.
+      - name: Decide whether to publish
+        id: decide
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::notice::NPM_TOKEN is not configured — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on npm — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm (with provenance)
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && steps.decide.outputs.publish == 'true'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -96,7 +119,7 @@ jobs:
         run: npm publish --dry-run --access public
 
       - name: Attest the published tarball
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && steps.decide.outputs.publish == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: '*.tgz'
