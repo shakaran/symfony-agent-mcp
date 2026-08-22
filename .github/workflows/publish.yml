@@ -99,22 +99,24 @@ jobs:
           if [ -z "${NPM_TOKEN}" ]; then
             echo "::notice::NPM_TOKEN is not configured — skipping publish."
             echo "publish=false" >> "$GITHUB_OUTPUT"
-          elif npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          # Check the credential on every run, not only on the runs that would
+          # publish. Granular tokens expire, and the useful time to learn that
+          # is before the release you actually need.
+          WHO=$(npm whoami 2>&1) || {
+            echo "::error::NPM_TOKEN is set but the registry rejected it: $WHO"
+            exit 1
+          }
+          echo "::notice::Authenticated to npm as $WHO."
+
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
             echo "::notice::$NAME@$VERSION is already on npm — skipping publish."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
-            # Fail here rather than inside `npm publish`, where a bad or expired
-            # token surfaces as ENEEDAUTH with no hint about which credential is
-            # at fault.
-            WHO=$(npm whoami 2>&1) || {
-              echo "::error::NPM_TOKEN is set but not accepted by the registry: $WHO"
-              exit 1
-            }
-            echo "::notice::Authenticated to npm as $WHO."
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
-        # NODE_AUTH_TOKEN is what setup-node's .npmrc reads for `npm whoami`.
-      
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
