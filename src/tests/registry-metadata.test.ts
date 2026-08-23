@@ -79,11 +79,10 @@ describe('MCPB bundle manifest', () => {
     expect(manifest['version']).toBe('0.0.0');
   });
 
-  test('tools are not written by hand — the build reads them from the server', () => {
-    // Directories build a listing by scanning the server; with progressive
-    // discovery that scan sees five meta-tools, and Smithery's page came out
-    // empty. build-mcpb.mjs asks the built server for tools/list and writes
-    // the answer here, so the descriptions cannot drift from the real ones.
+  test('no tools are declared — the two schemas contradict each other', () => {
+    // MCPB rejects `inputSchema` inside a tool entry; Smithery rejects a tool
+    // entry without it, one 400 per tool. A `tools` array here cannot satisfy
+    // both, and satisfying MCPB alone breaks publishing.
     expect(manifest['tools']).toBeUndefined();
   });
 

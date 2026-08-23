@@ -19,12 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declarations, which are a third of the unpacked size and never read at
   runtime. The five configuration options appear as a form at install time.
 
-  The build asks the server it just packed for its `tools/list` and writes the
-  answer into the manifest. Directories build a listing by scanning the server,
-  and with progressive discovery that scan finds five meta-tools — Smithery's
-  page came out with no description and nothing listed. Declaring them gives a
-  listing something to show without a scan, and reading them from the server
-  rather than copying them by hand means the descriptions cannot drift.
+  The manifest deliberately declares no `tools`. Doing so looked like the fix
+  for Smithery's empty listing, but the two schemas contradict each other: MCPB
+  rejects `inputSchema` inside a tool entry, and Smithery rejects a tool entry
+  without it — the publish fails with one 400 per tool.
 
 ### Removed
 

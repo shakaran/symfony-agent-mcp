@@ -12,7 +12,7 @@
  * Usage: pnpm run build:mcpb   (expects `pnpm run build` to have run first)
  */
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,72 +59,14 @@ const trim = (dir) => {
 trim(path.join(payload, 'dist'));
 console.log(`Removed ${trimmed} source-map and declaration files.`);
 
-/**
- * Ask the built server what it advertises.
- *
- * Directories build their listing by scanning the server. With progressive
- * discovery that scan sees five meta-tools, and if it fails or is never run
- * the page ends up empty — which is what happened on Smithery. Declaring them
- * in the manifest gives the listing something to show without a scan, and
- * reading them from the server rather than copying them by hand means the
- * descriptions cannot drift from the ones the client actually receives.
- */
-const advertisedTools = () => new Promise((resolve, reject) => {
-  const proc = spawn('node', [path.join(payload, 'dist', 'server.js')], {
-    env: {
-      ...process.env,
-      SYMFONY_MCP_STARTUP_AUDIT: 'false',
-      SYMFONY_MCP_AUDIT: 'false',
-      SYMFONY_MCP_ANOMALY: 'false',
-      SYMFONY_MCP_RATE_LIMIT: '0',
-      NODE_ENV: 'production',
-    },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-
-  let buffer = '';
-  const done = setTimeout(() => {
-    proc.kill();
-    reject(new Error('timed out asking the server for tools/list'));
-  }, 30000);
-
-  proc.stderr.on('data', () => {});
-  proc.stdout.on('data', (chunk) => {
-    buffer += chunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const msg = JSON.parse(line);
-        if (msg.id === 2) {
-          clearTimeout(done);
-          proc.kill();
-          resolve(msg.result.tools.map((t) => ({ name: t.name, description: t.description })));
-        }
-      } catch { /* partial line */ }
-    }
-  });
-
-  proc.stdin.write(JSON.stringify({
-    jsonrpc: '2.0', id: 1, method: 'initialize',
-    params: {
-      protocolVersion: '2024-11-05', capabilities: {},
-      clientInfo: { name: 'build-mcpb', version: pkg.version },
-    },
-  }) + '\n');
-  setTimeout(() => {
-    proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) + '\n');
-  }, 900);
-});
-
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'mcpb', 'manifest.json'), 'utf-8'));
 manifest.version = pkg.version;
 
-console.log('Asking the built server which tools it advertises...');
-manifest.tools = await advertisedTools();
-if (manifest.tools.length === 0) throw new Error('the server advertised no tools');
-console.log(`Declared ${manifest.tools.length} tools in the manifest.`);
+// Deliberately no `tools` array. Declaring the advertised tools here looked
+// like the fix for Smithery's empty listing, but the two schemas contradict
+// each other: MCPB rejects `inputSchema` inside a tool entry ("Unrecognized
+// key(s)"), and Smithery rejects a tool entry without it — 400, one error per
+// tool. Until they agree, the listing has to come from elsewhere.
 fs.writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
 run('npx', ['--yes', '@anthropic-ai/mcpb@2.1.2', 'validate', 'manifest.json'], staging);
