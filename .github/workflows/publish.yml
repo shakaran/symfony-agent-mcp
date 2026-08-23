@@ -74,7 +74,10 @@ jobs:
           set -euo pipefail
           TARBALL=$(npm pack --silent | tail -1)
           WORK=$(mktemp -d)
-          mv "$TARBALL" "$WORK/"
+          # Copy rather than move: the attestation step below needs the tarball
+          # to still be in the workspace, and attesting the very artefact this
+          # step just proved runnable is better than packing a second one.
+          cp "$TARBALL" "$WORK/"
           cd "$WORK"
           npm init -y >/dev/null
           npm install --no-audit --no-fund "./$TARBALL" >/dev/null
