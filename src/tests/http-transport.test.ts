@@ -523,8 +523,14 @@ describe('TLS', () => {
     try {
       const res = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>(
         (resolve, reject) => {
+          // Trust exactly this certificate rather than switching verification
+          // off: the connection stays authenticated, and a test that disables
+          // validation teaches the pattern we do not want copied.
           const req = https.request(
-            { host: '127.0.0.1', port, method: 'GET', path: '/health', rejectUnauthorized: false },
+            {
+              host: 'localhost', port, method: 'GET', path: '/health',
+              ca: fs.readFileSync(certPath),
+            },
             (r) => {
               let body = '';
               r.on('data', (c) => { body += c as string; });
@@ -554,10 +560,14 @@ describe('TLS', () => {
     try {
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('mTLS enabled'));
 
-      // requestCert + rejectUnauthorized: the handshake fails, so no response.
+      // The server sets requestCert with rejectUnauthorized, so a client with
+      // no certificate of its own fails the handshake and never gets a reply.
       await expect(new Promise((resolve, reject) => {
         const req = https.request(
-          { host: '127.0.0.1', port, method: 'GET', path: '/health', rejectUnauthorized: false },
+          {
+            host: 'localhost', port, method: 'GET', path: '/health',
+            ca: fs.readFileSync(certPath),
+          },
           resolve
         );
         req.on('error', reject);
