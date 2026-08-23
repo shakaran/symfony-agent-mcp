@@ -258,6 +258,82 @@ Reports are welcome for anything that lets a caller read outside the paths the
 server is allowed to read, obtain credentials the sanitiser should have
 removed, or make the server execute or write anything at all.
 
+## Verifying a release
+
+Every release from 1.0.3 onwards is published by CI, not from a laptop, and npm
+records a signed SLSA provenance attestation linking the tarball to the commit
+and the workflow that built it.
+
+```bash
+# Verify the published package came from this repository's CI
+npm audit signatures @shakaran/symfony-agent-mcp
+
+# Inspect the provenance attestation directly
+npm view @shakaran/symfony-agent-mcp dist.attestations
+```
+
+The "Provenance" panel on the npm package page shows the same thing: the
+source commit, the workflow file, and the runner that produced the artefact.
+A tarball that does not carry it did not come from this pipeline.
+
+GitHub releases additionally carry an SBOM produced by the `sbom` workflow.
+
+## Secrets and credentials policy
+
+**The project holds no secrets in the repository.** The only credentials that
+exist are GitHub Actions secrets, held in the repository's encrypted secret
+store and readable by no one, including the maintainer, once set.
+
+- Secrets are referenced in workflows as `${{ secrets.NAME }}` and never
+  echoed, written to a file, or passed as a command-line argument.
+- Workflows triggered by `pull_request` from a fork receive no secrets, which
+  is why no workflow uses `pull_request_target`.
+- Every push is scanned by Gitleaks in CI and by GitHub secret scanning with
+  push protection, which blocks a commit containing a credential before it
+  reaches the remote.
+- Test fixtures that must look like credentials are assembled from fragments at
+  runtime (`src/fuzz/secret-fixtures.ts`) so no credential-shaped literal ever
+  appears in the source.
+- If a credential is ever exposed, it is rotated before anything else, and the
+  incident is noted in the CHANGELOG.
+
+Users configuring the server should supply secrets through environment
+variables, never on the command line, where they are visible in the process
+list.
+
+## Remediation thresholds
+
+These are the thresholds at which a finding blocks work, rather than being
+tracked.
+
+**Dependencies (SCA).** `pnpm audit` runs on every push and **fails the build
+on HIGH or CRITICAL**. No release goes out with a known HIGH or CRITICAL
+advisory in the dependency tree. MODERATE and below are tracked and fixed in
+the normal dependency-update cycle, within 60 days. Dependency Review runs on
+every pull request and blocks the introduction of a new vulnerable dependency.
+
+**Static analysis (SAST).** CodeQL runs `security-extended` and
+`security-and-quality` on every push, and ESLint runs with the security plugin.
+**Any CodeQL alert of severity error, and any ESLint error, blocks the merge.**
+Warnings are tracked. The code-scanning panel is kept at zero open alerts;
+anything dismissed carries a written justification.
+
+**Both gates are enforced by CI, not by convention** — the checks are required
+for `main`, so a change that trips either one cannot be merged without an
+explicit, recorded bypass.
+
+## Dependency selection
+
+Runtime dependencies are kept to a minimum: the project ships three
+(`@modelcontextprotocol/sdk`, `dotenv`, `js-yaml`). Every one is a supply-chain
+surface, and `CONTRIBUTING.md` states that a new dependency needs a reason.
+
+Dependencies are pinned through `pnpm-lock.yaml`, which is committed and used
+with `--frozen-lockfile` in CI so a build cannot silently resolve to something
+different. GitHub Actions are pinned to full commit SHAs rather than tags.
+Dependabot is enabled and its updates go through the same CI gate as any other
+change.
+
 ## Security Testing
 
 ### Manual Security Tests

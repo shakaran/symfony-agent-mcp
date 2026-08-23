@@ -9,12 +9,11 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  # A manual run is always a dry run: it packs, installs the tarball and checks
+  # the server speaks MCP, but never publishes. Publishing happens only on a
+  # release. There used to be a `dry_run` input here suggesting otherwise; it
+  # was never read, so a run with it unticked still did not publish.
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Pack and validate without publishing'
-        type: boolean
-        default: true
 
 permissions:
   contents: read

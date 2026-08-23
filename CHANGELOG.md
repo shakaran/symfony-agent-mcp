@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `publish.yml` declared a `dry_run` input that nothing read. A manual run was
+  always a dry run regardless of how the box was ticked, which is misleading in
+  the one workflow that can publish. The input is gone and the behaviour is
+  documented where the trigger is declared.
+
 ### Added
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1). Both
@@ -17,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an email address followed by "(if available)", which tells a reporter
   nothing about whether anyone is listening. It now states what is in scope
   and commits to acknowledging within 7 days and assessing within 14.
+
+- `GOVERNANCE.md` (members, roles, and how escalated permissions are granted)
+  and `SUPPORT.md` (what is supported, and what end of life means). Both are
+  OpenSSF Baseline criteria.
+
+- `SECURITY.md` gains four policies it was missing: how to verify a release
+  through its SLSA provenance, how secrets are handled, the thresholds at which
+  an SCA or SAST finding blocks a merge, and how dependencies are selected and
+  pinned.
 
 - Branch protection on `main`: six required status checks, linear history,
   required conversation resolution, no force pushes, no deletion. Scorecard
