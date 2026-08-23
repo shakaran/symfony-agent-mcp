@@ -12,6 +12,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/shakaran/symfony-agent-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/shakaran/symfony-agent-mcp)
 [![Glama score](https://glama.ai/mcp/servers/shakaran/symfony-agent-mcp/badges/score.svg)](https://glama.ai/mcp/servers/shakaran/symfony-agent-mcp)
 [![smithery badge](https://smithery.ai/badge/shakaran/symfony-agent-mcp)](https://smithery.ai/servers/shakaran/symfony-agent-mcp)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/14217/baseline)](https://www.bestpractices.dev/projects/14217)
 
 [Features](#features) • [Quick Start](#quick-start) • [Integration](#integration) • [Usage](#usage) • [Documentation](#documentation) • [Contributing](#contributing) • [License](#license)
 

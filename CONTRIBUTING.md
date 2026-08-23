@@ -61,6 +61,24 @@ discovery can find them.
 A short imperative subject, then a body explaining why the change is needed.
 The subject line is what someone reads in `git log` two years from now.
 
+## Sign your work
+
+Every commit must carry a `Signed-off-by` line matching its author:
+
+```text
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+`git commit -s` adds it for you, and `git rebase --signoff main` adds it to a
+branch you have already written. A CI check verifies every commit in a pull
+request and names any that are missing it.
+
+The sign-off is your statement that you wrote the contribution, or otherwise
+have the right to submit it under the project's licence. The full text is the
+[Developer Certificate of Origin](DCO) at the repository root — the same one
+the Linux kernel uses. It is not a copyright assignment: you keep your
+copyright.
+
 ## Licence
 
 By contributing you agree that your contribution is licensed under the MIT

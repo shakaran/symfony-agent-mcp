@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing about whether anyone is listening. It now states what is in scope
   and commits to acknowledging within 7 days and assessing within 14.
 
+- Developer Certificate of Origin. Contributors sign off each commit with
+  `git commit -s`, and a CI check verifies every commit in a pull request
+  carries a `Signed-off-by` line matching its author. This was the one
+  OpenSSF Baseline criterion recorded as unmet that could actually be fixed.
+
+- OpenSSF Baseline badge in the README — level 1 achieved.
+
 - `GOVERNANCE.md` (members, roles, and how escalated permissions are granted)
   and `SUPPORT.md` (what is supported, and what end of life means). Both are
   OpenSSF Baseline criteria.
