@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing about whether anyone is listening. It now states what is in scope
   and commits to acknowledging within 7 days and assessing within 14.
 
+- The release workflow now mirrors the package to GitHub Packages after a
+  successful npm publish, so the repository's Packages tab reflects what was
+  released. npmjs.org stays the registry to install from: GitHub Packages
+  requires authentication even for public packages, which would break
+  `npx -y @shakaran/symfony-agent-mcp`. The mirror job cannot fail a release —
+  a failure there means the mirror is behind, not that the release is broken.
+
 - OpenVEX document (`vex.openvex.json`) and `pnpm run build:vex`, shipped with
   the SBOM on every release. It is derived from `pnpm audit --json` rather than
   written by hand: new advisories enter as `under_investigation` because no

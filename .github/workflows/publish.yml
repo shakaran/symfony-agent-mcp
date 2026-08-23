@@ -138,3 +138,65 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: '*.tgz'
+
+  # ── GitHub Packages ────────────────────────────────────────────────────────
+  #
+  # A second home for the same tarball, so the repository's Packages tab is not
+  # empty and the artefact is visibly tied to the code. npmjs.org stays the
+  # registry people actually install from: GitHub Packages requires
+  # authentication even for public packages, which would break
+  # `npx -y @shakaran/symfony-agent-mcp`.
+  #
+  # Runs only after npm publishing succeeded, and never blocks a release: a
+  # failure here means the mirror is behind, not that the release is broken.
+  publish-github:
+    name: Mirror to GitHub Packages
+    needs: publish
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@shakaran'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Skip if this version is already mirrored
+        id: decide
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+
+          if npm view "$NAME@$VERSION" version \
+               --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on GitHub Packages."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No --provenance: GitHub Packages does not record npm provenance
+      # attestations. The authoritative signed artefact is the npmjs one.
+      - name: Publish to GitHub Packages
+        if: steps.decide.outputs.publish == 'true'
+        run: npm publish --access public --registry=https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
