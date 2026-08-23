@@ -152,6 +152,9 @@ function ipMatchesCidr(ip: string, cidr: string): boolean {
     if (ipNum === null || rangeNum === null) return false;
     const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
     return (ipNum & mask) === (rangeNum & mask);
+  // Unreachable today: split, parseInt and ipToNum all return rather than
+  // throw. Kept so that if this ever grows a call that can throw, the
+  // allowlist fails closed instead of propagating into the request handler.
   } catch {
     return false;
   }
@@ -183,10 +186,19 @@ function readBody(req: http.IncomingMessage, maxBytes: number): Promise<Buffer> 
     const chunks: Buffer[] = [];
     let totalBytes = 0;
 
+    let aborted = false;
+
     req.on('data', (chunk: Buffer) => {
+      if (aborted) return;
       totalBytes += chunk.length;
       if (totalBytes > maxBytes) {
-        req.destroy();
+        // Pause rather than destroy. Destroying here tears down the socket
+        // before the caller can write its 413, so the client sees a hung-up
+        // connection it cannot tell from a network fault. Pausing stops
+        // reading and lets TCP backpressure slow the sender; the caller
+        // answers, then closes.
+        aborted = true;
+        req.pause();
         reject(new Error(`Request body exceeds limit of ${maxBytes} bytes`));
         return;
       }
@@ -439,8 +451,10 @@ export async function startHttpTransport(mcpServer: Server): Promise<net.Server 
         await readBody(req, config.maxPayloadBytes);
       } catch {
         incHttpRequest(pathname, method, '413');
-        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
         res.end(JSON.stringify({ error: `Payload too large. Max: ${config.maxPayloadBytes} bytes` }));
+        // Only now: the rest of the body is unwanted, but the answer is out.
+        req.destroy();
         return;
       }
 

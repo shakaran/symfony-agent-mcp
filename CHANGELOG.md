@@ -5,9 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.3] - 2026-08-23
 
 ### Added
+
+- `http-transport` test suite: 39 tests over a real listener on a real port,
+  taking the only network-facing file in the project from no tests at all to
+  99.5% of lines and 100% of functions. Covers the security headers, the IP
+  allowlist including CIDR ranges and malformed entries failing closed, the
+  payload cap, session-token rejection, per-IP rate limiting, TLS and mutual
+  TLS against a generated certificate, and a full SSE-plus-POST exchange.
 
 - Project icon (`assets/icon.svg` and a 512×512 PNG), carried inside the MCPB
   bundle. Smithery scores an icon at 8 of its 35 server-metadata points, and a
@@ -27,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for Smithery's empty listing, but the two schemas contradict each other: MCPB
   rejects `inputSchema` inside a tool entry, and Smithery rejects a tool entry
   without it — the publish fails with one 400 per tool.
+
+### Fixed
+
+- The HTTP transport never delivered its 413. When a request body passed
+  `SYMFONY_MCP_MAX_PAYLOAD_BYTES`, `readBody` called `req.destroy()`, tearing
+  down the socket before the handler could write the response — the client saw
+  a hung-up connection indistinguishable from a network fault. The read now
+  pauses instead, letting TCP backpressure slow the sender, and the socket is
+  closed only after the 413 is out. Found by the first test ever written
+  against that file.
 
 ### Removed
 
