@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `mcpb/manifest.json` and `pnpm run build:mcpb`, producing the self-contained
+  `.mcpb` bundle Smithery distributes for local installs (5.7 MB packed). The
+  bundle carries its production dependencies and is stripped of source maps and
+  declarations, which are a third of the unpacked size and never read at
+  runtime. The five configuration options appear as a form at install time.
+
+### Removed
+
+- `smithery.yaml`. Smithery retired the `startCommand` / `commandFunction`
+  route for stdio servers on 2025-09-07; a local server is now published as an
+  MCPB bundle. The file was written against examples that had not been updated
+  and would not have worked.
+
 ## [1.0.2] - 2026-08-23
 
 ### Added

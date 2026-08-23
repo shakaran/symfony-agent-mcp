@@ -1,0 +1,93 @@
+{
+  "manifest_version": "0.3",
+  "name": "symfony-agent-mcp",
+  "display_name": "Symfony Agent MCP",
+  "version": "0.0.0",
+  "description": "Read-only introspection of a Symfony codebase.",
+  "long_description": "Introspects a Symfony application without executing or writing anything: routes, controllers, services, entities, database schema, migrations, events, forms, security, Doctrine, Messenger, Twig, API Platform, testing, infrastructure and third-party integrations.\n\n1,677 tools across 17 categories, discovered progressively. `tools/list` advertises five discovery meta-tools and the rest become callable once a category is activated, so connecting costs about 828 tokens instead of the ~154,000 that advertising every schema would. Turn Progressive tool discovery off to advertise all of them at once.\n\nEvery tool takes the path to a Symfony application root. The tools parse files and configuration only, and every result is scanned for credentials before it is returned.",
+  "author": {
+    "name": "Ángel Guzmán Maeso",
+    "url": "https://github.com/shakaran"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shakaran/symfony-agent-mcp.git"
+  },
+  "homepage": "https://github.com/shakaran/symfony-agent-mcp",
+  "documentation": "https://github.com/shakaran/symfony-agent-mcp#readme",
+  "support": "https://github.com/shakaran/symfony-agent-mcp/issues",
+  "license": "MIT",
+  "keywords": [
+    "symfony",
+    "php",
+    "doctrine",
+    "static-analysis",
+    "code-intelligence"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/dist/server.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/dist/server.js"
+      ],
+      "env": {
+        "SYMFONY_MCP_DYNAMIC_TOOLS": "${user_config.dynamic_tools}",
+        "SYMFONY_MCP_TOKEN_BUDGET": "${user_config.token_budget}",
+        "SYMFONY_MCP_ALLOWED_PATHS": "${user_config.allowed_paths}",
+        "SYMFONY_MCP_SESSION_SECRET": "${user_config.session_secret}",
+        "SYMFONY_MCP_AUDIT": "${user_config.audit_log}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  },
+  "user_config": {
+    "dynamic_tools": {
+      "type": "boolean",
+      "title": "Progressive tool discovery",
+      "description": "Leave on and the server advertises five discovery meta-tools; the other 1,672 become callable once you activate a category, so connecting costs ~828 tokens instead of ~154,000. Turn off to advertise every tool up front.",
+      "default": true,
+      "required": false
+    },
+    "token_budget": {
+      "type": "number",
+      "title": "Token budget",
+      "description": "Ceiling for the tool schemas a session may have active at once.",
+      "default": 40000,
+      "min": 1000,
+      "max": 200000,
+      "required": false
+    },
+    "allowed_paths": {
+      "type": "string",
+      "title": "Allowed paths",
+      "description": "Colon-separated list of directories the server may read, e.g. /srv/app:/srv/other. Any path outside them is refused. Left empty, no allowlist is enforced.",
+      "required": false
+    },
+    "session_secret": {
+      "type": "string",
+      "title": "Session secret",
+      "description": "Set to require a session token on every call. Left empty, authentication is off.",
+      "sensitive": true,
+      "required": false
+    },
+    "audit_log": {
+      "type": "boolean",
+      "title": "Audit log",
+      "description": "Encrypted log of every tool call.",
+      "default": true,
+      "required": false
+    }
+  }
+}

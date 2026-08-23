@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "build:mcpb": "node scripts/build-mcpb.mjs",
     "dev": "tsc --watch",
     "start": "node dist/server.js",
     "test": "jest",

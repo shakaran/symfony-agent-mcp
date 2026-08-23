@@ -64,3 +64,60 @@ describe('registry metadata', () => {
     expect(glama['maintainers']).toContain('shakaran');
   });
 });
+
+describe('MCPB bundle manifest', () => {
+  // Smithery retired the smithery.yaml route for stdio servers, so a local
+  // install is a self-contained .mcpb bundle. Its manifest is a third place
+  // the package identity has to stay correct.
+  const manifest = read('mcpb/manifest.json');
+  const server = manifest['server'] as Record<string, unknown>;
+  const mcpConfig = server['mcp_config'] as Record<string, unknown>;
+
+  test('the version is a placeholder — the build injects the real one', () => {
+    // A hand-written version here would silently ship stale once package.json
+    // moves on; scripts/build-mcpb.mjs overwrites it from package.json.
+    expect(manifest['version']).toBe('0.0.0');
+  });
+
+  test('identity matches package.json', () => {
+    expect(manifest['license']).toBe(pkg['license']);
+    expect((manifest['repository'] as Record<string, string>)['url'])
+      .toContain('shakaran/symfony-agent-mcp');
+  });
+
+  test('the entry point is the file the build actually produces', () => {
+    expect(server['entry_point']).toBe('server/dist/server.js');
+    expect(mcpConfig['args']).toEqual(['${__dirname}/server/dist/server.js']);
+  });
+
+  test('every env var it sets is one the server reads', () => {
+    const known = new Set([
+      'SYMFONY_MCP_DYNAMIC_TOOLS', 'SYMFONY_MCP_TOKEN_BUDGET',
+      'SYMFONY_MCP_ALLOWED_PATHS', 'SYMFONY_MCP_SESSION_SECRET',
+      'SYMFONY_MCP_AUDIT',
+    ]);
+
+    for (const name of Object.keys(mcpConfig['env'] as Record<string, string>)) {
+      expect(known.has(name)).toBe(true);
+    }
+  });
+
+  test('every env var interpolates a user_config key that exists', () => {
+    // A typo here yields a literal "${user_config.typo}" in the environment,
+    // which the server would read as a real value.
+    const userConfig = manifest['user_config'] as Record<string, unknown>;
+
+    for (const value of Object.values(mcpConfig['env'] as Record<string, string>)) {
+      const key = /^\$\{user_config\.([a-z_]+)\}$/.exec(value);
+
+      expect(key).not.toBeNull();
+      expect(Object.keys(userConfig)).toContain(key?.[1]);
+    }
+  });
+
+  test('nothing is required, matching a server that starts bare', () => {
+    const userConfig = manifest['user_config'] as Record<string, Record<string, unknown>>;
+
+    expect(Object.values(userConfig).filter((c) => c['required'] === true)).toEqual([]);
+  });
+});
