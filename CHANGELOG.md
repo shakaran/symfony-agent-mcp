@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1). Both
+  are OpenSSF Best Practices criteria and neither existed.
+
+- Private vulnerability reporting, enabled on the repository, and a
+  `SECURITY.md` reporting section that names it. The previous instruction was
+  an email address followed by "(if available)", which tells a reporter
+  nothing about whether anyone is listening. It now states what is in scope
+  and commits to acknowledging within 7 days and assessing within 14.
+
+- Branch protection on `main`: six required status checks, linear history,
+  required conversation resolution, no force pushes, no deletion. Scorecard
+  reads the classic protection API, which until now answered "Branch not
+  protected".
+
 ## [1.0.3] - 2026-08-23
 
 ### Added

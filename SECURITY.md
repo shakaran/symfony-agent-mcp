@@ -243,12 +243,20 @@ Before using `symfony-agent-mcp`, verify:
 If you discover a security issue, please report it responsibly:
 
 1. **Do NOT** open a public GitHub issue
-2. Email: <angel@guzmanmaeso.com> (if available)
+2. Report it privately through [GitHub Security Advisories](https://github.com/shakaran/symfony-agent-mcp/security/advisories/new), which notifies the maintainer without disclosing anything publicly. If you prefer email: <angel@guzmanmaeso.com>
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
    - Suggested fix (if any)
+
+**What to expect:** an acknowledgement within 7 days, an assessment of whether
+the report is accepted within 14, and a fix released before the report is
+disclosed publicly. If a report is declined you will be told why.
+
+Reports are welcome for anything that lets a caller read outside the paths the
+server is allowed to read, obtain credentials the sanitiser should have
+removed, or make the server execute or write anything at all.
 
 ## Security Testing
 
