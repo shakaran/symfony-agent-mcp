@@ -81,6 +81,27 @@ jobs:
         run: pnpm audit --json > audit-report.json || true
 
       # ── Upload artifacts ─────────────────────────────────────────────────
+      # The VEX ships beside the SBOM: the SBOM says what is in the package,
+      # the VEX says which known vulnerabilities in it actually reach the
+      # product. Regenerating here catches an advisory appearing between
+      # releases, when the committed document would otherwise go quietly stale.
+      - name: Regenerate the VEX document
+        run: pnpm run build:vex
+
+      - name: Flag a VEX that no longer matches the dependency tree
+        run: |
+          # Compare statements only. The timestamp changes on every run, so
+          # diffing the whole file would warn every time and mean nothing.
+          # `|| echo '[]'` covers the first run, before the file is committed.
+          before=$(git show HEAD:vex.openvex.json 2>/dev/null | jq -S '.statements' || echo '[]')
+          after=$(jq -S '.statements' vex.openvex.json)
+          if [ "$before" != "$after" ]; then
+            echo "::warning::vex.openvex.json is out of date — advisories changed and need a status."
+            diff <(echo "$before") <(echo "$after") || true
+          else
+            echo "VEX statements unchanged."
+          fi
+
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -88,6 +109,7 @@ jobs:
           path: |
             sbom.cyclonedx.json
             sbom.cyclonedx.xml
+            vex.openvex.json
             spdx-sbom.json
             audit-report.json
           retention-days: 90

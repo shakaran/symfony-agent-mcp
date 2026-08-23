@@ -322,6 +322,27 @@ anything dismissed carries a written justification.
 for `main`, so a change that trips either one cannot be merged without an
 explicit, recorded bypass.
 
+## Vulnerability exploitability (VEX)
+
+A consumer scanning this package sees every advisory affecting anything in its
+dependency tree, whether or not the vulnerable code is reachable from here.
+[`vex.openvex.json`](vex.openvex.json) exists so that question has a published
+answer rather than being left to the reader.
+
+It follows OpenVEX 0.2.0 and ships beside the SBOM with every release.
+
+```bash
+pnpm run build:vex   # regenerate from the current dependency tree
+```
+
+It is derived from `pnpm audit --json`, not written by hand, so it cannot fall
+behind the dependency tree. New advisories enter as `under_investigation`: no
+tool can decide whether vulnerable code is reachable, and asserting
+`not_affected` without that analysis would be worse than saying nothing. A
+status set by a human survives later runs, so analysis is never overwritten.
+The SBOM workflow regenerates the document on every push and warns when the
+set of advisories changes.
+
 ## Dependency selection
 
 Runtime dependencies are kept to a minimum: the project ships three

@@ -149,3 +149,50 @@ describe('MCPB bundle manifest', () => {
     expect(Object.values(userConfig).filter((c) => c['required'] === true)).toEqual([]);
   });
 });
+
+describe('VEX document', () => {
+  // VEX tells a consumer scanning this package which known vulnerabilities in
+  // its dependencies do not reach it. Hand-writing one guarantees it goes
+  // stale, so scripts/generate-vex.mjs derives it from `pnpm audit --json`.
+  const vex = read('vex.openvex.json');
+  const statements = vex['statements'] as Array<Record<string, unknown>>;
+
+  test('it declares the OpenVEX context and an author who can be held to it', () => {
+    expect(vex['@context']).toMatch(/^https:\/\/openvex\.dev\/ns\/v/);
+    expect(vex['@id']).toBeTruthy();
+    expect(vex['author']).toContain('@');
+  });
+
+  test('the timestamp is a real ISO instant, not a placeholder', () => {
+    const t = new Date(vex['timestamp'] as string);
+
+    expect(Number.isNaN(t.getTime())).toBe(false);
+    expect(t.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  test('every statement carries a vulnerability, a product and a status', () => {
+    // Empty is a valid and honest document: nothing is currently reported.
+    for (const st of statements) {
+      expect((st['vulnerability'] as Record<string, unknown>)['name']).toBeTruthy();
+      expect((st['products'] as unknown[]).length).toBeGreaterThan(0);
+      expect(['not_affected', 'affected', 'fixed', 'under_investigation'])
+        .toContain(st['status']);
+    }
+  });
+
+  test('a not_affected claim carries the justification VEX requires', () => {
+    // Claiming not_affected without saying why is the one thing VEX forbids:
+    // it is an assertion a consumer is expected to act on.
+    for (const st of statements.filter((s) => s['status'] === 'not_affected')) {
+      expect(st['justification'] ?? st['impact_statement']).toBeTruthy();
+    }
+  });
+
+  test('the product identifier matches the package actually published', () => {
+    for (const st of statements) {
+      for (const p of st['products'] as Array<Record<string, string>>) {
+        expect(p['@id']).toContain(String(pkg['version']));
+      }
+    }
+  });
+});

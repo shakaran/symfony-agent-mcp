@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsc",
     "build:mcpb": "node scripts/build-mcpb.mjs",
+    "build:vex": "node scripts/generate-vex.mjs",
     "dev": "tsc --watch",
     "start": "node dist/server.js",
     "test": "jest",

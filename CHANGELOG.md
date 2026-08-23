@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing about whether anyone is listening. It now states what is in scope
   and commits to acknowledging within 7 days and assessing within 14.
 
+- OpenVEX document (`vex.openvex.json`) and `pnpm run build:vex`, shipped with
+  the SBOM on every release. It is derived from `pnpm audit --json` rather than
+  written by hand: new advisories enter as `under_investigation` because no
+  tool can judge reachability, and a status set by a human survives later runs.
+  The SBOM workflow regenerates it on every push and warns when the advisories
+  change — comparing statements only, since the timestamp always differs.
+
 - Developer Certificate of Origin. Contributors sign off each commit with
   `git commit -s`, and a CI check verifies every commit in a pull request
   carries a `Signed-off-by` line matching its author. This was the one
