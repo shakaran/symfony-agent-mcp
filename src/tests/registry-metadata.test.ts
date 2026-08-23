@@ -94,6 +94,19 @@ describe('MCPB bundle manifest', () => {
     expect(description).toMatch(/Symfony/);
   });
 
+  test('the icon it declares exists and is the size directories want', () => {
+    // Worth 8 of Smithery's 35 metadata points, and a listing without one
+    // shows a grey placeholder next to every rival that has an icon.
+    expect(manifest['icon']).toBe('icon.png');
+
+    const png = fs.readFileSync(root('assets/icon.png'));
+    expect(png.subarray(1, 4).toString()).toBe('PNG');
+
+    // Dimensions live in the IHDR chunk, bytes 16-23 of a PNG.
+    expect(png.readUInt32BE(16)).toBe(512);
+    expect(png.readUInt32BE(20)).toBe(512);
+  });
+
   test('identity matches package.json', () => {
     expect(manifest['license']).toBe(pkg['license']);
     expect((manifest['repository'] as Record<string, string>)['url'])

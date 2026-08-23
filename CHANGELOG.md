@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project icon (`assets/icon.svg` and a 512×512 PNG), carried inside the MCPB
+  bundle. Smithery scores an icon at 8 of its 35 server-metadata points, and a
+  listing without one renders a grey placeholder.
+
 - Smithery badge in the README. Note that the badge endpoint currently returns
   HTTP 500 for every server on Smithery, popular ones included, so it renders
   broken until they fix it.

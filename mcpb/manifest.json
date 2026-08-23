@@ -17,6 +17,7 @@
   "documentation": "https://github.com/shakaran/symfony-agent-mcp#readme",
   "support": "https://github.com/shakaran/symfony-agent-mcp/issues",
   "license": "MIT",
+  "icon": "icon.png",
   "keywords": [
     "symfony",
     "php",

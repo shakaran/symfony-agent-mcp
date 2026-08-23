@@ -59,6 +59,10 @@ const trim = (dir) => {
 trim(path.join(payload, 'dist'));
 console.log(`Removed ${trimmed} source-map and declaration files.`);
 
+// Smithery scores an icon at 8 of the 35 Server Metadata points, and a
+// listing without one is a grey placeholder next to every rival that has one.
+fs.cpSync(path.join(root, 'assets', 'icon.png'), path.join(staging, 'icon.png'));
+
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'mcpb', 'manifest.json'), 'utf-8'));
 manifest.version = pkg.version;
 
