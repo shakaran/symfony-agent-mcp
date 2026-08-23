@@ -9,11 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Smithery badge in the README. Note that the badge endpoint currently returns
+  HTTP 500 for every server on Smithery, popular ones included, so it renders
+  broken until they fix it.
+
 - `mcpb/manifest.json` and `pnpm run build:mcpb`, producing the self-contained
   `.mcpb` bundle Smithery distributes for local installs (5.7 MB packed). The
   bundle carries its production dependencies and is stripped of source maps and
   declarations, which are a third of the unpacked size and never read at
   runtime. The five configuration options appear as a form at install time.
+
+  The build asks the server it just packed for its `tools/list` and writes the
+  answer into the manifest. Directories build a listing by scanning the server,
+  and with progressive discovery that scan finds five meta-tools — Smithery's
+  page came out with no description and nothing listed. Declaring them gives a
+  listing something to show without a scan, and reading them from the server
+  rather than copying them by hand means the descriptions cannot drift.
 
 ### Removed
 

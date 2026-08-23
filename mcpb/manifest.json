@@ -3,7 +3,7 @@
   "name": "symfony-agent-mcp",
   "display_name": "Symfony Agent MCP",
   "version": "0.0.0",
-  "description": "Read-only introspection of a Symfony codebase.",
+  "description": "Read-only introspection of a Symfony codebase: routes, controllers, services, entities, Doctrine, migrations, events, forms, security, Messenger, Twig and API Platform. 1,677 tools, discovered progressively.",
   "long_description": "Introspects a Symfony application without executing or writing anything: routes, controllers, services, entities, database schema, migrations, events, forms, security, Doctrine, Messenger, Twig, API Platform, testing, infrastructure and third-party integrations.\n\n1,677 tools across 17 categories, discovered progressively. `tools/list` advertises five discovery meta-tools and the rest become callable once a category is activated, so connecting costs about 828 tokens instead of the ~154,000 that advertising every schema would. Turn Progressive tool discovery off to advertise all of them at once.\n\nEvery tool takes the path to a Symfony application root. The tools parse files and configuration only, and every result is scanned for credentials before it is returned.",
   "author": {
     "name": "Ángel Guzmán Maeso",
