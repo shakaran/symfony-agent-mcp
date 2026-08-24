@@ -89,6 +89,7 @@ let outsideRoot: string;
 let corrupt: string;
 let filePath: string;
 let weirdPath: string;
+let scratchRoot: string;
 let missingPath: string;
 
 beforeAll(() => {
@@ -164,11 +165,15 @@ beforeAll(() => {
   // raises ENOTDIR, which is what reaches each module's outermost catch — the
   // branch that turns an internal failure into an error result instead of
   // letting it escape to the client.
-  filePath = path.join(os.tmpdir(), 'symfony-not-a-directory.txt');
+  // Inside a private directory: a fixed name in the shared temp directory is a
+  // symlink-swap target and collides between concurrent runs.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-scratch-'));
+  filePath = path.join(scratch, 'not-a-directory.txt');
   fs.writeFileSync(filePath, 'this is a file, not an application\n');
   // A path that is syntactically hostile rather than merely absent.
-  weirdPath = path.join(os.tmpdir(), 'symfony-weird-\u00a0-\u0301-name');
+  weirdPath = path.join(scratch, 'weird-\u00a0-\u0301-name');
   fs.mkdirSync(weirdPath, { recursive: true });
+  scratchRoot = scratch;
 });
 
 afterAll(() => {
@@ -178,8 +183,7 @@ afterAll(() => {
   removeFixture(skeleton);
   removeFixture(corrupt);
   fs.rmSync(outsideRoot, { recursive: true, force: true });
-  fs.rmSync(filePath, { force: true });
-  fs.rmSync(weirdPath, { recursive: true, force: true });
+  fs.rmSync(scratchRoot, { recursive: true, force: true });
   fs.rmSync(emptyDir, { recursive: true, force: true });
 });
 
