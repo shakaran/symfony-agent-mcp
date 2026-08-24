@@ -1423,6 +1423,9 @@ function phpunitConfig(root: string): void {
     '    </php>',
     '</phpunit>',
   ].join('\n') + '\n');
+  // The ecosystem helper also writes a bare phpunit.xml; overwrite that too,
+  // or the analyser reads the simpler of the two.
+  put(root, 'phpunit.xml', fs.readFileSync(path.join(root, 'phpunit.xml.dist'), 'utf-8'));
   put(root, 'tests/bootstrap.php', "<?php\nrequire dirname(__DIR__).'/vendor/autoload.php';\n");
 }
 
@@ -1555,6 +1558,190 @@ function dql(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** Regex use, in the shapes the injection analyser looks for. */
+function regexUse(root: string): void {
+  put(root, 'src/Service/PatternMatcher.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Component\\HttpFoundation\\Request;',
+    '',
+    'class PatternMatcher',
+    '{',
+    '    public function unsafe(Request $request): array',
+    '    {',
+    '        $term = $request->query->get("q");',
+    '',
+    '        // User input interpolated straight into a pattern.',
+    '        preg_match("/" . $term . "/", "subject", $m);',
+    '        preg_replace("/" . $term . "/i", "", "subject");',
+    '        preg_split("/" . $term . "/", "a,b,c");',
+    '        preg_match_all("/{$term}/u", "subject", $all);',
+    '',
+    '        // The e modifier, removed in PHP 7 but still written.',
+    '        preg_replace("/x/e", "strtoupper", "subject");',
+    '',
+    '        return [$m, $all];',
+    '    }',
+    '',
+    '    public function safe(string $term): array',
+    '    {',
+    '        preg_match("/" . preg_quote($term, "/") . "/", "subject", $m);',
+    '        preg_match("/^[a-z0-9-]+$/", $term);',
+    '        return $m;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Scheduler transports across every backend the analyser names. */
+function schedulerTransports(root: string): void {
+  put(root, 'config/packages/scheduler_transports.yaml', [
+    'framework:',
+    '    scheduler:',
+    '        schedules:',
+    '            default:',
+    '                transport: "doctrine://default"',
+    '            reports:',
+    '                transport: "redis://localhost:6379/messages"',
+    '            volatile:',
+    '                transport: "in-memory://"',
+    '            spooled:',
+    '                transport: "filesystem://var/spool"',
+    '            cached:',
+    '                transport: "cache.app"',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Scheduler/ReportSchedule.php', [
+    '<?php',
+    'namespace App\\Scheduler;',
+    '',
+    'use Symfony\\Component\\Scheduler\\Attribute\\AsSchedule;',
+    'use Symfony\\Component\\Scheduler\\RecurringMessage;',
+    'use Symfony\\Component\\Scheduler\\Schedule;',
+    'use Symfony\\Component\\Scheduler\\ScheduleProviderInterface;',
+    '',
+    '#[AsSchedule("reports")]',
+    'class ReportSchedule implements ScheduleProviderInterface',
+    '{',
+    '    public function getSchedule(): Schedule',
+    '    {',
+    '        return (new Schedule())',
+    '            ->add(RecurringMessage::every("1 hour", new \\App\\Message\\GenerateReport(1)))',
+    '            ->add(RecurringMessage::cron("0 3 * * *", new \\App\\Message\\GenerateReport(2)))',
+    '            ->stateful($this->cache);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Repository queries with pagination, ordering and the manager reached directly. */
+function repositoryQueries(root: string): void {
+  put(root, 'src/Repository/ReportRepository.php', [
+    '<?php',
+    'namespace App\\Repository;',
+    '',
+    'use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;',
+    '',
+    'class ReportRepository extends ServiceEntityRepository',
+    '{',
+    '    public function paginated(int $page): array',
+    '    {',
+    '        return $this->createQueryBuilder("r")',
+    '            ->orderBy("r.createdAt", "DESC")',
+    '            ->addOrderBy("r.id", "ASC")',
+    '            ->setFirstResult(($page - 1) * 20)',
+    '            ->setMaxResults(20)',
+    '            ->getQuery()',
+    '            ->getResult();',
+    '    }',
+    '',
+    '    public function raw(): array',
+    '    {',
+    '        // Reaching the manager from the repository, which the analyser flags.',
+    '        return $this->getEntityManager()',
+    '            ->createQuery("SELECT r FROM App\\Entity\\Report r")',
+    '            ->getResult();',
+    '    }',
+    '',
+    '    public function unbounded(): array',
+    '    {',
+    '        // No limit at all',
+    '        return $this->createQueryBuilder("r")->getQuery()->getResult();',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Gedmo behavioural extensions, in both attribute and annotation form. */
+function gedmo(root: string): void {
+  put(root, 'src/Entity/Auditable.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Doctrine\\ORM\\Mapping as ORM;',
+    'use Gedmo\\Mapping\\Annotation as Gedmo;',
+    '',
+    '/**',
+    ' * @ORM\\Entity',
+    ' * @Gedmo\\Loggable',
+    ' */',
+    '#[ORM\\Entity]',
+    '#[Gedmo\\Loggable]',
+    'class Auditable',
+    '{',
+    '    /**',
+    '     * @Gedmo\\Timestampable(on="create")',
+    '     * @ORM\\Column(type="datetime")',
+    '     */',
+    '    #[Gedmo\\Timestampable(on: "create")]',
+    '    private $createdAt;',
+    '',
+    '    /**',
+    '     * @Gedmo\\Blameable(on="update")',
+    '     * @ORM\\Column(type="string", nullable=true)',
+    '     */',
+    '    #[Gedmo\\Blameable(on: "update")]',
+    '    private $updatedBy;',
+    '',
+    '    /**',
+    '     * @Gedmo\\Versioned',
+    '     */',
+    '    private $title;',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Entity/LogEntry.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Gedmo\\Loggable\\Entity\\MappedSuperclass\\AbstractLogEntry;',
+    '',
+    'class LogEntry extends AbstractLogEntry {}',
+  ].join('\n') + '\n');
+}
+
+/** DQL configuration where the analyser actually looks for it. */
+function dqlInDoctrineYaml(root: string): void {
+  put(root, 'config/packages/doctrine.yaml', [
+    'doctrine:',
+    '    dbal:',
+    '        url: "%env(resolve:DATABASE_URL)%"',
+    '        charset: utf8mb4',
+    '    orm:',
+    '        auto_generate_proxy_classes: true',
+    '        naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware',
+    '        dql:',
+    '            string_functions:',
+    '                GROUP_CONCAT: App\\Doctrine\\DQL\\GroupConcat',
+    '                JSON_EXTRACT: App\\Doctrine\\DQL\\JsonExtract',
+    '            numeric_functions:',
+    '                ROUND: App\\Doctrine\\DQL\\Round',
+    '            datetime_functions:',
+    '                DATE_FORMAT: App\\Doctrine\\DQL\\DateFormat',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string, withProfilerIndex = true): void {
   profiler(root, withProfilerIndex);
@@ -1596,4 +1783,9 @@ export function addTargetedContent(root: string, withProfilerIndex = true): void
   symfonyCli(root);
   consoleAndDoubles(root);
   dql(root);
+  regexUse(root);
+  schedulerTransports(root);
+  repositoryQueries(root);
+  gedmo(root);
+  dqlInDoctrineYaml(root);
 }
