@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * Branches that need the environment bent to reach them.
  *

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * Builds the .mcpb bundle Smithery distributes for local (stdio) installs.
  *

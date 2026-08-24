@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * Services Container Tool
  * Provides introspection into Symfony DI container

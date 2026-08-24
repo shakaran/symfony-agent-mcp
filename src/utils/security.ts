@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * Security utilities for sanitizing sensitive data
  * Ensures no passwords, API keys, or secrets are exposed

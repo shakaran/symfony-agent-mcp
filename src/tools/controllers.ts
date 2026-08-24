@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * Controllers Inspector Tool
  * Scans src/Controller/ to list controllers and their actions (routes).

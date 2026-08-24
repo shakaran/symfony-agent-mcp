@@ -28,6 +28,9 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "lint:md": "markdownlint-cli2 \"*.md\"",
+    "headers": "node scripts/add-license-headers.mjs",
+    "headers:check": "node scripts/add-license-headers.mjs --check",
+    "verify:reproducible": "node scripts/verify-reproducible.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "pnpm run build"
   },

@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing about whether anyone is listening. It now states what is in scope
   and commits to acknowledging within 7 days and assessing within 14.
 
+- SPDX copyright and licence headers on all 914 source files, added by
+  `pnpm run headers` and checked in CI by `pnpm run headers:check`. A file that
+  travels on its own — pasted into an issue, vendored, pulled out of a tarball
+  — now still says who owns it and under what terms.
+
+- `pnpm run verify:reproducible`, which builds twice from a clean tree and
+  compares a digest over all 3,412 emitted files. The build is byte-identical
+  across builds, and CI re-checks it: a reproducibility claim nobody re-tests
+  stops being true the moment a timestamp or an absolute path reaches the
+  output.
+
+- `SECURITY.md` gains a recorded security review and a reproducible-builds
+  section.
+
 - The release workflow now mirrors the package to GitHub Packages after a
   successful npm publish, so the repository's Packages tab reflects what was
   released. npmjs.org stays the registry to install from: GitHub Packages

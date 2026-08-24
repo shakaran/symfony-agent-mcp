@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 import { scanText, redactText, containsDlpViolation, dlpSanitize, getDlpPatternInfo } from '../utils/dlp-detector';
 import {
   STRIPE_LIVE_KEY_WITH_ACCOUNT,

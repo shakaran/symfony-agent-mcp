@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /* eslint-disable @typescript-eslint/no-require-imports --
  * The SIGUSR2 handler is registered at import time and only outside tests, so
  * reaching it means re-requiring the module through an isolated registry.

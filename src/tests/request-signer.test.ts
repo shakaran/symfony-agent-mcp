@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 import { signRequest, verifyRequest, getSigningStatus, clearNonceCache } from '../utils/request-signer';
 
 beforeEach(() => {

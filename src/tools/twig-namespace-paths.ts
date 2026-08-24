@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 import * as path from 'path';
 import { parseYamlFile } from '../utils/symfony-parser.js';
 import { McpToolResult } from '../server.js';

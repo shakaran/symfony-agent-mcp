@@ -278,6 +278,50 @@ A tarball that does not carry it did not come from this pipeline.
 
 GitHub releases additionally carry an SBOM produced by the `sbom` workflow.
 
+## Reproducible builds
+
+Building the same commit twice produces byte-identical output. That is what
+lets anyone check that a published tarball corresponds to the source it claims
+to come from, rather than taking the provenance attestation on trust alone.
+
+```bash
+pnpm run verify:reproducible
+```
+
+It builds twice from a clean tree and compares a SHA-256 digest over every
+emitted file, path included so a rename cannot slip through. The check runs in
+CI, because a reproducibility claim nobody re-tests stops being true the first
+time a timestamp, an absolute path or iteration order over an unsorted map
+reaches the output.
+
+Reproducibility here rests on three things: `pnpm-lock.yaml` is committed and
+installed with `--frozen-lockfile`, the TypeScript compiler is deterministic
+for a given input and version, and the build emits no timestamps.
+
+## Security review
+
+The codebase has been reviewed for security, and the review is recorded rather
+than asserted:
+
+- **Threat model and mitigations** — the sections above enumerate the attack
+  surface (stdio, the optional HTTP transport, and the files a tool is pointed
+  at) and the mitigation for each class: path traversal, credential leakage,
+  prompt injection, ReDoS and resource exhaustion.
+- **Automated review on every change** — CodeQL with `security-extended` and
+  `security-and-quality`, ESLint with the security plugin, Gitleaks, and
+  `pnpm audit`. All are required checks; the code-scanning panel is at zero.
+- **Findings from those reviews are recorded in the CHANGELOG**, including the
+  ones that turned out to be real: a prototype-pollution write that reached the
+  map's prototype, a detection gap where a filename check made a route check
+  unreachable, an HTTP 413 that never reached the client because the socket was
+  destroyed first, and polynomial and exponential ReDoS in three patterns.
+- **The read-only guarantee is structural**, not a convention: no tool executes
+  a command, writes a file or makes a network request, and every result passes
+  through the credential sanitiser before it leaves.
+
+The review is the maintainer's own. As a single-maintainer project there is no
+independent second reviewer; see `GOVERNANCE.md`.
+
 ## Secrets and credentials policy
 
 **The project holds no secrets in the repository.** The only credentials that

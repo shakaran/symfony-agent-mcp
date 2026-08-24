@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 import { sanitizeToolResult, getMaxOutputBytesConfig } from '../utils/output-sanitizer';
 
 beforeEach(() => {

@@ -40,6 +40,13 @@ jobs:
       - name: Type check
         run: pnpm run typecheck
 
+      - name: SPDX headers on every source file
+        run: pnpm run headers:check
+
+      # A reproducibility claim nobody re-tests stops being true silently.
+      - name: Build is reproducible
+        run: pnpm run verify:reproducible
+
       - name: Lint
         run: pnpm run lint
 

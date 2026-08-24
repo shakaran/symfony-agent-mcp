@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * Token estimation utility.
  * Uses a simple byte-length / 4 heuristic (GPT-4 / Claude approximation for English text).

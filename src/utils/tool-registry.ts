@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /**
  * ToolRegistry — singleton that holds every tool definition, assigns
  * categories, and provides search + category-query functionality.

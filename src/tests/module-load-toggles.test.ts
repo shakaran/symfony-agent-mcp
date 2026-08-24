@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
 /* eslint-disable @typescript-eslint/no-require-imports --
  * jest.isolateModules works by re-requiring inside its callback; a static
  * import would be hoisted out of the isolated registry and defeat the point.
