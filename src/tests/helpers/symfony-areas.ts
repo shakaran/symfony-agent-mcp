@@ -1056,9 +1056,13 @@ function renderReference(className: string, symbols: string[]): string {
       lines.push(`        $y = ${sym}::class;`);
       lines.push(`        $z = $this->container->get(${sym}::class);`);
     } else if (sym === sym.toUpperCase() && /^[A-Z_][A-Z0-9_]*$/.test(sym)) {
-      // Constant-shaped: as a constant and as a superglobal subscript.
+      // Constant-shaped: as a constant, a superglobal subscript, and both
+      // sides of the boolean settings so many checks turn on.
       lines.push(`        $c = ${sym};`);
       lines.push(`        $g = $_SERVER[${JSON.stringify(sym)}];`);
+      lines.push(`        $on[${JSON.stringify(sym)}] = true;`);
+      lines.push(`        $off[${JSON.stringify(sym)}] = false;`);
+      lines.push(`        ini_set(${JSON.stringify(sym.toLowerCase())}, "1");`);
     } else if (sym.includes('_')) {
       lines.push(`        $a[${JSON.stringify(sym)}] = $this->${sym.replace(/[^A-Za-z0-9_]/g, '')}();`);
       lines.push(`        $this->config->set(${JSON.stringify(sym)}, true);`);
@@ -1069,6 +1073,12 @@ function renderReference(className: string, symbols: string[]): string {
       lines.push(`        $s = ${JSON.stringify(sym)};`);
       lines.push(`        $this->builder->${safe}('value', 30)->${safe}([1, 2])->getQuery();`);
       lines.push(`        $this->service->${safe}($request, ['timeout' => 5, 'verify_peer' => false]);`);
+      // Concatenated user input is what a great many detections look for:
+      // the same call is reported or not depending on whether its argument is
+      // a literal or built from a request.
+      lines.push(`        $this->service->${safe}("prefix " . $request->query->get("q") . " suffix");`);
+      lines.push(`        $this->service->${safe}($_GET["id"]);`);
+      lines.push(`        $this->service->${safe}(sprintf("%s", $userInput));`);
     }
   }
 
@@ -1149,6 +1159,11 @@ export function addPerModuleSurface(root: string, toolsDir: string): void {
   ].join('\n');
 
   // Split across the directories modules scan, so each sees a share.
+  //
+  // Giving every directory the whole set was tried and reverted: it pushed the
+  // suite past ten minutes for no measurable gain, because a module scanning
+  // src/ recursively already sees all of it and one scanning a single
+  // directory is looking for a narrow vocabulary anyway.
   const dirs = ['Controller', 'Entity', 'Service', 'Repository', 'MessageHandler', 'Security', 'Form'];
   const chunk = Math.ceil(phpParts.length / dirs.length);
   dirs.forEach((dir, i) => {

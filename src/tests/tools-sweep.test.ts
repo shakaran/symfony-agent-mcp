@@ -105,6 +105,9 @@ beforeAll(() => {
   // Hundreds of guards compare a count against a number; one of each kind
   // never crosses them.
   addBulkContent(fixture);
+  // The broken application needs volume too: a good number of checks only
+  // report once a count crosses a threshold.
+  addBulkContent(problematic, 25);
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.
