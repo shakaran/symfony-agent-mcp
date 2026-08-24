@@ -23,7 +23,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { createSymfonyFixture, removeFixture } from './helpers/symfony-fixture';
+import {
+  createSymfonyFixture, createProblematicFixture, addEcosystemFiles, removeFixture,
+} from './helpers/symfony-fixture';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -71,17 +73,24 @@ function pathFunctions(mod: Record<string, unknown>): Array<[string, (a: string)
 }
 
 let fixture: string;
+let problematic: string;
 let emptyDir: string;
 let missingPath: string;
 
 beforeAll(() => {
   fixture = createSymfonyFixture();
+  problematic = createProblematicFixture();
+  // Container files, CI definitions, asset tooling: dozens of modules read
+  // these and analyse nothing without them.
+  addEcosystemFiles(fixture);
+  addEcosystemFiles(problematic);
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
 });
 
 afterAll(() => {
   removeFixture(fixture);
+  removeFixture(problematic);
   fs.rmSync(emptyDir, { recursive: true, force: true });
 });
 
@@ -126,6 +135,13 @@ describe('every tool module', () => {
 
     test('analysing a real application returns a serialisable result', async () => {
       for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, fixture);
+    });
+
+    test('an application full of the problems it looks for is reported on', async () => {
+      // The other fixture exercises the parsing; this one reaches the branch
+      // that runs once a finding exists — injection-shaped SQL, shelled-out
+      // commands, weak hashing, permissive CORS, debug left on in prod.
+      for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, problematic);
     });
 
     test('an empty directory is handled without throwing', async () => {
