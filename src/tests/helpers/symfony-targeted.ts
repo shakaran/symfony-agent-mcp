@@ -730,7 +730,7 @@ function deployDescriptors(root: string): void {
     applications: { php: { type: 'php', root: '/var/www/public', script: 'index.php' } },
   }, null, 2));
 
-  put(root, 'docker-stack.yml', [
+  put(root, 'docker-compose.swarm.yml', [
     'services:',
     '    php:',
     '        image: acme/app:1.0',
@@ -752,8 +752,9 @@ function deployDescriptors(root: string): void {
     '              mode: ingress',
   ].join('\n') + '\n');
 
-  put(root, 'chart/Chart.yaml', 'apiVersion: v2\nname: acme\nversion: 1.0.0\nappVersion: "1.0"\n');
-  put(root, 'chart/values.yaml', [
+  // At the application root: that is where the analyser joins them.
+  put(root, 'Chart.yaml', 'apiVersion: v2\nname: acme\nversion: 1.0.0\nappVersion: "1.0"\n');
+  put(root, 'values.yaml', [
     'image:',
     '    repository: acme/app',
     '    tag: latest',
@@ -908,6 +909,153 @@ function serializerAttributes(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** A second swarm file under the name the analyser also accepts. */
+function swarmProd(root: string): void {
+  put(root, 'docker-compose.prod.yml', [
+    'services:',
+    '    php:',
+    '        image: acme/app:1.0',
+    '        deploy:',
+    '            mode: replicated',
+    '            replicas: 4',
+    '            update_config:',
+    '                parallelism: 2',
+    '                order: start-first',
+    '            restart_policy:',
+    '                condition: on-failure',
+    '            placement:',
+    '                constraints: [node.labels.tier == app]',
+    '            resources:',
+    '                limits:',
+    '                    cpus: "1.0"',
+    '                    memory: 1G',
+    '                reservations:',
+    '                    memory: 256M',
+    '        healthcheck:',
+    '            test: ["CMD-SHELL", "php-fpm-healthcheck || exit 1"]',
+    '            interval: 10s',
+    '            retries: 3',
+    '        ports:',
+    '            - target: 9000',
+    '              published: 9000',
+    '              mode: ingress',
+  ].join('\n') + '\n');
+}
+
+/** vercel: the headers and runtime blocks the analyser reports on. */
+function vercel(root: string): void {
+  put(root, 'vercel.json', JSON.stringify({
+    version: 2,
+    functions: { 'api/index.php': { runtime: 'vercel-php@0.6.0', memory: 512, maxDuration: 10 } },
+    builds: [{ src: 'api/index.php', use: 'vercel-php@0.6.0' }],
+    routes: [{ src: '/(.*)', dest: '/api/index.php' }],
+    headers: [{
+      source: '/(.*)',
+      headers: [
+        { key: 'x-content-type-options', value: 'nosniff' },
+        { key: 'x-frame-options', value: 'DENY' },
+      ],
+    }],
+    env: { APP_ENV: 'prod', APP_DEBUG: '0' },
+  }, null, 2));
+}
+
+/** doctrine: a custom DBAL platform and association fetch modes. */
+function doctrineExtras(root: string): void {
+  put(root, 'src/Doctrine/CustomPlatform.php', [
+    '<?php',
+    'namespace App\\Doctrine;',
+    '',
+    'use Doctrine\\DBAL\\Platforms\\MySQLPlatform;',
+    'use Doctrine\\DBAL\\Types\\Type;',
+    '',
+    'class CustomPlatform extends MySQLPlatform',
+    '{',
+    '    public function getName(): string { return "custom"; }',
+    '',
+    '    public function getDateFormatString(): string { return "Y-m-d"; }',
+    '    public function getDateTimeFormatString(): string { return "Y-m-d H:i:s"; }',
+    '',
+    '    protected function initializeDoctrineTypeMappings(): void',
+    '    {',
+    '        parent::initializeDoctrineTypeMappings();',
+    '        $this->doctrineTypeMapping["jsonb"] = "json";',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Doctrine/TypeRegistrar.php', [
+    '<?php',
+    'namespace App\\Doctrine;',
+    '',
+    'use Doctrine\\DBAL\\Types\\Type;',
+    '',
+    'class TypeRegistrar',
+    '{',
+    '    public function register(): void',
+    '    {',
+    '        Type::addType("money", MoneyType::class);',
+    '        Type::overrideType("datetime", UtcDateTimeType::class);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Entity/Invoice.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Doctrine\\ORM\\Mapping as ORM;',
+    '',
+    '#[ORM\\Entity]',
+    'class Invoice',
+    '{',
+    '    #[ORM\\Id]',
+    '    #[ORM\\Column]',
+    '    private int $id;',
+    '',
+    '    #[ORM\\ManyToOne(targetEntity: Customer::class, fetch: "EAGER")]',
+    '    private $customer;',
+    '',
+    '    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: "invoice", fetch: "LAZY", cascade: ["persist"])]',
+    '    private $lines;',
+    '',
+    '    #[ORM\\ManyToMany(targetEntity: Tag::class, fetch: "EXTRA_LAZY")]',
+    '    private $tags;',
+    '',
+    '    #[ORM\\OneToOne(targetEntity: Receipt::class, fetch: "EAGER", orphanRemoval: true)]',
+    '    private $receipt;',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** symfony-di-lazy-ghost: lazy services and ghost object configuration. */
+function lazyServices(root: string): void {
+  put(root, 'config/packages/lazy_services.yaml', [
+    'services:',
+    '    App\\Service\\HeavyService:',
+    '        lazy: true',
+    '    App\\Service\\GhostService:',
+    '        lazy: "ghost"',
+    '    App\\Service\\ProxyService:',
+    '        lazy: "virtual"',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Service/HeavyService.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Component\\DependencyInjection\\Attribute\\Lazy;',
+    'use Symfony\\Component\\DependencyInjection\\Attribute\\Autoconfigure;',
+    '',
+    '#[Lazy]',
+    '#[Autoconfigure(lazy: true)]',
+    'class HeavyService',
+    '{',
+    '    public function __construct() { /* expensive */ }',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string): void {
   profiler(root);
@@ -934,4 +1082,8 @@ export function addTargetedContent(root: string): void {
   twig(root);
   search(root);
   serializerAttributes(root);
+  swarmProd(root);
+  vercel(root);
+  doctrineExtras(root);
+  lazyServices(root);
 }
