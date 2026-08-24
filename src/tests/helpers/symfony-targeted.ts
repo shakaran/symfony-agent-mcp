@@ -1262,6 +1262,93 @@ function swarmInCompose(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** twig: the constructs beyond extends and include. */
+function twigConstructs(root: string): void {
+  put(root, 'templates/macros.html.twig', [
+    '{% macro field(name, value) %}',
+    '    <input name="{{ name }}" value="{{ value }}">',
+    '{% endmacro %}',
+    '',
+    '{% macro button(label) %}',
+    '    <button>{{ label }}</button>',
+    '{% endmacro %}',
+  ].join('\n') + '\n');
+
+  put(root, 'templates/embedded.html.twig', [
+    '{% extends "base.html.twig" %}',
+    '',
+    '{% use "blocks/_form.html.twig" with field as form_field %}',
+    '{% import "macros.html.twig" as forms %}',
+    '{% from "macros.html.twig" import button %}',
+    '',
+    '{% block body %}',
+    '    {% embed "partials/_card.html.twig" with { title: "Orders" } %}',
+    '        {% block content %}',
+    '            {{ forms.field("sku", item.sku) }}',
+    '            {{ button("Save") }}',
+    '        {% endblock %}',
+    '    {% endembed %}',
+    '',
+    '    {% embed "partials/_card.html.twig" %}',
+    '        {% block content %}{{ parent() }}{% endblock %}',
+    '    {% endembed %}',
+    '{% endblock %}',
+  ].join('\n') + '\n');
+
+  put(root, 'templates/blocks/_form.html.twig', '{% block field %}<input>{% endblock %}\n');
+  put(root, 'templates/partials/_card.html.twig',
+    '<div class="card"><h2>{{ title|default("") }}</h2>{% block content %}{% endblock %}</div>\n');
+}
+
+/** http-client: credentials in URLs and headers, for the masking paths. */
+function httpCredentials(root: string): void {
+  put(root, 'src/Service/CredentialedClient.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Contracts\\HttpClient\\HttpClientInterface;',
+    '',
+    'class CredentialedClient',
+    '{',
+    '    public function __construct(private HttpClientInterface $client) {}',
+    '',
+    '    public function call(): void',
+    '    {',
+    '        // Credentials inside the URI: the analyser masks these before',
+    '        // anything is reported.',
+    '        $this->client->request("GET", "https://apiuser:hunter2@api.example.com/v1/items");',
+    '        $this->client->request("GET", "http://svc@internal.example.com/health");',
+    '',
+    '        $this->client->request("POST", "https://api.example.com/v1/items", [',
+    '            "headers" => [',
+    '                "Authorization" => "Bearer abcdefghijklmnopqrstuvwx",',
+    '                "X-Api-Token" => "0123456789",',
+    '                "Cookie" => "session=abcdef",',
+    '                "Accept" => "application/json",',
+    '            ],',
+    '            "auth_basic" => ["apiuser", "hunter2"],',
+    '            "auth_bearer" => "abcdefghijklmnopqrstuvwx",',
+    '        ]);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/scoped_clients.yaml', [
+    'framework:',
+    '    http_client:',
+    '        scoped_clients:',
+    '            credentialed.client:',
+    '                base_uri: "https://apiuser:hunter2@api.example.com"',
+    '                auth_basic: "apiuser:hunter2"',
+    '            localhost.client:',
+    '                base_uri: "http://127.0.0.1:8000"',
+    '            named.client:',
+    '                base_uri: "http://localhost:9200"',
+    '                headers:',
+    '                    Authorization: "Bearer %env(API_TOKEN)%"',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string, withProfilerIndex = true): void {
   profiler(root, withProfilerIndex);
@@ -1296,4 +1383,6 @@ export function addTargetedContent(root: string, withProfilerIndex = true): void
   commandVariants(root);
   serializerPromoted(root);
   swarmInCompose(root);
+  twigConstructs(root);
+  httpCredentials(root);
 }
