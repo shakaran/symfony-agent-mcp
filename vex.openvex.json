@@ -3,7 +3,7 @@
   "@id": "https://github.com/shakaran/symfony-agent-mcp/blob/main/vex.openvex.json",
   "author": "Ángel Guzmán Maeso <angel@guzmanmaeso.com>",
   "role": "Project maintainer",
-  "timestamp": "2026-08-23T18:47:49.802Z",
+  "timestamp": "2026-08-24T03:47:03.203Z",
   "version": 1,
   "tooling": "scripts/generate-vex.mjs",
   "statements": []

@@ -25,7 +25,23 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outPath = path.join(root, 'vex.openvex.json');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
 
-const product = `pkg:npm/${pkg.name.replace('@', '%40')}@${pkg.version}`;
+/**
+ * Build the package URL by parts rather than by substitution.
+ *
+ * A purl encodes a scoped npm name as `pkg:npm/%40scope/name@version`, so only
+ * the leading `@` of the scope becomes %40 while the `/` stays a separator.
+ * A blanket replace would leave a second `@` untouched, and encodeURIComponent
+ * over the whole name would eat the separator.
+ */
+function packageUrl(name, version) {
+  if (name.startsWith('@')) {
+    const [scope, bare] = name.slice(1).split('/');
+    return `pkg:npm/%40${encodeURIComponent(scope)}/${encodeURIComponent(bare)}@${version}`;
+  }
+  return `pkg:npm/${encodeURIComponent(name)}@${version}`;
+}
+
+const product = packageUrl(pkg.name, pkg.version);
 
 /** `pnpm audit` exits non-zero when it finds something; that is not an error here. */
 function audit() {
@@ -49,9 +65,13 @@ const advisories = Object.values(report.advisories ?? {});
 // Keep any human-written status from the previous document rather than
 // overwriting an analysed statement with under_investigation on every run.
 let previous = new Map();
-if (fs.existsSync(outPath)) {
+try {
+  // Read and handle absence, rather than checking existence and then reading:
+  // between the two the file can go away, and the check buys nothing.
   const old = JSON.parse(fs.readFileSync(outPath, 'utf-8'));
   previous = new Map((old.statements ?? []).map((s) => [s.vulnerability.name, s]));
+} catch (err) {
+  if (err.code !== 'ENOENT') throw err;
 }
 
 const statements = advisories.map((a) => {
