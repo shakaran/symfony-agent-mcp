@@ -258,6 +258,11 @@ Reports are welcome for anything that lets a caller read outside the paths the
 server is allowed to read, obtain credentials the sanitiser should have
 removed, or make the server execute or write anything at all.
 
+**Credit.** Anyone who reports a valid vulnerability is credited by name in the
+security advisory and in the CHANGELOG entry for the fix, unless they ask not
+to be. Tell us the name and link you want used, or that you would rather stay
+anonymous.
+
 ## Verifying a release
 
 Every release from 1.0.3 onwards is published by CI, not from a laptop, and npm
@@ -277,6 +282,49 @@ source commit, the workflow file, and the runner that produced the artefact.
 A tarball that does not carry it did not come from this pipeline.
 
 GitHub releases additionally carry an SBOM produced by the `sbom` workflow.
+
+## Assurance case
+
+The argument for why this software is secure enough for its purpose, stated so
+it can be attacked rather than assumed.
+
+**Claim.** Pointing this server at a codebase cannot damage that codebase, and
+cannot leak its credentials to the model or the client.
+
+**The first half rests on there being no write path at all.** No tool executes
+a command, writes a file or opens a network connection. That is not a policy a
+reviewer has to verify tool by tool: the tools receive parsed content and
+return text, and `CONTRIBUTING.md` makes it a condition of acceptance. The
+supporting evidence is the absence of `child_process`, `fs.write*` and outbound
+HTTP anywhere under `src/tools/`.
+
+**The second half rests on every result passing the same sanitiser.** DLP
+detection runs on the way out, not per tool, so a new tool cannot forget it.
+Database URLs, environment variables, tokens and private keys are redacted
+before a result leaves the process. The evidence is `src/utils/` at 100%
+statement, line and function coverage, with the detectors driven by
+property-based tests over generated inputs rather than only fixed examples.
+
+**The path guard is what keeps a tool inside the codebase it was given.** It
+resolves symlinks, refuses anything that escapes the allowlist, and fails
+closed when a path cannot be resolved at all.
+
+**Where the argument is weakest**, stated rather than omitted:
+
+- Overall statement coverage is 2.8%. The security-critical layers are at 100%
+  and 99.5%, but the 820 tool modules are untested. A parsing defect in one of
+  them would not be caught by the suite — every ReDoS found so far came from
+  exactly there.
+- There is one maintainer. No change receives independent review, and the
+  security review recorded above is the author's own.
+- The optional HTTP transport is far more attack surface than stdio. It is off
+  unless a port is configured, and refuses to start on a half-configured TLS
+  setup rather than falling back to plaintext.
+
+**What would falsify the claim:** a tool that reaches the filesystem outside
+the guarded path, a result containing a credential the sanitiser did not
+redact, or any execution path reaching `child_process`. Reports of any of these
+are in scope for the process above.
 
 ## Reproducible builds
 

@@ -23,13 +23,13 @@ Gives AI assistants deep, read-only introspection into your entire Symfony codeb
 routes, controllers, services, entities, database schema, migrations, events, forms,
 security, Doctrine, Messenger, Twig, API Platform, and much more.
 
-| Client | Install |
-| --- | --- |
-| **Claude Code** | Run `claude mcp add` → [setup](#claude-code) |
-| **Claude Desktop** | Add to `claude_desktop_config.json` → [setup](#claude-desktop) |
-| **Cursor** | Add to `.cursor/mcp.json` → [setup](#cursor) |
-| **VS Code Copilot** | Add to `.vscode/mcp.json` → [setup](#vs-code-copilot) |
-| **Any MCP client** | stdio transport, `command: npx @shakaran/symfony-agent-mcp` |
+| Client              | Install                                                        |
+|---------------------|----------------------------------------------------------------|
+| **Claude Code**     | Run `claude mcp add` → [setup](#claude-code)                   |
+| **Claude Desktop**  | Add to `claude_desktop_config.json` → [setup](#claude-desktop) |
+| **Cursor**          | Add to `.cursor/mcp.json` → [setup](#cursor)                   |
+| **VS Code Copilot** | Add to `.vscode/mcp.json` → [setup](#vs-code-copilot)          |
+| **Any MCP client**  | stdio transport, `command: npx @shakaran/symfony-agent-mcp`    |
 
 ---
 
@@ -108,14 +108,14 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for a step-by-step guide including 
 
 ### One-click Install
 
-| Client | Install |
-| --- | --- |
-| **Cursor** | <a href="https://cursor.com/install-mcp?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0="><picture><source media="(prefers-color-scheme: dark)" srcset="https://cursor.com/deeplink/mcp-install-dark.svg"><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-light.svg"></picture></a> |
-| **VS Code** | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_Server-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22symfony-agent-mcp%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22%40shakaran%2Fsymfony-agent-mcp%22%5D%7D) |
-| **VS Code Insiders** | [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_MCP_Server-24bfa5?style=for-the-badge&logo=visualstudiocode&logoColor=white)](vscode-insiders:mcp/install?%7B%22name%22%3A%22symfony-agent-mcp%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22%40shakaran%2Fsymfony-agent-mcp%22%5D%7D) |
-| **Windsurf** | [![Install in Windsurf](https://img.shields.io/badge/Windsurf-Install_MCP_Server-00B8A9?style=for-the-badge&logo=codeium&logoColor=white)](https://windsurf.com/editor/directory/mcp/install?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0=) |
-| **Claude Code** | [![Install in Claude Code](https://img.shields.io/badge/Claude_Code-Add_MCP_Server-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#claude-code) |
-| **Claude Desktop** | [![Install in Claude Desktop](https://img.shields.io/badge/Claude_Desktop-Add_MCP_Server-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#claude-desktop) |
+| Client               | Install                                                                                                                                                                                                                                                                                                                                                                 |
+|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Cursor**           | <a href="https://cursor.com/install-mcp?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0="><picture><source media="(prefers-color-scheme: dark)" srcset="https://cursor.com/deeplink/mcp-install-dark.svg"><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-light.svg"></picture></a> |
+| **VS Code**          | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_MCP_Server-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](vscode:mcp/install?%7B%22name%22%3A%22symfony-agent-mcp%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22%40shakaran%2Fsymfony-agent-mcp%22%5D%7D)                                                                 |
+| **VS Code Insiders** | [![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_MCP_Server-24bfa5?style=for-the-badge&logo=visualstudiocode&logoColor=white)](vscode-insiders:mcp/install?%7B%22name%22%3A%22symfony-agent-mcp%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22%40shakaran%2Fsymfony-agent-mcp%22%5D%7D)                                      |
+| **Windsurf**         | [![Install in Windsurf](https://img.shields.io/badge/Windsurf-Install_MCP_Server-00B8A9?style=for-the-badge&logo=codeium&logoColor=white)](https://windsurf.com/editor/directory/mcp/install?name=symfony-agent-mcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyJAc2hha2FyYW4vc3ltZm9ueS1hZ2VudC1tY3AiXX0=)                                                                |
+| **Claude Code**      | [![Install in Claude Code](https://img.shields.io/badge/Claude_Code-Add_MCP_Server-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#claude-code)                                                                                                                                                                                                            |
+| **Claude Desktop**   | [![Install in Claude Desktop](https://img.shields.io/badge/Claude_Desktop-Add_MCP_Server-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#claude-desktop)                                                                                                                                                                                                   |
 
 ### Claude Code
 
@@ -219,40 +219,40 @@ All configuration is done via environment variables passed to the MCP server pro
 
 ### Tool Discovery
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SYMFONY_MCP_DYNAMIC_TOOLS` | `true` | Enable dynamic tool discovery. When `true`, `tools/list` returns only 5 meta-tools instead of all 1,677. Set to `false` to restore the legacy behaviour (all tools always visible). |
-| `SYMFONY_MCP_TOKEN_BUDGET` | `40000` | Maximum estimated tokens that can be activated per session. Activation is blocked when this limit would be exceeded; pass `force=true` in `activate_category` to override. |
+| Variable                    | Default | Description                                                                                                                                                                         |
+|-----------------------------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SYMFONY_MCP_DYNAMIC_TOOLS` | `true`  | Enable dynamic tool discovery. When `true`, `tools/list` returns only 5 meta-tools instead of all 1,677. Set to `false` to restore the legacy behaviour (all tools always visible). |
+| `SYMFONY_MCP_TOKEN_BUDGET`  | `40000` | Maximum estimated tokens that can be activated per session. Activation is blocked when this limit would be exceeded; pass `force=true` in `activate_category` to override.          |
 
 ### Security & Access
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SYMFONY_MCP_ALLOWED_PATHS` | *(any)* | Colon-separated list of absolute app paths the server may inspect. Example: `/var/www/app1:/var/www/app2` |
-| `SYMFONY_MCP_REQUIRE_SYMFONY` | `true` | Set to `false` to skip Symfony project validation (useful for testing). |
-| `SYMFONY_MCP_ALLOWED_TOOLS` | *(all)* | Comma-separated allowlist of tool names. Only listed tools are callable. |
-| `SYMFONY_MCP_BLOCKED_TOOLS` | *(none)* | Comma-separated denylist. Takes precedence over the allowlist. |
-| `SYMFONY_MCP_SIGNING_SECRET` | *(off)* | 32+ character secret for request signing. Enables per-request authentication. |
-| `SYMFONY_MCP_SESSION_SECRET` | *(off)* | Secret for session token generation. |
-| `SYMFONY_MCP_SESSION_TOKEN` | *(off)* | Token to validate on incoming requests. |
-| `SYMFONY_MCP_SESSION_STRICT` | `false` | Set to `true` to reject requests without a valid session token. |
-| `SYMFONY_MCP_SESSION_WINDOW` | `300` | Session token validity window in seconds. |
+| Variable                      | Default  | Description                                                                                               |
+|-------------------------------|----------|-----------------------------------------------------------------------------------------------------------|
+| `SYMFONY_MCP_ALLOWED_PATHS`   | *(any)*  | Colon-separated list of absolute app paths the server may inspect. Example: `/var/www/app1:/var/www/app2` |
+| `SYMFONY_MCP_REQUIRE_SYMFONY` | `true`   | Set to `false` to skip Symfony project validation (useful for testing).                                   |
+| `SYMFONY_MCP_ALLOWED_TOOLS`   | *(all)*  | Comma-separated allowlist of tool names. Only listed tools are callable.                                  |
+| `SYMFONY_MCP_BLOCKED_TOOLS`   | *(none)* | Comma-separated denylist. Takes precedence over the allowlist.                                            |
+| `SYMFONY_MCP_SIGNING_SECRET`  | *(off)*  | 32+ character secret for request signing. Enables per-request authentication.                             |
+| `SYMFONY_MCP_SESSION_SECRET`  | *(off)*  | Secret for session token generation.                                                                      |
+| `SYMFONY_MCP_SESSION_TOKEN`   | *(off)*  | Token to validate on incoming requests.                                                                   |
+| `SYMFONY_MCP_SESSION_STRICT`  | `false`  | Set to `true` to reject requests without a valid session token.                                           |
+| `SYMFONY_MCP_SESSION_WINDOW`  | `300`    | Session token validity window in seconds.                                                                 |
 
 ### Rate Limiting
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SYMFONY_MCP_RATE_LIMIT` | `60` | Max requests per window. Set to `0` to disable. |
-| `SYMFONY_MCP_RATE_WINDOW_MS` | `60000` | Rate limit window in milliseconds (1 minute). |
-| `SYMFONY_MCP_RATE_BURST` | `10` | Max burst requests in 1 second. |
+| Variable                     | Default | Description                                     |
+|------------------------------|---------|-------------------------------------------------|
+| `SYMFONY_MCP_RATE_LIMIT`     | `60`    | Max requests per window. Set to `0` to disable. |
+| `SYMFONY_MCP_RATE_WINDOW_MS` | `60000` | Rate limit window in milliseconds (1 minute).   |
+| `SYMFONY_MCP_RATE_BURST`     | `10`    | Max burst requests in 1 second.                 |
 
 ### Transport
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SYMFONY_MCP_HTTP_PORT` | *(off)* | Port for HTTP/SSE transport. When set, starts an HTTP server in addition to stdio. |
-| `SYMFONY_MCP_STDIO` | `true` | Set to `false` to disable stdio transport (useful when running HTTP-only). |
-| `SYMFONY_MCP_TOOL_TIMEOUT_MS` | `30000` | Per-tool execution timeout in milliseconds. |
+| Variable                      | Default | Description                                                                        |
+|-------------------------------|---------|------------------------------------------------------------------------------------|
+| `SYMFONY_MCP_HTTP_PORT`       | *(off)* | Port for HTTP/SSE transport. When set, starts an HTTP server in addition to stdio. |
+| `SYMFONY_MCP_STDIO`           | `true`  | Set to `false` to disable stdio transport (useful when running HTTP-only).         |
+| `SYMFONY_MCP_TOOL_TIMEOUT_MS` | `30000` | Per-tool execution timeout in milliseconds.                                        |
 
 ### Example: Claude Code with dynamic tools disabled
 
@@ -364,12 +364,12 @@ The server reads files directly from your Symfony app — no database connection
 
 ## Symfony Compatibility
 
-| Symfony | PHP | ORM mapping |
-| --- | --- | --- |
+| Symfony | PHP  | ORM mapping               |
+|---------|------|---------------------------|
 | 5.4 LTS | 8.0+ | Annotations or Attributes |
-| 6.x | 8.0+ | Attributes |
-| 7.x | 8.2+ | Attributes |
-| 8.x | 8.2+ | Attributes |
+| 6.x     | 8.0+ | Attributes                |
+| 7.x     | 8.2+ | Attributes                |
+| 8.x     | 8.2+ | Attributes                |
 
 ---
 
@@ -396,14 +396,14 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide: architectur
 
 ## Documentation
 
-| Document | Description |
-| --- | --- |
-| [GETTING_STARTED.md](GETTING_STARTED.md) | Step-by-step setup, Node.js prerequisites, troubleshooting |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, security pipeline, component overview, all 1,677 tools across 16 categories documented |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Development workflow, adding tools, testing, contributing |
-| [SECURITY.md](SECURITY.md) | Threat model, DLP pipeline, responsible disclosure policy |
-| [CHANGELOG.md](CHANGELOG.md) | Release history and roadmap |
-| [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) | High-level project overview and statistics |
+| Document                                 | Description                                                                                           |
+|------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| [GETTING_STARTED.md](GETTING_STARTED.md) | Step-by-step setup, Node.js prerequisites, troubleshooting                                            |
+| [ARCHITECTURE.md](ARCHITECTURE.md)       | System design, security pipeline, component overview, all 1,677 tools across 16 categories documented |
+| [DEVELOPMENT.md](DEVELOPMENT.md)         | Development workflow, adding tools, testing, contributing                                             |
+| [SECURITY.md](SECURITY.md)               | Threat model, DLP pipeline, responsible disclosure policy                                             |
+| [CHANGELOG.md](CHANGELOG.md)             | Release history and roadmap                                                                           |
+| [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) | High-level project overview and statistics                                                            |
 
 ---
 
@@ -414,6 +414,24 @@ Issues and pull requests are welcome at [github.com/shakaran/symfony-agent-mcp](
 Please read [DEVELOPMENT.md](DEVELOPMENT.md) before submitting a PR, and [SECURITY.md](SECURITY.md) for the responsible disclosure policy.
 
 ---
+
+## Project standards
+
+| Standard               | Status                                           |
+|------------------------|--------------------------------------------------|
+| OpenSSF Baseline       | Level 1, 2 and 3                                 |
+| OpenSSF Best Practices | Passing                                          |
+| OpenSSF Scorecard      | 7.4 / 10                                         |
+| Supply chain           | Published from CI with SLSA provenance and SBOM  |
+| Reproducible build     | Verified in CI, byte-identical across builds     |
+| Code scanning          | Zero open alerts                                 |
+| Secret scanning        | Zero open alerts                                 |
+| Tests                  | 1,019 — `src/utils/` at 100%, transport at 99.5% |
+| Licensing              | MIT, SPDX headers on every source file           |
+| Sign-off               | Developer Certificate of Origin, checked in CI   |
+
+See [SECURITY.md](SECURITY.md) for the threat model, the assurance case and the
+remediation thresholds, and [ROADMAP.md](ROADMAP.md) for what is planned.
 
 ## License
 
