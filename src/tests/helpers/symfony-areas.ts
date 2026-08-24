@@ -1042,26 +1042,43 @@ function renderReference(className: string, symbols: string[]): string {
 
   for (const sym of symbols) {
     if (/^[A-Z][A-Za-z0-9]*$/.test(sym)) {
-      // Class-shaped: as an attribute, a use statement and a construction.
-      attrs.push(`#[ORM\\${sym}]`);
+      // Class-shaped. Most matchers for these want the attribute *with* its
+      // arguments — /Groups\s*\(\s*\[([^\]]+)\]/ finds nothing against a
+      // bare #[Groups]. Emit the argument forms an attribute actually takes.
+      attrs.push(`#[${sym}]`);
+      attrs.push(`#[ORM\\${sym}(targetEntity: Related::class, fetch: "EAGER")]`);
+      attrs.push(`#[${sym}(["read", "write"])]`);
+      attrs.push(`#[${sym}("value")]`);
+      attrs.push(`#[${sym}(2)]`);
+      attrs.push(`#[${sym}(name: "example", nullable: true)]`);
       uses.push(`use Symfony\\Component\\${sym};`);
       lines.push(`        $x = new ${sym}();`);
       lines.push(`        $y = ${sym}::class;`);
+      lines.push(`        $z = $this->container->get(${sym}::class);`);
     } else if (sym === sym.toUpperCase() && /^[A-Z_][A-Z0-9_]*$/.test(sym)) {
       // Constant-shaped: as a constant and as a superglobal subscript.
       lines.push(`        $c = ${sym};`);
       lines.push(`        $g = $_SERVER[${JSON.stringify(sym)}];`);
     } else if (sym.includes('_')) {
       lines.push(`        $a[${JSON.stringify(sym)}] = $this->${sym.replace(/[^A-Za-z0-9_]/g, '')}();`);
+      lines.push(`        $this->config->set(${JSON.stringify(sym)}, true);`);
     } else {
+      // Method-shaped names: matchers usually want the call with arguments,
+      // and often chained, which is how these APIs are written in practice.
+      const safe = sym.replace(/[^A-Za-z0-9_]/g, '');
       lines.push(`        $s = ${JSON.stringify(sym)};`);
+      lines.push(`        $this->builder->${safe}('value', 30)->${safe}([1, 2])->getQuery();`);
+      lines.push(`        $this->service->${safe}($request, ['timeout' => 5, 'verify_peer' => false]);`);
     }
   }
 
   return [
     ...uses,
     '',
-    ...attrs.map((a, i) => `${a}\nclass ${className}Attr${i} {}`),
+    `class ${className}Annotated`,
+    '{',
+    ...attrs.map((a, i) => `    ${a}\n    private $field${i};\n`),
+    '}',
     '',
     `class ${className}`,
     '{',
