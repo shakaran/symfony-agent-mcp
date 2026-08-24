@@ -79,6 +79,7 @@ let fixture: string;
 let problematic: string;
 let skeleton: string;
 let emptyDir: string;
+let outsideRoot: string;
 let missingPath: string;
 
 beforeAll(() => {
@@ -107,8 +108,15 @@ beforeAll(() => {
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.
-  const outside = path.join(os.tmpdir(), 'symfony-outside-target.txt');
+  // Its own directory, so the directory link below exposes a small, known set
+  // of files rather than the whole of /tmp.
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-outside-'));
+  const outside = path.join(outsideDir, 'symfony-outside-target.txt');
   fs.writeFileSync(outside, 'outside the application\n');
+  fs.writeFileSync(path.join(outsideDir, 'Escaped.php'), '<?php\nclass Escaped {}\n');
+  fs.writeFileSync(path.join(outsideDir, 'escaped.yaml'), 'framework: ~\n');
+  fs.writeFileSync(path.join(outsideDir, 'escaped.html.twig'), '{{ escaped }}\n');
+  outsideRoot = outsideDir;
   addSymlinks(fixture, outside);
   addSymlinks(problematic, outside);
   // 244 guards are `!classMatch`: every file so far declared a class.
@@ -126,7 +134,7 @@ afterAll(() => {
   removeFixture(fixture);
   removeFixture(problematic);
   removeFixture(skeleton);
-  fs.rmSync(path.join(os.tmpdir(), 'symfony-outside-target.txt'), { force: true });
+  fs.rmSync(outsideRoot, { recursive: true, force: true });
   fs.rmSync(emptyDir, { recursive: true, force: true });
 });
 

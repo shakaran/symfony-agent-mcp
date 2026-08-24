@@ -763,6 +763,17 @@ export function addSymlinks(root: string, outsideTarget: string): void {
 
   // A broken link: the target never existed.
   link('src/Service/BrokenLink.php', path.join(root, 'src/Service/DoesNotExist.php'));
+
+  // A *directory* link pointing out of the application.
+  //
+  // 372 uncovered guards are the containment check inside the readers —
+  // `!resolved.startsWith(base + sep)`. A walker that does not skip links
+  // descends into this one and lists files whose resolved path lies outside
+  // the application, which is precisely what that check exists to refuse.
+  // A file link is skipped by the isSymbolicLink() check first; a directory
+  // link is how the escape actually happens.
+  link('src/External', path.dirname(outsideTarget));
+  link('config/packages/external', path.dirname(outsideTarget));
 }
 
 /**

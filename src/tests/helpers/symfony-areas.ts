@@ -1157,6 +1157,47 @@ export function addPerModuleSurface(root: string, toolsDir: string): void {
     put(root, `src/${dir}/GeneratedReference.php`, header + part.join('\n'));
   });
 
+  // The same symbols again, in files that declare no class.
+  //
+  // 212 guards are `!classM`: a parser reaches them only after the file has
+  // already matched the module's own vocabulary, and then finds no class to
+  // attribute the finding to. The classes above satisfy the first half and
+  // never the second, so that branch stayed unreachable. Real applications
+  // produce these constantly — a returned config array mentioning a service,
+  // a function library using an attribute.
+  const classlessDirs = ['Config', 'Bootstrap', 'Legacy'];
+  const classlessChunk = Math.ceil(phpParts.length / classlessDirs.length);
+  classlessDirs.forEach((dir, i) => {
+    const slice = phpParts.slice(i * classlessChunk, (i + 1) * classlessChunk);
+    if (slice.length === 0) return;
+    // Keep the rendered context — attributes with their arguments, use
+    // statements, calls — and remove only the class declarations. Extracting
+    // bare literals loses exactly what the matchers are looking at.
+    const withoutClasses = slice
+      .join('\n')
+      .split('\n')
+      .filter((line) => !/^\s*(final\s+)?(abstract\s+)?class\s|^\s*interface\s/.test(line))
+      .filter((line) => !/^\s*(public|private|protected)\s+function\s/.test(line))
+      .join('\n');
+
+    const body = [
+      '<?php',
+      '',
+      '/**',
+      ' * Reference symbols with no class declaration, for the tool test-suite.',
+      ' *',
+      ' * The same vocabulary and the same syntactic context as the reference',
+      ' * classes, in the shape an application file takes when it holds',
+      ' * configuration rather than a type. A fixture — never loaded.',
+      ' */',
+      '',
+      'namespace App\\Reference;',
+      '',
+      withoutClasses,
+    ].join('\n');
+    put(root, `src/${dir}/reference_values.php`, body + '\n');
+  });
+
   // The configuration half. A module reading YAML never sees the PHP above,
   // and many of the literals only make sense as keys or scalar values.
   const yamlLines: string[] = [
