@@ -95,7 +95,7 @@ function forms(root: string): void {
     '    public function buildForm(FormBuilderInterface $builder, array $options): void',
     '    {',
     '        $builder',
-    '            ->add("nickname", null, ["required" => false])',
+    '            ->add(\'nickname\', null, [\'required\' => false])',
     '            ->add("bio", null, ["required" => false, "empty_data" => ""])',
     '            ->add("website", null, ["required" => false, "trim" => true])',
     '            ->add("avatar", null, ["mapped" => false, "required" => false])',
@@ -1056,6 +1056,76 @@ function lazyServices(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** Group-sequence providers and data mappers, declared as the interfaces do. */
+function validatorAndMapper(root: string): void {
+  put(root, 'src/Entity/SequencedUser.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Symfony\\Component\\Validator\\GroupSequenceProviderInterface;',
+    'use Symfony\\Component\\Validator\\Constraints as Assert;',
+    '',
+    '#[Assert\\GroupSequenceProvider]',
+    'class SequencedUser implements GroupSequenceProviderInterface',
+    '{',
+    '    public bool $premium = false;',
+    '',
+    '    public function getGroupSequence(): array',
+    '    {',
+    '        return $this->premium',
+    '            ? ["SequencedUser", "Premium"]',
+    '            : ["SequencedUser", "Standard"];',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Form/DataMapperType.php', [
+    '<?php',
+    'namespace App\\Form;',
+    '',
+    'use Symfony\\Component\\Form\\DataMapperInterface;',
+    '',
+    'class DataMapperType implements DataMapperInterface',
+    '{',
+    '    public function mapDataToForms($viewData, $forms): void',
+    '    {',
+    '        $forms = iterator_to_array($forms);',
+    '        $forms["name"]->setData($viewData?->name);',
+    '    }',
+    '',
+    '    public function mapFormsToData($forms, &$viewData): void',
+    '    {',
+    '        $forms = iterator_to_array($forms);',
+    '        $viewData->name = $forms["name"]->getData();',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Form/AppTypeGuesser.php', [
+    '<?php',
+    'namespace App\\Form;',
+    '',
+    'use Symfony\\Component\\Form\\FormTypeGuesserInterface;',
+    'use Symfony\\Component\\Form\\Guess\\Guess;',
+    'use Symfony\\Component\\Form\\Guess\\TypeGuess;',
+    '',
+    'class AppTypeGuesser implements FormTypeGuesserInterface',
+    '{',
+    '    public function guessType(string $class, string $property): ?TypeGuess',
+    '    {',
+    '        if (str_ends_with($property, "Email")) {',
+    '            return new TypeGuess(EmailType::class, [], Guess::HIGH_CONFIDENCE);',
+    '        }',
+    '        return null;',
+    '    }',
+    '',
+    '    public function guessRequired(string $class, string $property): ?Guess { return null; }',
+    '    public function guessMaxLength(string $class, string $property): ?Guess { return null; }',
+    '    public function guessPattern(string $class, string $property): ?Guess { return null; }',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string): void {
   profiler(root);
@@ -1086,4 +1156,5 @@ export function addTargetedContent(root: string): void {
   vercel(root);
   doctrineExtras(root);
   lazyServices(root);
+  validatorAndMapper(root);
 }

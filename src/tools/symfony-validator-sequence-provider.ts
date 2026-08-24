@@ -114,7 +114,7 @@ function analyseFile(filePath: string, base: string): SequenceProviderFinding[] 
   }
 
   // getGroupSequence() — flag complex conditions for review
-  const getGroupSeqMatch = /function\s+getGroupSequence\s*\([^)]{0,200}\)\s*\{([^}]{0,2000})\}/s.exec(content);
+  const getGroupSeqMatch = /function\s+getGroupSequence\s*\([^)]{0,200}\)(?:\s*:\s*[?\\\\\\w|]{1,80})?\s*\{([^}]{0,2000})\}/s.exec(content);
   if (getGroupSeqMatch) {
     const body = getGroupSeqMatch[1];
     const conditionCount = (body.match(/\bif\b|\bswitch\b|\bmatch\b/g) ?? []).length;

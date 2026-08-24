@@ -85,7 +85,7 @@ function parseFormFields(content: string): FormField[] {
   const fields: FormField[] = [];
 
   // Extract the buildForm() method body
-  const buildFormMatch = /function\s+buildForm\s*\([^)]+\)\s*\{([\s\S]*?)(?=\n {4}\}|\n\})/m.exec(content);
+  const buildFormMatch = /function\s+buildForm\s*\([^)]+\)(?:\s*:\s*[?\\\\\\w|]{1,80})?\s*\{([\s\S]*?)(?=\n {4}\}|\n\})/m.exec(content);
   if (!buildFormMatch) return fields;
 
   const methodBody = buildFormMatch[1];
