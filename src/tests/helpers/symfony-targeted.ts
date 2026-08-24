@@ -1152,6 +1152,116 @@ function validatorAndMapper(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** commands: the attribute's optional arguments, and the pre-attribute style. */
+function commandVariants(root: string): void {
+  put(root, 'src/Command/HiddenCommand.php', [
+    '<?php',
+    'namespace App\\Command;',
+    '',
+    'use Symfony\\Component\\Console\\Attribute\\AsCommand;',
+    'use Symfony\\Component\\Console\\Command\\Command;',
+    '',
+    '#[AsCommand(',
+    '    name: "app:internal",',
+    '    description: "Internal maintenance",',
+    '    aliases: ["app:maint", "app:internal-run"],',
+    '    hidden: true,',
+    ')]',
+    'class HiddenCommand extends Command',
+    '{',
+    '    protected function execute($input, $output): int { return Command::SUCCESS; }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Command/LegacyNameCommand.php', [
+    '<?php',
+    'namespace App\\Command;',
+    '',
+    'use Symfony\\Component\\Console\\Command\\Command;',
+    '',
+    'class LegacyNameCommand extends Command',
+    '{',
+    '    // The pre-attribute way of naming a command, still widespread.',
+    '    protected static $defaultName = "app:legacy";',
+    '    protected static $defaultDescription = "Legacy command";',
+    '',
+    '    protected function execute($input, $output): int { return 0; }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** serializer: attributes on constructor-promoted properties. */
+function serializerPromoted(root: string): void {
+  put(root, 'src/Dto/OrderDto.php', [
+    '<?php',
+    'namespace App\\Dto;',
+    '',
+    'use Symfony\\Component\\Serializer\\Attribute\\Groups;',
+    'use Symfony\\Component\\Serializer\\Attribute\\Ignore;',
+    'use Symfony\\Component\\Serializer\\Attribute\\MaxDepth;',
+    'use Symfony\\Component\\Serializer\\Attribute\\SerializedName;',
+    '',
+    'final class OrderDto',
+    '{',
+    '    public function __construct(',
+    '        #[Groups(["order:read", "order:write"])]',
+    '        public readonly int $id,',
+    '',
+    '        #[Groups(["order:read"])]',
+    '        #[SerializedName("reference_code")]',
+    '        public readonly string $reference,',
+    '',
+    '        #[MaxDepth(1)]',
+    '        #[Groups(["order:read"])]',
+    '        private readonly array $lines,',
+    '',
+    '        #[Ignore]',
+    '        protected readonly string $internal = "",',
+    '    ) {}',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** swarm: deploy blocks in the compose file the analyser reads by default. */
+function swarmInCompose(root: string): void {
+  put(root, 'docker-compose.yml', [
+    'services:',
+    '    php:',
+    '        build: ./docker/php',
+    '        environment:',
+    '            APP_ENV: dev',
+    '        volumes:',
+    '            - ./:/var/www',
+    '        deploy:',
+    '            replicas: 2',
+    '            placement:',
+    '                constraints:',
+    '                    - node.role == worker',
+    '            resources:',
+    '                limits:',
+    '                    cpus: "0.50"',
+    '                    memory: 512M',
+    '        healthcheck:',
+    '            test: ["CMD", "php", "-v"]',
+    '            interval: 30s',
+    '        ports:',
+    '            - target: 80',
+    '              published: 80',
+    '              mode: ingress',
+    '    worker:',
+    '        build: ./docker/php',
+    '        command: php bin/console messenger:consume async --limit=50 --memory-limit=128M',
+    '        deploy:',
+    '            replicas: 3',
+    '    database:',
+    '        image: mysql:8.0',
+    '        environment:',
+    '            MYSQL_ROOT_PASSWORD: root',
+    '        ports:',
+    '            - "3306:3306"',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string, withProfilerIndex = true): void {
   profiler(root, withProfilerIndex);
@@ -1183,4 +1293,7 @@ export function addTargetedContent(root: string, withProfilerIndex = true): void
   doctrineExtras(root);
   lazyServices(root);
   validatorAndMapper(root);
+  commandVariants(root);
+  serializerPromoted(root);
+  swarmInCompose(root);
 }
