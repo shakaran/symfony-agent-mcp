@@ -989,6 +989,25 @@ export function addLowLevelPhpFiles(root: string): void {
 export function addApiSurface(root: string): void {
   const source = path.join(__dirname, 'fixtures', 'api-surface.php');
   put(root, 'src/Reference/ApiSurface.php', fs.readFileSync(source, 'utf-8'));
+
+  // The same idea on the configuration side: every key, DSN scheme, env var
+  // and console command the modules look for, in one YAML document.
+  const config = path.join(__dirname, 'fixtures', 'config-surface.yaml');
+  put(root, 'config/packages/reference_surface.yaml', fs.readFileSync(config, 'utf-8'));
+
+  // Many modules scan one specific subdirectory rather than src/ as a whole,
+  // so a single copy is invisible to them. These are the directories the
+  // modules actually join onto appPath.
+  const php = fs.readFileSync(source, 'utf-8');
+  for (const dir of [
+    'Controller', 'Entity', 'Repository', 'Service', 'Form', 'Security',
+    'MessageHandler', 'EventSubscriber', 'EventListener', 'Command', 'Twig',
+    'Model', 'DataFixtures', 'Fixtures', 'Validator', 'Serializer', 'State',
+    'Resources', 'Maker', 'Migrations', 'Tests',
+  ]) {
+    put(root, `src/${dir}/ApiSurfaceReference.php`, php.replace('final class ApiSurface', `final class ApiSurface${dir}`));
+  }
+  put(root, 'tests/ApiSurfaceReference.php', php.replace('final class ApiSurface', 'final class ApiSurfaceTests'));
 }
 
 /** Everything above, applied in one call. */
