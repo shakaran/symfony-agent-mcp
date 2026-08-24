@@ -24,7 +24,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 import {
-  createSymfonyFixture, createProblematicFixture, addEcosystemFiles, removeFixture,
+  createSymfonyFixture, createProblematicFixture, createSkeletonFixture,
+  addEcosystemFiles, addBulkContent, addSymlinks, removeFixture,
 } from './helpers/symfony-fixture';
 import { addAllAreas, addPerModuleSurface } from './helpers/symfony-areas';
 
@@ -75,12 +76,17 @@ function pathFunctions(mod: Record<string, unknown>): Array<[string, (a: string)
 
 let fixture: string;
 let problematic: string;
+let skeleton: string;
 let emptyDir: string;
 let missingPath: string;
 
 beforeAll(() => {
   fixture = createSymfonyFixture();
   problematic = createProblematicFixture();
+  // A real project containing nothing: what reaches the several hundred
+  // 'I looked and found nothing' branches that an empty directory misses,
+  // because a non-project fails an earlier guard.
+  skeleton = createSkeletonFixture();
   // Container files, CI definitions, asset tooling: dozens of modules read
   // these and analyse nothing without them.
   addEcosystemFiles(fixture);
@@ -94,6 +100,16 @@ beforeAll(() => {
   // searches for, so its parsing runs against something it recognises.
   addPerModuleSurface(fixture, toolsDir);
   addPerModuleSurface(problematic, toolsDir);
+  // Hundreds of guards compare a count against a number; one of each kind
+  // never crosses them.
+  addBulkContent(fixture);
+  // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
+  // a guarded read returns for a path resolving outside the application. Both
+  // need actual links on disk.
+  const outside = path.join(os.tmpdir(), 'symfony-outside-target.txt');
+  fs.writeFileSync(outside, 'outside the application\n');
+  addSymlinks(fixture, outside);
+  addSymlinks(problematic, outside);
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
 });
@@ -101,6 +117,8 @@ beforeAll(() => {
 afterAll(() => {
   removeFixture(fixture);
   removeFixture(problematic);
+  removeFixture(skeleton);
+  fs.rmSync(path.join(os.tmpdir(), 'symfony-outside-target.txt'), { force: true });
   fs.rmSync(emptyDir, { recursive: true, force: true });
 });
 
@@ -152,6 +170,10 @@ describe('every tool module', () => {
       // that runs once a finding exists — injection-shaped SQL, shelled-out
       // commands, weak hashing, permissive CORS, debug left on in prod.
       for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, problematic);
+    });
+
+    test('a project containing nothing is reported as finding nothing', async () => {
+      for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, skeleton);
     });
 
     test('an empty directory is handled without throwing', async () => {

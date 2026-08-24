@@ -594,3 +594,173 @@ export function addEcosystemFiles(root: string): void {
   put(root, 'public/.htaccess', 'RewriteEngine On\n');
   put(root, 'public/robots.txt', 'User-agent: *\nDisallow:\n');
 }
+
+/**
+ * A valid Symfony application with nothing in it.
+ *
+ * The empty directory in the sweep is not a Symfony project at all, so most
+ * modules bail at their first guard and their "I looked and found nothing"
+ * branch never runs. This is a real project — composer.json declaring the
+ * framework, bin/console, the standard directories — that simply contains no
+ * routes, no entities, no messenger transports and no findings.
+ *
+ * It is what reaches the several hundred `if (!somethingFound)` branches.
+ */
+export function createSkeletonFixture(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-skeleton-'));
+
+  put(root, 'composer.json', JSON.stringify({
+    name: 'acme/skeleton',
+    type: 'project',
+    require: { php: '>=8.2', 'symfony/framework-bundle': '^7.0' },
+    autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+  }, null, 2));
+  put(root, 'composer.lock', JSON.stringify({ packages: [], 'packages-dev': [] }, null, 2));
+  put(root, 'bin/console', '#!/usr/bin/env php\n<?php\n');
+  put(root, 'symfony.lock', '{}');
+  put(root, '.env', 'APP_ENV=dev\n');
+  put(root, 'config/services.yaml', "services:\n    _defaults:\n        autowire: true\n");
+  put(root, 'config/routes.yaml', "# no routes\n");
+  put(root, 'config/bundles.php', "<?php\nreturn [];\n");
+  put(root, 'src/Kernel.php', "<?php\nnamespace App;\nclass Kernel {}\n");
+  put(root, 'public/index.php', "<?php\n");
+  put(root, 'templates/base.html.twig', '<!DOCTYPE html><html></html>\n');
+  put(root, 'tests/.gitkeep', '');
+  put(root, 'migrations/.gitkeep', '');
+  put(root, 'translations/.gitkeep', '');
+  put(root, 'var/log/.gitkeep', '');
+
+  return root;
+}
+
+/**
+ * Bulk content, for the thresholds.
+ *
+ * Several hundred guards compare a count against a number — "more than ten
+ * controllers", "over fifty routes", "at least twenty entities" — and a
+ * fixture with one of each never reaches them. This adds enough of each kind
+ * to cross the thresholds the modules actually use.
+ */
+export function addBulkContent(root: string, count = 25): void {
+  for (let i = 0; i < count; i++) {
+    put(root, `src/Controller/Generated${i}Controller.php`, [
+      '<?php',
+      'namespace App\\Controller;',
+      '',
+      'use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;',
+      'use Symfony\\Component\\HttpFoundation\\Response;',
+      'use Symfony\\Component\\Routing\\Attribute\\Route;',
+      '',
+      `class Generated${i}Controller extends AbstractController`,
+      '{',
+      `    #[Route("/generated/${i}", name: "app_generated_${i}", methods: ["GET", "POST"])]`,
+      `    public function index${i}(): Response`,
+      '    {',
+      `        return $this->render("generated/item${i}.html.twig");`,
+      '    }',
+      '}',
+    ].join('\n') + '\n');
+
+    put(root, `src/Entity/Generated${i}.php`, [
+      '<?php',
+      'namespace App\\Entity;',
+      '',
+      'use Doctrine\\ORM\\Mapping as ORM;',
+      '',
+      '#[ORM\\Entity]',
+      `#[ORM\\Table(name: "generated_${i}")]`,
+      `class Generated${i}`,
+      '{',
+      '    #[ORM\\Id]',
+      '    #[ORM\\GeneratedValue]',
+      '    #[ORM\\Column]',
+      '    private ?int $id = null;',
+      '',
+      '    #[ORM\\Column(length: 255)]',
+      '    private string $label;',
+      '',
+      '    #[ORM\\ManyToOne(targetEntity: User::class, fetch: "EAGER")]',
+      '    private $owner;',
+      '}',
+    ].join('\n') + '\n');
+
+    put(root, `src/Service/Generated${i}Service.php`, [
+      '<?php',
+      'namespace App\\Service;',
+      '',
+      `class Generated${i}Service`,
+      '{',
+      '    public function __construct(private $dependency) {}',
+      `    public function handle${i}(array $input): array { return $input; }`,
+      '}',
+    ].join('\n') + '\n');
+
+    put(root, `templates/generated/item${i}.html.twig`,
+      `{% extends "base.html.twig" %}\n{% block body %}{{ item${i} }}{% endblock %}\n`);
+
+    put(root, `tests/Generated${i}Test.php`, [
+      '<?php',
+      'namespace App\\Tests;',
+      'use PHPUnit\\Framework\\TestCase;',
+      `class Generated${i}Test extends TestCase`,
+      '{',
+      `    public function testGenerated${i}(): void { $this->assertTrue(true); }`,
+      '}',
+    ].join('\n') + '\n');
+  }
+
+  // Routes and translations in bulk too.
+  const routes = ['# generated routes'];
+  for (let i = 0; i < count; i++) {
+    routes.push(`app_yaml_${i}:`, `    path: /yaml/${i}`, `    controller: App\\Controller\\Generated${i}Controller::index${i}`);
+  }
+  put(root, 'config/routes/generated.yaml', routes.join('\n') + '\n');
+
+  const messages = ['generated:'];
+  for (let i = 0; i < count; i++) messages.push(`    key_${i}: "Value ${i}"`);
+  put(root, 'translations/generated.en.yaml', messages.join('\n') + '\n');
+  put(root, 'translations/generated.es.yaml', messages.slice(0, count / 2).join('\n') + '\n');
+}
+
+/**
+ * Symbolic links inside the tree, and one pointing out of it.
+ *
+ * 761 of the uncovered guards in src/tools are `entry.isSymbolicLink()`: every
+ * directory walker checks for links and skips them, and a fixture without a
+ * single link never runs that branch. A further 191 are `content === null`,
+ * which is what the guarded reader returns when a path resolves outside the
+ * application — exactly what the escaping link below produces.
+ *
+ * This is also the shape that matters most for safety: a link out of the tree
+ * is how a traversal would be attempted in the first place.
+ */
+export function addSymlinks(root: string, outsideTarget: string): void {
+  const link = (from: string, to: string): void => {
+    const full = path.join(root, from);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    try {
+      fs.symlinkSync(to, full);
+    } catch {
+      // Platforms without symlink permission simply skip this coverage.
+    }
+  };
+
+  // Links to files inside the project, in the directories walkers scan.
+  link('src/Controller/LinkedController.php', path.join(root, 'src/Controller/HomeController.php'));
+  link('src/Entity/LinkedEntity.php', path.join(root, 'src/Entity/User.php'));
+  link('src/Service/LinkedService.php', path.join(root, 'src/Kernel.php'));
+  link('templates/linked.html.twig', path.join(root, 'templates/base.html.twig'));
+  link('config/packages/linked.yaml', path.join(root, 'config/packages/framework.yaml'));
+  link('tests/LinkedTest.php', path.join(root, 'tests/Controller/HomeControllerTest.php'));
+
+  // A linked directory, which walkers must not follow into.
+  link('src/LinkedDir', path.join(root, 'src/Controller'));
+
+  // Links that escape the application: the guarded reader refuses these and
+  // returns null, which is the branch 191 guards are waiting for.
+  link('src/Controller/EscapingController.php', outsideTarget);
+  link('config/packages/escaping.yaml', outsideTarget);
+
+  // A broken link: the target never existed.
+  link('src/Service/BrokenLink.php', path.join(root, 'src/Service/DoesNotExist.php'));
+}
