@@ -23,7 +23,7 @@
 import * as path from 'path';
 
 /** Flipped per test; the mock below reads it on every call. */
-let failMode: 'none' | 'read' | 'stat' = 'none';
+let failMode: 'none' | 'read' | 'stat' | 'exists' = 'none';
 
 jest.mock('fs', () => {
   const real = jest.requireActual<typeof import('fs')>('fs');
@@ -36,6 +36,11 @@ jest.mock('fs', () => {
       (failMode === 'read' ? raise('EIO', 'read') : real.readFileSync(...args)),
     readdirSync: (...args: Parameters<typeof real.readdirSync>) =>
       (failMode === 'read' ? raise('EIO', 'scandir') : real.readdirSync(...args)),
+    // existsSync is the one call that sits in the entry point itself rather
+    // than behind a guarded helper, so it is the failure that actually reaches
+    // the outermost handler.
+    existsSync: (...args: Parameters<typeof real.existsSync>) =>
+      (failMode === 'exists' ? raise('EIO', 'stat') : real.existsSync(...args)),
     statSync: (...args: Parameters<typeof real.statSync>) =>
       (failMode === 'stat' ? raise('EACCES', 'stat') : real.statSync(...args)),
     lstatSync: (...args: Parameters<typeof real.lstatSync>) =>
@@ -100,6 +105,24 @@ describe('every module survives a failing filesystem', () => {
         const r = returned as ResultLike;
         if (typeof returned === 'object' && 'content' in (returned as object)) {
           expect(Array.isArray(r.content)).toBe(true);
+        }
+      }
+    });
+
+    test('an existence check that fails reaches the outermost handler', async () => {
+      // Everything else is behind a helper that swallows its own errors, so
+      // this is what the wrapper is actually there to catch.
+      failMode = 'exists';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
+          // The failure is reported, not swallowed into an empty answer.
+          expect(r.content!.length).toBeGreaterThan(0);
         }
       }
     });
