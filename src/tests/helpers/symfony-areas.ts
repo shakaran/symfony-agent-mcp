@@ -1026,6 +1026,61 @@ export function addApiSurface(root: string): void {
  * property that was entirely untested, and the one every defect found so far
  * would have violated.
  */
+/**
+ * Render one symbol in the several shapes a matcher might expect.
+ *
+ * A bare string in an array satisfies `includes()` but not a regular
+ * expression, which usually wants the symbol in context — an attribute with
+ * its parentheses, a superglobal with its bracket, a use statement with its
+ * semicolon. Emitting each symbol several ways costs nothing and reaches the
+ * matchers a plain list misses.
+ */
+function renderReference(className: string, symbols: string[]): string {
+  const lines: string[] = [];
+  const attrs: string[] = [];
+  const uses: string[] = [];
+
+  for (const sym of symbols) {
+    if (/^[A-Z][A-Za-z0-9]*$/.test(sym)) {
+      // Class-shaped: as an attribute, a use statement and a construction.
+      attrs.push(`#[ORM\\${sym}]`);
+      uses.push(`use Symfony\\Component\\${sym};`);
+      lines.push(`        $x = new ${sym}();`);
+      lines.push(`        $y = ${sym}::class;`);
+    } else if (sym === sym.toUpperCase() && /^[A-Z_][A-Z0-9_]*$/.test(sym)) {
+      // Constant-shaped: as a constant and as a superglobal subscript.
+      lines.push(`        $c = ${sym};`);
+      lines.push(`        $g = $_SERVER[${JSON.stringify(sym)}];`);
+    } else if (sym.includes('_')) {
+      lines.push(`        $a[${JSON.stringify(sym)}] = $this->${sym.replace(/[^A-Za-z0-9_]/g, '')}();`);
+    } else {
+      lines.push(`        $s = ${JSON.stringify(sym)};`);
+    }
+  }
+
+  return [
+    ...uses,
+    '',
+    ...attrs.map((a, i) => `${a}\nclass ${className}Attr${i} {}`),
+    '',
+    `class ${className}`,
+    '{',
+    '    public function symbols(): array',
+    '    {',
+    '        return [',
+    ...symbols.map((l) => `            ${JSON.stringify(l)},`),
+    '        ];',
+    '    }',
+    '',
+    '    public function shapes(): void',
+    '    {',
+    ...lines,
+    '    }',
+    '}',
+    '',
+  ].join('\n');
+}
+
 export function addPerModuleSurface(root: string, toolsDir: string): void {
   const credentialish = /(secret|password|passwd|credential|api[_-]?key|private[_-]?key)/i;
   const files = fs.readdirSync(toolsDir).filter((f) => f.endsWith('.ts'));
@@ -1040,15 +1095,25 @@ export function addPerModuleSurface(root: string, toolsDir: string): void {
       // Only shapes that can sit in PHP source without making it nonsense.
       if (/^[A-Za-z_$#\\][A-Za-z0-9_\\:>.$()[\]-]*$/.test(lit)) literals.add(lit);
     }
+
+    // Not everything a module looks for goes through includes(): plenty is
+    // matched by regular expression. Pull the symbol-shaped identifiers out of
+    // regex literals in positions where one is unambiguous.
+    for (const m of source.matchAll(
+      /(?:=\s*|\.test\(|\.match\(|\.exec\(|\.matchAll\(|\.replace\()\s*\/((?:[^/\\\n]|\\.){4,300})\/[gimsuy]*/g
+    )) {
+      for (const word of m[1].match(/[A-Za-z_][A-Za-z0-9_]{4,}/g) ?? []) {
+        if (credentialish.test(word)) continue;
+        // Symbols, not English: CamelCase, snake_case or ALLCAPS.
+        if (/^[A-Z][a-z0-9]+([A-Z][a-z0-9]*)+$/.test(word) || word.includes('_') || word === word.toUpperCase()) {
+          literals.add(word);
+        }
+      }
+    }
     if (literals.size === 0) continue;
 
     const cls = file.replace(/\.ts$/, '').replace(/[^A-Za-z0-9]/g, '');
-    phpParts.push(
-      `// ${file}\n` +
-      `class Ref${cls}\n{\n    public function symbols(): array\n    {\n        return [\n` +
-      [...literals].map((l) => `            ${JSON.stringify(l)},`).join('\n') +
-      '\n        ];\n    }\n}\n'
-    );
+    phpParts.push(`// ${file}\n` + renderReference(`Ref${cls}`, [...literals]));
   }
 
   const header = [
