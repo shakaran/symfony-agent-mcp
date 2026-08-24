@@ -20,12 +20,38 @@ function put(root: string, rel: string, content: string): void {
   fs.writeFileSync(full, content);
 }
 
-/** profiler: reads var/, and wants profiles rather than configuration. */
-function profiler(root: string): void {
+/**
+ * profiler: reads var/, and wants profiles rather than configuration.
+ *
+ * `withIndex` splits the two readers apart. With an index.csv the analyser
+ * parses that; without one it falls back to walking the token directories,
+ * and that fallback is a third of the module. Giving both fixtures the same
+ * layout left the fallback unreached.
+ */
+function profiler(root: string, withIndex = true): void {
+  if (!withIndex) {
+    // An earlier helper writes an index; remove it, or the analyser reads that
+    // and the walking reader still never runs.
+    for (const stale of ['var/cache/dev/profiler/index.csv', 'var/cache/prod/profiler/index.csv']) {
+      fs.rmSync(path.join(root, stale), { force: true });
+    }
+    // Tokens on disk, no index: the walking reader has to find them.
+    for (const token of ['c1d2e3', 'f4a5b6']) {
+      put(root, `var/cache/dev/profiler/${token.slice(0, 2)}/${token.slice(2, 4)}/${token}`,
+        `O:8:"stdClass":1:{s:5:"token";s:6:"${token}";}\n`);
+    }
+    put(root, 'var/cache/prod/profiler/ab/cd/abcdef', 'profile\n');
+    return;
+  }
+
   put(root, 'var/cache/dev/profiler/index.csv', [
     'b1c2d3,127.0.0.1,GET,http://localhost/,200,1756000000,app_home,',
     'e4f5a6,127.0.0.1,POST,http://localhost/orders,302,1756000060,app_order_new,',
     'a7b8c9,10.0.0.5,GET,http://localhost/admin,403,1756000120,app_admin,',
+    // Fewer fields than the parser requires: it must skip this rather than
+    // read past the end of the row.
+    'short,127.0.0.1,GET',
+    '',
   ].join('\n') + '\n');
   for (const token of ['b1c2d3', 'e4f5a6', 'a7b8c9']) {
     put(root, `var/cache/dev/profiler/${token.slice(0, 2)}/${token.slice(2, 4)}/${token}`,
@@ -1127,8 +1153,8 @@ function validatorAndMapper(root: string): void {
 }
 
 /** Apply every targeted block. */
-export function addTargetedContent(root: string): void {
-  profiler(root);
+export function addTargetedContent(root: string, withProfilerIndex = true): void {
+  profiler(root, withProfilerIndex);
   googleOauth(root);
   forms(root);
   propertyHooks(root);

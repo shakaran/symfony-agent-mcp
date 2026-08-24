@@ -114,7 +114,8 @@ beforeAll(() => {
   // Content aimed at the modules holding the most uncovered code, written
   // from what each of them reads and looks for.
   addTargetedContent(fixture);
-  addTargetedContent(problematic);
+  // Without the profiler index, so the walking reader runs on one of them.
+  addTargetedContent(problematic, false);
   // Integration modules gate on the dependency being declared before doing
   // anything at all, so this has to come after the targeted blocks that
   // write composer.json themselves.
