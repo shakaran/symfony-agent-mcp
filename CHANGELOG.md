@@ -5,9 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-08-24
 
 ### Fixed
+
+- **Five analysers could not see a method that declares a return type.** Their
+  matcher went straight from the closing parenthesis to the brace, so
+  `buildForm($builder, $options) {` matched and
+  `buildForm(FormBuilderInterface $builder, array $options): void {` did not —
+  which is what Symfony's own maker generates. Every form written that way was
+  invisible: no fields, no constraints, no findings. Three of the five are
+  worse than that: `getGroupSequence(): array` and `guessType(): ?TypeGuess`
+  are the signatures the Symfony interfaces *oblige* you to write, so those
+  analysers could never report on a correct implementation. Fixed in `forms`,
+  `symfony-form-data-mapper`, `symfony-form-type-guesser`,
+  `symfony-validator-group-sequence` and `symfony-validator-sequence-provider`.
+
+- **The error sanitiser redacted a bare drive root, and grew doing it.** Its
+  Windows-path pattern ended in `*`, so it matched `A:\` with nothing after
+  it and returned `[PATH]` — six characters for three. A drive root names no
+  file and reveals nothing. Found by the property-based suite, not by reading.
 
 - `publish.yml` declared a `dry_run` input that nothing read. A manual run was
   always a dry run regardless of how the box was ticked, which is misleading in
@@ -15,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented where the trigger is declared.
 
 ### Added
+
+- **Tests for `src/tools/`, which had none.** The 820 analyser modules are the
+  bulk of the codebase and were at 0%, while being the source of every parsing
+  defect found so far. A sweep drives all of them across five situations — a
+  realistic Symfony application, one doing everything the tools exist to flag,
+  a project containing nothing, an empty directory and a path that does not
+  exist — asserting none throws, hangs or returns something the server cannot
+  serialise. Fixtures include symbolic links inside and out of the tree, files
+  with no class, unreadable files, docblock annotations, XML mapping, and a
+  reference surface generated from the literals the modules themselves search
+  for.
+
+  Statement coverage across the project goes from 2.8% to 78.9%, lines to
+  80.7% and functions to 85.2%. 6,760 tests.
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1). Both
   are OpenSSF Best Practices criteria and neither existed.

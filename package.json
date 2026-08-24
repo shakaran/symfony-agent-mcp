@@ -1,6 +1,6 @@
 {
   "name": "@shakaran/symfony-agent-mcp",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "mcpName": "io.github.shakaran/symfony-agent-mcp",
   "description": "Model Context Protocol server for Symfony applications — read-only introspection of routes, services, entities, controllers, database schema, migrations, composer packages, and logs",
   "type": "module",
