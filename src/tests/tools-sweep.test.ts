@@ -28,7 +28,9 @@ import {
   addEcosystemFiles, addBulkContent, addSymlinks, addClasslessFiles,
   addUnreadableFiles, restorePermissions, removeFixture,
 } from './helpers/symfony-fixture';
-import { addAllAreas, addPerModuleSurface } from './helpers/symfony-areas';
+import {
+  addAllAreas, addPerModuleSurface, addComposerDependencies,
+} from './helpers/symfony-areas';
 import { addTargetedContent } from './helpers/symfony-targeted';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -113,6 +115,11 @@ beforeAll(() => {
   // from what each of them reads and looks for.
   addTargetedContent(fixture);
   addTargetedContent(problematic);
+  // Integration modules gate on the dependency being declared before doing
+  // anything at all, so this has to come after the targeted blocks that
+  // write composer.json themselves.
+  addComposerDependencies(fixture, toolsDir);
+  addComposerDependencies(problematic, toolsDir);
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.

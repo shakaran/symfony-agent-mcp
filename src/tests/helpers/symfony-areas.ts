@@ -1259,6 +1259,56 @@ export function addPerModuleSurface(root: string, toolsDir: string): void {
   put(root, 'templates/generated_reference.html.twig', twig + '\n');
 }
 
+/**
+ * Declare every package the analysers look for in composer.json.
+ *
+ * Integration modules gate on the dependency before doing anything: an
+ * analyser for Algolia reads composer.json, does not find algolia/search-bundle
+ * and returns immediately, so nothing else it can do ever runs. Twelve of the
+ * modules given targeted content stayed low for exactly this reason.
+ *
+ * The names are extracted from the modules rather than listed by hand, and
+ * filtered to things shaped like a Composer package so MIME types and paths
+ * caught by the same pattern do not end up in there.
+ */
+export function addComposerDependencies(root: string, toolsDir: string): void {
+  const notAPackage = /\.(php|ya?ml|json|xml|twig|ini|conf|toml|lock|md|js|ts)$/;
+  const pathPrefix = /^(src|config|var|bin|public|templates|tests|docker|vendor|node_modules)\//;
+  const mimeish = /^(application|text|image|audio|video|multipart|message|font)\//;
+
+  const packages = new Set<string>();
+  for (const file of fs.readdirSync(toolsDir).filter((f) => f.endsWith('.ts'))) {
+    const source = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
+    for (const m of source.matchAll(/'([a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)'/g)) {
+      const name = m[1];
+      if (notAPackage.test(name) || pathPrefix.test(name) || mimeish.test(name)) continue;
+      packages.add(name);
+    }
+  }
+
+  const composerPath = path.join(root, 'composer.json');
+  let composer: Record<string, unknown>;
+  try {
+    composer = JSON.parse(fs.readFileSync(composerPath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return; // A fixture without composer.json is not a Symfony project anyway.
+  }
+
+  const require = { ...(composer['require'] as Record<string, string>) };
+  for (const name of packages) require[name] = '^1.0';
+  composer['require'] = require;
+  fs.writeFileSync(composerPath, JSON.stringify(composer, null, 2) + '\n');
+
+  // composer.lock is read by a good number of them as well, and a lock file
+  // that disagrees with composer.json is its own kind of finding.
+  const lock = {
+    'content-hash': '0000000000000000000000000000000000000000',
+    packages: [...packages].map((name) => ({ name, version: 'v1.0.0' })),
+    'packages-dev': [{ name: 'phpunit/phpunit', version: '11.2.0' }],
+  };
+  fs.writeFileSync(path.join(root, 'composer.lock'), JSON.stringify(lock, null, 2) + '\n');
+}
+
 /** Everything above, applied in one call. */
 export function addAllAreas(root: string): void {
   addMessengerFiles(root);
