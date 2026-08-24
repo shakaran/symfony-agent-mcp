@@ -427,6 +427,375 @@ export function addTestingFiles(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** Security: voters, authenticators, custom access decisions. */
+export function addSecurityFiles(root: string): void {
+  put(root, 'src/Security/OrderVoter.php', [
+    '<?php',
+    'namespace App\\Security;',
+    '',
+    'use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;',
+    'use Symfony\\Component\\Security\\Core\\Authentication\\Token\\TokenInterface;',
+    '',
+    'class OrderVoter extends Voter',
+    '{',
+    '    public const VIEW = "ORDER_VIEW";',
+    '    public const EDIT = "ORDER_EDIT";',
+    '',
+    '    protected function supports(string $attribute, $subject): bool',
+    '    {',
+    '        return in_array($attribute, [self::VIEW, self::EDIT], true);',
+    '    }',
+    '',
+    '    protected function voteOnAttribute(string $attribute, $subject, TokenInterface $token): bool',
+    '    {',
+    '        $user = $token->getUser();',
+    '        if (!$user) { return false; }',
+    '        return match($attribute) {',
+    '            self::VIEW => true,',
+    '            self::EDIT => $subject->getOwner() === $user,',
+    '            default => false,',
+    '        };',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Security/ApiTokenAuthenticator.php', [
+    '<?php',
+    'namespace App\\Security;',
+    '',
+    'use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractAuthenticator;',
+    'use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Passport;',
+    '',
+    'class ApiTokenAuthenticator extends AbstractAuthenticator',
+    '{',
+    '    public function supports($request): ?bool { return $request->headers->has("X-API-TOKEN"); }',
+    '    public function authenticate($request): Passport { throw new \\LogicException("stub"); }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Validation: constraints including UniqueEntity, and a custom validator. */
+export function addValidatorFiles(root: string): void {
+  put(root, 'config/packages/validator.yaml', [
+    'framework:',
+    '    validation:',
+    '        email_validation_mode: html5',
+    '        enable_annotations: true',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Entity/Customer.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Doctrine\\ORM\\Mapping as ORM;',
+    'use Symfony\\Component\\Validator\\Constraints as Assert;',
+    'use Symfony\\Bridge\\Doctrine\\Validator\\Constraints\\UniqueEntity;',
+    '',
+    '#[ORM\\Entity]',
+    '#[UniqueEntity(fields: ["email"], message: "Already used")]',
+    '#[UniqueEntity(fields: ["taxId", "country"], errorPath: "taxId")]',
+    'class Customer',
+    '{',
+    '    #[ORM\\Column(length: 180, unique: true)]',
+    '    #[Assert\\NotBlank]',
+    '    #[Assert\\Email]',
+    '    private string $email;',
+    '',
+    '    // Declared unique by the validator but not by the schema',
+    '    #[ORM\\Column(length: 32)]',
+    '    private string $taxId;',
+    '',
+    '    #[ORM\\Column(length: 2)]',
+    '    private string $country;',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Validator/ValidVatConstraint.php', [
+    '<?php',
+    'namespace App\\Validator;',
+    'use Symfony\\Component\\Validator\\Constraint;',
+    '#[\\Attribute]',
+    'class ValidVatConstraint extends Constraint { public string $message = "Invalid VAT"; }',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Validator/ValidVatConstraintValidator.php', [
+    '<?php',
+    'namespace App\\Validator;',
+    '',
+    'use Symfony\\Component\\Validator\\ConstraintValidator;',
+    'use Symfony\\Component\\Validator\\Constraint;',
+    '',
+    'class ValidVatConstraintValidator extends ConstraintValidator',
+    '{',
+    '    public function validate($value, Constraint $constraint): void',
+    '    {',
+    '        if (!$value) { return; }',
+    '        $this->context->buildViolation($constraint->message)->addViolation();',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Forms: several field types, options resolvers, a collection. */
+export function addFormFiles(root: string): void {
+  put(root, 'src/Form/OrderType.php', [
+    '<?php',
+    'namespace App\\Form;',
+    '',
+    'use Symfony\\Component\\Form\\AbstractType;',
+    'use Symfony\\Component\\Form\\Extension\\Core\\Type\\ChoiceType;',
+    'use Symfony\\Component\\Form\\Extension\\Core\\Type\\CollectionType;',
+    'use Symfony\\Component\\Form\\Extension\\Core\\Type\\DateTimeType;',
+    'use Symfony\\Component\\Form\\Extension\\Core\\Type\\MoneyType;',
+    'use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;',
+    'use Symfony\\Component\\Form\\FormBuilderInterface;',
+    'use Symfony\\Component\\OptionsResolver\\OptionsResolver;',
+    '',
+    'class OrderType extends AbstractType',
+    '{',
+    '    public function buildForm(FormBuilderInterface $builder, array $options): void',
+    '    {',
+    '        $builder',
+    '            ->add("reference", TextType::class, ["required" => true])',
+    '            ->add("total", MoneyType::class, ["currency" => "EUR"])',
+    '            ->add("placedAt", DateTimeType::class, ["widget" => "single_text"])',
+    '            ->add("status", ChoiceType::class, [',
+    '                "choices" => ["Draft" => "draft", "Paid" => "paid"],',
+    '                "expanded" => false,',
+    '            ])',
+    '            ->add("lines", CollectionType::class, [',
+    '                "entry_type" => OrderLineType::class,',
+    '                "allow_add" => true,',
+    '                "by_reference" => false,',
+    '            ]);',
+    '    }',
+    '',
+    '    public function configureOptions(OptionsResolver $resolver): void',
+    '    {',
+    '        $resolver->setDefaults(["data_class" => \\App\\Entity\\Order::class, "csrf_protection" => false]);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Form/OrderLineType.php', [
+    '<?php',
+    'namespace App\\Form;',
+    'use Symfony\\Component\\Form\\AbstractType;',
+    'use Symfony\\Component\\Form\\FormBuilderInterface;',
+    'class OrderLineType extends AbstractType',
+    '{',
+    '    public function buildForm(FormBuilderInterface $builder, array $options): void',
+    '    {',
+    '        $builder->add("sku")->add("quantity");',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** HTTP client, third-party integrations and file storage. */
+export function addIntegrationFiles(root: string): void {
+  put(root, 'config/packages/framework_http_client.yaml', [
+    'framework:',
+    '    http_client:',
+    '        default_options:',
+    '            timeout: 30',
+    '            max_redirects: 3',
+    '            verify_peer: false',
+    '        scoped_clients:',
+    '            github.client:',
+    '                base_uri: "https://api.github.com"',
+    '                headers:',
+    '                    Accept: "application/vnd.github+json"',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Service/GithubClient.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Contracts\\HttpClient\\HttpClientInterface;',
+    '',
+    'class GithubClient',
+    '{',
+    '    public function __construct(private HttpClientInterface $client) {}',
+    '',
+    '    public function repo(string $name): array',
+    '    {',
+    '        $response = $this->client->request("GET", "/repos/" . $name, ["timeout" => 5]);',
+    '        return $response->toArray();',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/oneup_flysystem.yaml', [
+    'oneup_flysystem:',
+    '    adapters:',
+    '        local_adapter:',
+    '            local:',
+    '                location: "%kernel.project_dir%/var/storage"',
+    '    filesystems:',
+    '        uploads:',
+    '            adapter: local_adapter',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/vich_uploader.yaml', [
+    'vich_uploader:',
+    '    db_driver: orm',
+    '    mappings:',
+    '        product_image:',
+    '            uri_prefix: /images/products',
+    '            upload_destination: "%kernel.project_dir%/public/images/products"',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/knpu_oauth2_client.yaml', [
+    'knpu_oauth2_client:',
+    '    clients:',
+    '        google:',
+    '            type: google',
+    '            client_id: "%env(GOOGLE_CLIENT_ID)%"',
+    '            client_secret: "%env(GOOGLE_CLIENT_SECRET)%"',
+    '            redirect_route: connect_google_check',
+  ].join('\n') + '\n');
+}
+
+/** Modern PHP language features the analysers look for. */
+export function addModernPhpFiles(root: string): void {
+  put(root, 'src/Enum/OrderStatus.php', [
+    '<?php',
+    'namespace App\\Enum;',
+    '',
+    'enum OrderStatus: string',
+    '{',
+    '    case Draft = "draft";',
+    '    case Paid = "paid";',
+    '',
+    '    const DEFAULT = self::Draft;',
+    '',
+    '    public function label(): string',
+    '    {',
+    '        return match($this) { self::Draft => "Draft", self::Paid => "Paid" };',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Model/Money.php', [
+    '<?php',
+    'namespace App\\Model;',
+    '',
+    'final readonly class Money',
+    '{',
+    '    public const int SCALE = 2;',
+    '    public const string CURRENCY = "EUR";',
+    '',
+    '    public function __construct(public int $amount) {}',
+    '',
+    '    public int $major {',
+    '        get => intdiv($this->amount, 100);',
+    '    }',
+    '',
+    '    public function with(int $amount): static',
+    '    {',
+    '        return new static($amount);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Service/Calculator.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'class Calculator',
+    '{',
+    '    public function total(array $lines): int',
+    '    {',
+    '        $sum = array_map($this->lineTotal(...), $lines);',
+    '        return array_sum($sum);',
+    '    }',
+    '',
+    '    private function lineTotal(array $line): int { return $line["qty"] * $line["price"]; }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Symfony UX / Stimulus controllers and their values. */
+export function addUxFiles(root: string): void {
+  put(root, 'assets/controllers.json', JSON.stringify({
+    controllers: { '@symfony/ux-turbo': { 'turbo-core': { enabled: true, fetch: 'eager' } } },
+    entrypoints: [],
+  }, null, 2));
+
+  put(root, 'assets/controllers/search_controller.js', [
+    "import { Controller } from '@hotwired/stimulus';",
+    '',
+    'export default class extends Controller {',
+    "    static targets = ['input', 'results'];",
+    '    static values = {',
+    '        url: String,',
+    '        minLength: { type: Number, default: 3 },',
+    '        open: Boolean,',
+    '    };',
+    '',
+    '    connect() { this.element.dataset.connected = "true"; }',
+    '',
+    '    search() {',
+    '        if (this.inputTarget.value.length < this.minLengthValue) return;',
+    '        fetch(this.urlValue);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'templates/search.html.twig', [
+    '<div {{ stimulus_controller("search", { url: path("app_home"), minLength: 3 }) }}>',
+    '    <input data-search-target="input">',
+    '    <ul data-search-target="results"></ul>',
+    '</div>',
+  ].join('\n') + '\n');
+}
+
+/** Doctrine repositories with queries the analysers inspect. */
+export function addRepositoryFiles(root: string): void {
+  put(root, 'src/Repository/UserRepository.php', [
+    '<?php',
+    'namespace App\\Repository;',
+    '',
+    'use App\\Entity\\User;',
+    'use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;',
+    'use Doctrine\\Persistence\\ManagerRegistry;',
+    '',
+    'class UserRepository extends ServiceEntityRepository',
+    '{',
+    '    public function __construct(ManagerRegistry $registry)',
+    '    {',
+    '        parent::__construct($registry, User::class);',
+    '    }',
+    '',
+    '    public function findActive(): array',
+    '    {',
+    '        return $this->createQueryBuilder("u")',
+    '            ->andWhere("u.active = :active")',
+    '            ->setParameter("active", true)',
+    '            ->orderBy("u.email", "ASC")',
+    '            ->setMaxResults(50)',
+    '            ->getQuery()',
+    '            ->getResult();',
+    '    }',
+    '',
+    '    public function findWithOrders(): array',
+    '    {',
+    '        // No join: one query per user follows',
+    '        return $this->createQueryBuilder("u")->getQuery()->getResult();',
+    '    }',
+    '',
+    '    public function countAll(): int',
+    '    {',
+    '        return (int) $this->createQueryBuilder("u")',
+    '            ->select("COUNT(u.id)")',
+    '            ->getQuery()',
+    '            ->getSingleScalarResult();',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Everything above, applied in one call. */
 export function addAllAreas(root: string): void {
   addMessengerFiles(root);
@@ -436,4 +805,11 @@ export function addAllAreas(root: string): void {
   addDeploymentFiles(root);
   addObservabilityFiles(root);
   addTestingFiles(root);
+  addSecurityFiles(root);
+  addValidatorFiles(root);
+  addFormFiles(root);
+  addIntegrationFiles(root);
+  addModernPhpFiles(root);
+  addUxFiles(root);
+  addRepositoryFiles(root);
 }
