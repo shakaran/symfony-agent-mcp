@@ -127,21 +127,26 @@ function readTokensFromFiles(profilerDir: string): ProfilerToken[] {
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
       if (!entry.isDirectory()) continue;
-      // Each subdirectory is a 2-char prefix of the token
-      const subDir = path.join(profilerDir, entry.name);
+      // Symfony nests profiles two levels deep, not one:
+      // <folder>/<last 2 chars>/<the 2 before those>/<token>
+      // (Symfony\Component\HttpKernel\Profiler\FileProfilerStorage::getFilename)
+      const outer = path.join(profilerDir, entry.name);
       try {
-        for (const file of fs.readdirSync(subDir)) {
-          if (file.length < 6) continue;
-          tokens.push({
-            token: file,
-            ip: '',
-            method: '',
-            url: '',
-            time: 0,
-            parent: '',
-            statusCode: 0,
-            virtualType: 'request',
-          });
+        for (const inner of fs.readdirSync(outer, { withFileTypes: true })) {
+          if (inner.isSymbolicLink() || !inner.isDirectory()) continue;
+          for (const file of fs.readdirSync(path.join(outer, inner.name))) {
+            if (file.length < 6) continue;
+            tokens.push({
+              token: file,
+              ip: '',
+              method: '',
+              url: '',
+              time: 0,
+              parent: '',
+              statusCode: 0,
+              virtualType: 'request',
+            });
+          }
         }
       } catch {
         // Skip
@@ -154,8 +159,10 @@ function readTokensFromFiles(profilerDir: string): ProfilerToken[] {
 }
 
 function readProfilerData(profilerDir: string, token: string): ProfilerCollectors | null {
-  const subDir = token.slice(0, 2);
-  const filePath = path.join(profilerDir, subDir, token);
+  // Same layout as the walker above: the last two characters, then the two
+  // before those. Reading `token.slice(0, 2)` one level deep never found a
+  // profile Symfony had written.
+  const filePath = path.join(profilerDir, token.slice(-2), token.slice(-4, -2), token);
 
   // Containment check: ensure the resolved path stays inside profilerDir
   const resolvedFilePath = path.resolve(filePath);

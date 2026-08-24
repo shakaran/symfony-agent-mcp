@@ -843,7 +843,7 @@ export function addOperationsFiles(root: string): void {
   // The profiler tools read the cache directory rather than configuration.
   put(root, 'var/cache/dev/profiler/index.csv',
     'a1b2c3,127.0.0.1,GET,http://localhost/,200,1756000000,,\n');
-  put(root, 'var/cache/dev/profiler/a1/b2/a1b2c3', 'serialized-profile-stub\n');
+  put(root, 'var/cache/dev/profiler/c3/b2/a1b2c3', 'serialized-profile-stub\n');
   put(root, 'var/cache/prod/url_generating_routes.php', "<?php\nreturn [];\n");
   put(root, 'var/log/prod.deprecations.log', "[2026-08-24] deprecation: Passing null is deprecated\n");
 }

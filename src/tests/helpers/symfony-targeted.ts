@@ -13,11 +13,30 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as zlib from 'zlib';
 
 function put(root: string, rel: string, content: string): void {
   const full = path.join(root, rel);
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, content);
+}
+
+/**
+ * Symfony stores a profile gzip-compressed. A plain-text file leaves the
+ * reader's decompression path — and everything that follows it — unexecuted,
+ * which is why this module sat at half coverage through several rounds of
+ * fixture work.
+ */
+function profilePath(token: string): string {
+  // Symfony nests by the last two characters, then the two before those.
+  return `var/cache/dev/profiler/${token.slice(-2)}/${token.slice(-4, -2)}/${token}`;
+}
+
+function writeProfile(root: string, rel: string, token: string): void {
+  const payload = `O:8:"stdClass":2:{s:5:"token";s:${token.length}:"${token}";s:6:"parent";N;}`;
+  const full = path.join(root, rel);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, zlib.gzipSync(Buffer.from(payload, 'utf-8')));
 }
 
 /**
@@ -37,8 +56,7 @@ function profiler(root: string, withIndex = true): void {
     }
     // Tokens on disk, no index: the walking reader has to find them.
     for (const token of ['c1d2e3', 'f4a5b6']) {
-      put(root, `var/cache/dev/profiler/${token.slice(0, 2)}/${token.slice(2, 4)}/${token}`,
-        `O:8:"stdClass":1:{s:5:"token";s:6:"${token}";}\n`);
+      writeProfile(root, profilePath(token), token);
     }
     put(root, 'var/cache/prod/profiler/ab/cd/abcdef', 'profile\n');
     return;
@@ -54,9 +72,11 @@ function profiler(root: string, withIndex = true): void {
     '',
   ].join('\n') + '\n');
   for (const token of ['b1c2d3', 'e4f5a6', 'a7b8c9']) {
-    put(root, `var/cache/dev/profiler/${token.slice(0, 2)}/${token.slice(2, 4)}/${token}`,
-      `O:8:"stdClass":1:{s:5:"token";s:6:"${token}";}\n`);
+    writeProfile(root, profilePath(token), token);
   }
+  // One stored uncompressed as well: the reader tries gunzip and falls back.
+  put(root, profilePath('plaintext'),
+    'O:8:"stdClass":1:{s:5:"token";s:9:"plaintext";}\n');
   put(root, 'var/cache/dev/App_KernelDevDebugContainer.php', "<?php\nclass App_KernelDevDebugContainer {}\n");
   put(root, 'var/cache/prod/App_KernelProdContainer.php', "<?php\nclass App_KernelProdContainer {}\n");
   put(root, 'var/log/dev.log', '[2026-08-24T10:00:00+00:00] request.INFO: Matched route "app_home". [] []\n');
