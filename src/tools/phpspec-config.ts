@@ -4,6 +4,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
 
+/**
+ * The indentation this document uses for one nesting level.
+ *
+ * Two spaces is the common style and four is equally valid YAML; assuming two
+ * meant a four-space file parsed as having nothing in it. Taken from the first
+ * child of the given key rather than guessed.
+ */
+function indentUnder(content: string, key: string): number {
+  const m = new RegExp(`^${key}\\s*:\\s*\\n( +)\\S`, 'm').exec(content);
+  return m ? m[1].length : 2;
+}
+
 function safeRead(filePath: string, base: string): string | null {
   const resolved = path.resolve(filePath);
   if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
@@ -64,7 +76,9 @@ function buildPhpspecConfigInfos(appPath: string): PhpspecConfigInfo[] {
     const suitesMatch = configContent.match(/^suites:([\s\S]*?)(?:^[a-z]|$)/m);
     if (suitesMatch) {
       const suitesContent = suitesMatch[1];
-      const suiteNames = suitesContent.match(/^ {2}\w[\w_-]*:/gm);
+      const suiteNames = suitesContent.match(
+      new RegExp(`^ {${indentUnder(suitesContent, 'suites')}}(?! )\\w[\\w_-]*:`, 'gm')
+    );
       if (suiteNames) {
         for (const suiteName of suiteNames) {
           results.push({

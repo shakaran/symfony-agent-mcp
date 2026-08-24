@@ -55,6 +55,18 @@ interface DockerService {
 
 // ─── Dockerfile parsing ───────────────────────────────────────────────────────
 
+/**
+ * The indentation this document uses for one nesting level.
+ *
+ * Two spaces is the common style and four is equally valid YAML; assuming two
+ * meant a four-space file parsed as having nothing in it. Taken from the first
+ * child of the given key rather than guessed.
+ */
+function indentUnder(content: string, key: string): number {
+  const m = new RegExp(`^${key}\\s*:\\s*\\n( +)\\S`, 'm').exec(content);
+  return m ? m[1].length : 2;
+}
+
 function parseDockerfile(appPath: string): DockerfileInfo | null {
   const candidates = ['Dockerfile', 'docker/Dockerfile', 'docker/php/Dockerfile', '.docker/Dockerfile'];
   for (const fname of candidates) {
@@ -147,13 +159,14 @@ function parseDockerCompose(appPath: string): DockerService[] {
     const lines = content.split('\n');
     let inServices = false;
     let currentService = '';
+    const svcIndent = indentUnder(content, 'services');
 
     for (const line of lines) {
       if (/^services\s*:/.test(line)) { inServices = true; continue; }
       if (!inServices) continue;
 
-      // Top-level service name (2-space indent)
-      const svcM = /^ {2}([a-zA-Z0-9_-]+)\s*:/.exec(line);
+      // Top-level service name, at whatever indent this file uses
+      const svcM = new RegExp(`^ {${svcIndent}}(?! )([a-zA-Z0-9_-]+)\\s*:`).exec(line);
       if (svcM && !line.startsWith('   ')) {
         currentService = svcM[1];
         if (!allServices.has(currentService)) {

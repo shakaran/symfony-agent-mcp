@@ -12,6 +12,19 @@ interface DockerSwarmInfo {
   issues: string[];
 }
 
+/**
+ * The indentation this document uses for one nesting level.
+ *
+ * Two spaces is the common style and four is equally valid YAML; assuming two
+ * meant a four-space compose file parsed as having no services at all. Taken
+ * from the first child of the given key rather than guessed, so a file is read
+ * the way it is written.
+ */
+function indentUnder(content: string, key: string): number {
+  const m = new RegExp(`^${key}\\s*:\\s*\\n( +)\\S`, 'm').exec(content);
+  return m ? m[1].length : 2;
+}
+
 function extractYamlValue(block: string, key: string): string | null {
   const re = new RegExp(`${key}\\s*:\\s*([^\\n]{1,200})`);
   const m = re.exec(block);
@@ -27,12 +40,13 @@ function extractYamlBool(block: string, key: string): boolean | null {
 }
 
 function extractServiceBlock(content: string, serviceName: string): string {
-  const serviceRe = new RegExp(`^(  ${serviceName}\\s*:)`, 'm');
+  const indent = indentUnder(content, 'services');
+  const serviceRe = new RegExp(`^( {${indent}}${serviceName}\\s*:)`, 'm');
   const sm = serviceRe.exec(content);
   if (!sm) return '';
   const start = sm.index;
   const rest = content.substring(start);
-  const nextServiceMatch = /^ {2}[a-zA-Z_][a-zA-Z0-9_-]{0,100}\s*:/m.exec(rest.substring(sm[0].length));
+  const nextServiceMatch = new RegExp(`^ {${indent}}(?! )[a-zA-Z_][a-zA-Z0-9_-]{0,100}\\s*:`, 'm').exec(rest.substring(sm[0].length));
   const end = nextServiceMatch ? start + sm[0].length + nextServiceMatch.index : content.length;
   return content.substring(start, end);
 }
@@ -43,7 +57,8 @@ function parseSwarmServices(content: string): DockerSwarmInfo[] {
   const servicesSectionMatch = /^services\s*:/m.exec(content);
   if (!servicesSectionMatch) return results;
 
-  const serviceNamesRe = /^ {2}([a-zA-Z_][a-zA-Z0-9_-]{0,100})\s*:/gm;
+  const indent = indentUnder(content, 'services');
+  const serviceNamesRe = new RegExp(`^ {${indent}}(?! )([a-zA-Z_][a-zA-Z0-9_-]{0,100})\\s*:`, 'gm');
   const serviceNames: string[] = [];
   let snm: RegExpExecArray | null;
   while ((snm = serviceNamesRe.exec(content)) !== null) {

@@ -12,16 +12,29 @@ interface DockerHealthInfo {
   issues: string[];
 }
 
+/**
+ * The indentation this document uses for one nesting level.
+ *
+ * Two spaces is the common style and four is equally valid YAML; assuming two
+ * meant a four-space file parsed as having nothing in it. Taken from the first
+ * child of the given key rather than guessed.
+ */
+function indentUnder(content: string, key: string): number {
+  const m = new RegExp(`^${key}\\s*:\\s*\\n( +)\\S`, 'm').exec(content);
+  return m ? m[1].length : 2;
+}
+
 function parseDockerCompose(filePath: string): Record<string, unknown> | null {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const services: Record<string, unknown> = {};
     let currentService = '';
     const lines = content.split('\n');
+    const svcIndent = indentUnder(content, 'services');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const serviceMatch = /^ {2}([a-zA-Z0-9_-]+):\s*$/.exec(line);
+      const serviceMatch = new RegExp(`^ {${svcIndent}}(?! )([a-zA-Z0-9_-]+):\\s*$`).exec(line);
       if (serviceMatch && i > 0) {
         const prevLine = lines[i - 1] ?? '';
         if (prevLine.includes('services:')) {

@@ -771,7 +771,9 @@ function deployDescriptors(root: string): void {
     addons: ['heroku-postgresql'],
   }, null, 2));
 
-  put(root, 'docker/unit/config.json', JSON.stringify({
+  // The analyser looks for unit.json, config.json or nginx-unit.json in the
+  // application root, docker/ or config/ — not a nested docker/unit/.
+  put(root, 'docker/unit.json', JSON.stringify({
     listeners: { '*:80': { pass: 'applications/php' }, '*:8080': { pass: 'routes' } },
     applications: { php: { type: 'php', root: '/var/www/public', script: 'index.php' } },
   }, null, 2));
@@ -1762,6 +1764,93 @@ function dqlInDoctrineYaml(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** CircleCI, Codeception and phpspec configuration. */
+function ciAndSpecConfigs(root: string): void {
+  put(root, '.circleci/config.yml', [
+    'version: 2.1',
+    '',
+    'orbs:',
+    '    php: circleci/php@1.1',
+    '',
+    'jobs:',
+    '    build:',
+    '        docker:',
+    '            - image: cimg/php:8.3',
+    '        steps:',
+    '            - checkout',
+    '            - run: composer install --no-interaction',
+    '            - persist_to_workspace:',
+    '                  root: .',
+    '                  paths: [vendor]',
+    '    test:',
+    '        docker:',
+    '            - image: cimg/php:8.3',
+    '            - image: cimg/mysql:8.0',
+    '                environment:',
+    '                    MYSQL_ROOT_PASSWORD: root',
+    '        parallelism: 4',
+    '        steps:',
+    '            - attach_workspace: { at: . }',
+    '            - run: vendor/bin/phpunit',
+    '            - store_test_results: { path: var/test-results }',
+    '',
+    'workflows:',
+    '    main:',
+    '        jobs:',
+    '            - build',
+    '            - test:',
+    '                  requires: [build]',
+  ].join('\n') + '\n');
+
+  put(root, 'codeception.yml', [
+    'namespace: App\\Tests',
+    'support_namespace: Support',
+    'paths:',
+    '    tests: tests',
+    '    output: var/_output',
+    '    support: tests/Support',
+    'actor_suffix: Tester',
+    'suites:',
+    '    unit:',
+    '        actor: UnitTester',
+    '        path: Unit',
+    '    functional:',
+    '        actor: FunctionalTester',
+    '        path: Functional',
+    '        modules:',
+    '            enabled: [Symfony, Doctrine2]',
+    '    acceptance:',
+    '        actor: AcceptanceTester',
+    '        path: Acceptance',
+    'extensions:',
+    '    enabled: [Codeception\\Extension\\RunFailed]',
+  ].join('\n') + '\n');
+
+  put(root, 'phpspec.yml', [
+    'suites:',
+    '    app:',
+    '        namespace: App',
+    '        psr4_prefix: App',
+    '        src_path: src',
+    '        spec_path: spec',
+    '    domain:',
+    '        namespace: App\\Domain',
+    '        psr4_prefix: App\\Domain',
+    'formatter.name: pretty',
+    'extensions:',
+    '    PhpSpec\\Extension\\CodeCoverageExtension: ~',
+  ].join('\n') + '\n');
+  put(root, 'spec/App/CalculatorSpec.php', [
+    '<?php',
+    'namespace spec\\App;',
+    'use PhpSpec\\ObjectBehavior;',
+    'class CalculatorSpec extends ObjectBehavior',
+    '{',
+    '    function it_is_initializable() { $this->shouldHaveType(\\App\\Service\\Calculator::class); }',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string, withProfilerIndex = true): void {
   profiler(root, withProfilerIndex);
@@ -1808,4 +1897,5 @@ export function addTargetedContent(root: string, withProfilerIndex = true): void
   repositoryQueries(root);
   gedmo(root);
   dqlInDoctrineYaml(root);
+  ciAndSpecConfigs(root);
 }

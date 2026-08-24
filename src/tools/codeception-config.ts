@@ -12,6 +12,18 @@ interface CodeceptionConfigInfo {
   issues: string[];
 }
 
+/**
+ * The indentation this document uses for one nesting level.
+ *
+ * Two spaces is the common style and four is equally valid YAML; assuming two
+ * meant a four-space file parsed as having nothing in it. Taken from the first
+ * child of the given key rather than guessed.
+ */
+function indentUnder(content: string, key: string): number {
+  const m = new RegExp(`^${key}\\s*:\\s*\\n( +)\\S`, 'm').exec(content);
+  return m ? m[1].length : 2;
+}
+
 function buildCodeceptionConfigInfos(appPath: string): CodeceptionConfigInfo[] {
   const results: CodeceptionConfigInfo[] = [];
 
@@ -48,7 +60,10 @@ function buildCodeceptionConfigInfos(appPath: string): CodeceptionConfigInfo[] {
     }
 
     // Suites section
-    const suiteMatches = configContent.match(/^ {2}\w[\w_-]*:\s*$/gm);
+    const suiteIndent = indentUnder(configContent, 'suites');
+    const suiteMatches = configContent.match(
+      new RegExp(`^ {${suiteIndent}}(?! )\\w[\\w_-]*:\\s*$`, 'gm')
+    );
     if (suiteMatches) {
       for (const suite of suiteMatches) {
         results.push({

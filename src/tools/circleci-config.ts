@@ -11,6 +11,18 @@ interface CircleCiConfigInfo {
   issues: string[];
 }
 
+/**
+ * The indentation this document uses for one nesting level.
+ *
+ * Two spaces is the common style and four is equally valid YAML; assuming two
+ * meant a four-space file parsed as having nothing in it. Taken from the first
+ * child of the given key rather than guessed.
+ */
+function indentUnder(content: string, key: string): number {
+  const m = new RegExp(`^${key}\\s*:\\s*\\n( +)\\S`, 'm').exec(content);
+  return m ? m[1].length : 2;
+}
+
 function safeReadFile(filePath: string, base: string): string | null {
   const resolved = path.resolve(filePath);
   if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
@@ -38,7 +50,8 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
   const jobSection = jobSectionMatch ? jobSectionMatch[1] : content;
 
   // Simple job name extraction: lines with 2-space indent + word:
-  const jobNamePattern = /^ {2}(\w[\w-]{0,60})\s*:/gm;
+  const jobIndent = indentUnder(content, 'jobs');
+  const jobNamePattern = new RegExp(`^ {${jobIndent}}(?! )(\\w[\\w-]{0,60})\\s*:`, 'gm');
   let jobMatch: RegExpExecArray | null;
   const jobNames: string[] = [];
   while ((jobMatch = jobNamePattern.exec(jobSection)) !== null) {
@@ -47,7 +60,7 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
 
   for (const jobName of jobNames) {
     // Extract block for this job (heuristic: find the job block)
-    const jobBlockPattern = new RegExp(`^ {2}${jobName}\\s*:[\\s\\S]{0,3000}?(?=^ {2}\\w|$)`, 'm');
+    const jobBlockPattern = new RegExp(`^ {${jobIndent}}${jobName}\\s*:[\\s\\S]{0,3000}?(?=^ {${jobIndent}}(?! )\\w|$)`, 'm');
     const jobBlockMatch = jobSection.match(jobBlockPattern);
     const jobBlock = jobBlockMatch ? jobBlockMatch[0] : '';
 
