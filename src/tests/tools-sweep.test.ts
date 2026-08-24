@@ -33,6 +33,7 @@ import {
 } from './helpers/symfony-areas';
 import { addTargetedContent } from './helpers/symfony-targeted';
 import { addLegacyStyle } from './helpers/symfony-legacy';
+import { addInsecureVariants } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -127,6 +128,9 @@ beforeAll(() => {
   // far used attributes only, so the longer branch never ran.
   addLegacyStyle(fixture);
   addLegacyStyle(problematic);
+  // The opposite value for every setting the analysers check, on the broken
+  // fixture only, so between the two both branches of each check run.
+  addInsecureVariants(problematic);
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.
