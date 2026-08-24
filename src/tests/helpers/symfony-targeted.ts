@@ -1349,6 +1349,212 @@ function httpCredentials(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** Asset packages, versioning strategies and a manifest. */
+function assetPackages(root: string): void {
+  put(root, 'config/packages/assets.yaml', [
+    'framework:',
+    '    assets:',
+    '        version: "%env(APP_VERSION)%"',
+    '        version_format: "%%s?v=%%s"',
+    '        json_manifest_path: "%kernel.project_dir%/public/build/manifest.json"',
+    '        packages:',
+    '            images:',
+    '                base_urls: ["https://cdn.example.com"]',
+    '                version_strategy: assets.static_version_strategy',
+    '            documents:',
+    '                json_manifest_path: "%kernel.project_dir%/public/docs/manifest.json"',
+    '            legacy:',
+    '                base_path: /legacy',
+  ].join('\n') + '\n');
+
+  put(root, 'public/build/manifest.json', JSON.stringify({
+    'app.js': '/build/app.abc123.js',
+    'app.css': '/build/app.def456.css',
+  }, null, 2));
+  put(root, 'public/build/entrypoints.json', JSON.stringify({
+    entrypoints: { app: { js: ['/build/app.abc123.js'], css: ['/build/app.def456.css'] } },
+  }, null, 2));
+
+  put(root, 'src/Service/AssetVersioning.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Component\\Asset\\VersionStrategy\\JsonManifestVersionStrategy;',
+    'use Symfony\\Component\\Asset\\VersionStrategy\\StaticVersionStrategy;',
+    '',
+    'class AssetVersioning',
+    '{',
+    '    public function strategies(): array',
+    '    {',
+    '        return [',
+    '            new StaticVersionStrategy("v1", "%s?%s"),',
+    '            new JsonManifestVersionStrategy(__DIR__ . "/../../public/build/manifest.json"),',
+    '        ];',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** phpunit.xml with the attributes the analyser reports on. */
+function phpunitConfig(root: string): void {
+  put(root, 'phpunit.xml.dist', [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+    '         bootstrap="tests/bootstrap.php"',
+    '         colors="true"',
+    '         stopOnFailure="true"',
+    '         stopOnError="false"',
+    '         failOnWarning="true"',
+    '         failOnRisky="true"',
+    '         beStrictAboutOutputDuringTests="true"',
+    '         cacheDirectory=".phpunit.cache">',
+    '    <testsuites>',
+    '        <testsuite name="unit"><directory>tests/Unit</directory></testsuite>',
+    '        <testsuite name="functional"><directory>tests/Functional</directory></testsuite>',
+    '    </testsuites>',
+    '    <source>',
+    '        <include><directory>src</directory></include>',
+    '        <exclude><directory>src/Migrations</directory></exclude>',
+    '    </source>',
+    '    <coverage><report><html outputDirectory="var/coverage"/></report></coverage>',
+    '    <php>',
+    '        <env name="APP_ENV" value="test" force="true"/>',
+    '        <server name="SHELL_VERBOSITY" value="-1"/>',
+    '    </php>',
+    '</phpunit>',
+  ].join('\n') + '\n');
+  put(root, 'tests/bootstrap.php', "<?php\nrequire dirname(__DIR__).'/vendor/autoload.php';\n");
+}
+
+/** Symfony CLI and Platform.sh descriptors. */
+function symfonyCli(root: string): void {
+  put(root, '.symfony.cloud.yaml', [
+    'name: app',
+    'type: php:8.3',
+    'dependencies:',
+    '    php:',
+    '        composer/composer: "^2"',
+    'web:',
+    '    locations:',
+    '        "/":',
+    '            root: "public"',
+    '            passthru: "/index.php"',
+    'disk: 2048',
+    'mounts:',
+    '    "/var": { source: local, source_path: var }',
+    'hooks:',
+    '    build: composer install --no-dev',
+    '    deploy: php bin/console cache:clear',
+  ].join('\n') + '\n');
+
+  put(root, '.platform/services.yaml', 'db:\n    type: mysql:8.0\n    disk: 1024\n');
+  put(root, '.platform/routes.yaml', '"https://{default}/":\n    type: upstream\n    upstream: "app:http"\n');
+  put(root, '.symfony.local.yaml', 'workers:\n    messenger:\n        cmd: ["symfony", "console", "messenger:consume", "async"]\n');
+}
+
+/** Console tables, and test doubles in the test suite. */
+function consoleAndDoubles(root: string): void {
+  put(root, 'src/Command/TableCommand.php', [
+    '<?php',
+    'namespace App\\Command;',
+    '',
+    'use Symfony\\Component\\Console\\Command\\Command;',
+    'use Symfony\\Component\\Console\\Helper\\Table;',
+    'use Symfony\\Component\\Console\\Helper\\TableSeparator;',
+    '',
+    'class TableCommand extends Command',
+    '{',
+    '    protected function execute($input, $output): int',
+    '    {',
+    '        $table = new Table($output);',
+    '        $table->setHeaders(["Id", "Name", "Total"]);',
+    '        $table->setRows([[1, "One", "10.00"], new TableSeparator(), [2, "Two", "20.00"]]);',
+    '        $table->addRow([3, "Three", "30.00"]);',
+    '        $table->addRows([[4, "Four", "40.00"]]);',
+    '        $table->setColumnWidth(1, 30);',
+    '        $table->setColumnMaxWidth(2, 10);',
+    '        $table->render();',
+    '        return Command::SUCCESS;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'tests/Unit/DoubleTest.php', [
+    '<?php',
+    'namespace App\\Tests\\Unit;',
+    '',
+    'use PHPUnit\\Framework\\TestCase;',
+    '',
+    'class DoubleTest extends TestCase',
+    '{',
+    '    private $recorded = [];',
+    '',
+    '    public function testDoubles(): void',
+    '    {',
+    '        $mock = $this->createMock(\\App\\Service\\Calculator::class);',
+    '        $mock->expects($this->once())->method("total")->willReturn(42);',
+    '',
+    '        $stub = $this->createStub(\\App\\Service\\Calculator::class);',
+    '        $partial = $this->createPartialMock(\\App\\Service\\Calculator::class, ["total"]);',
+    '        $spy = $this->getMockBuilder(\\App\\Service\\Calculator::class)',
+    '            ->disableOriginalConstructor()',
+    '            ->getMock();',
+    '',
+    '        $this->recorded[] = $mock->total([]);',
+    '        $this->assertSame(42, $this->recorded[0]);',
+    '        $this->assertNotNull($stub);',
+    '        $this->assertNotNull($partial);',
+    '        $this->assertNotNull($spy);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** DQL: custom functions and query building. */
+function dql(root: string): void {
+  put(root, 'config/packages/doctrine_dql.yaml', [
+    'doctrine:',
+    '    orm:',
+    '        dql:',
+    '            string_functions:',
+    '                GROUP_CONCAT: App\\Doctrine\\DQL\\GroupConcat',
+    '                JSON_EXTRACT: App\\Doctrine\\DQL\\JsonExtract',
+    '            numeric_functions:',
+    '                ROUND: App\\Doctrine\\DQL\\Round',
+    '            datetime_functions:',
+    '                DATE_FORMAT: App\\Doctrine\\DQL\\DateFormat',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Doctrine/DQL/GroupConcat.php', [
+    '<?php',
+    'namespace App\\Doctrine\\DQL;',
+    '',
+    'use Doctrine\\ORM\\Query\\AST\\Functions\\FunctionNode;',
+    '',
+    'class GroupConcat extends FunctionNode',
+    '{',
+    '    public function parse(\\Doctrine\\ORM\\Query\\Parser $parser): void {}',
+    '    public function getSql(\\Doctrine\\ORM\\Query\\SqlWalker $walker): string { return "GROUP_CONCAT()"; }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Repository/DqlRepository.php', [
+    '<?php',
+    'namespace App\\Repository;',
+    '',
+    'class DqlRepository',
+    '{',
+    '    public function report(): array',
+    '    {',
+    '        $dql = "SELECT o, GROUP_CONCAT(l.sku) FROM App\\Entity\\Order o JOIN o.lines l GROUP BY o.id";',
+    '        $query = $this->em->createQuery($dql);',
+    '        $qb = $this->em->createQueryBuilder()->select("o")->from("App\\Entity\\Order", "o");',
+    '        return [$query->getResult(), $qb->getQuery()->getResult()];',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string, withProfilerIndex = true): void {
   profiler(root, withProfilerIndex);
@@ -1385,4 +1591,9 @@ export function addTargetedContent(root: string, withProfilerIndex = true): void
   swarmInCompose(root);
   twigConstructs(root);
   httpCredentials(root);
+  assetPackages(root);
+  phpunitConfig(root);
+  symfonyCli(root);
+  consoleAndDoubles(root);
+  dql(root);
 }
