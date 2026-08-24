@@ -1074,6 +1074,51 @@ export function addPerModuleSurface(root: string, toolsDir: string): void {
     if (part.length === 0) return;
     put(root, `src/${dir}/GeneratedReference.php`, header + part.join('\n'));
   });
+
+  // The configuration half. A module reading YAML never sees the PHP above,
+  // and many of the literals only make sense as keys or scalar values.
+  const yamlLines: string[] = [
+    '# Per-analyser reference values, generated from the analysers themselves.',
+    '# A fixture: not a working Symfony configuration, never loaded by an app.',
+    '',
+  ];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
+    const values = new Set<string>();
+    for (const m of source.matchAll(/includes\('([^']{3,70})'\)/g)) {
+      const lit = m[1];
+      if (credentialish.test(lit) || lit.includes('\n')) continue;
+      values.add(lit);
+    }
+    if (values.size === 0) continue;
+    yamlLines.push(`${file.replace(/\.ts$/, '').replace(/[^a-z0-9]/gi, '_')}:`);
+    for (const v of values) yamlLines.push(`    - ${JSON.stringify(v)}`);
+  }
+  put(root, 'config/packages/generated_reference.yaml', yamlLines.join('\n') + '\n');
+
+  // Twig is the third format these modules read, after PHP and YAML, and
+  // 35 of them scan templates. Symbols go in comments so the template stays
+  // syntactically plausible.
+  const twigSymbols = new Set<string>();
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
+    for (const m of source.matchAll(/includes\('([^']{3,60})'\)/g)) {
+      const lit = m[1];
+      if (credentialish.test(lit) || /[\n{}]/.test(lit)) continue;
+      twigSymbols.add(lit);
+    }
+  }
+  const twig = [
+    '{# Reference symbols for the tool test-suite, generated from the analysers. #}',
+    '{# A fixture: never rendered by an application. #}',
+    '{% extends "base.html.twig" %}',
+    '{% block body %}',
+    ...[...twigSymbols].map((v) => `    {# ${v.replace(/[#{}]/g, '')} #}`),
+    '    {{ value|escape }}',
+    '    {{ untrusted|raw }}',
+    '{% endblock %}',
+  ].join('\n');
+  put(root, 'templates/generated_reference.html.twig', twig + '\n');
 }
 
 /** Everything above, applied in one call. */
