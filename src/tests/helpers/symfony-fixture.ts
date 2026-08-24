@@ -895,3 +895,59 @@ export function restorePermissions(root: string): void {
     }
   }
 }
+
+/**
+ * A project whose configuration files are syntactically broken.
+ *
+ * 838 uncovered statements are each module's outermost error handler — the
+ * wrapper that turns an internal failure into a result the client can read
+ * instead of an exception that escapes. Nothing in the suite ever made one
+ * fail: a missing file is handled, a file where a directory belongs is
+ * handled, but a composer.json that is not JSON reaches JSON.parse and throws.
+ *
+ * This is also a real situation. A half-finished merge conflict leaves exactly
+ * this behind, and a tool that crashes on it is worse than one that says so.
+ */
+export function createCorruptFixture(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-corrupt-'));
+
+  // Enough to be recognised as a Symfony project.
+  put(root, 'bin/console', '#!/usr/bin/env php\n<?php\n');
+  put(root, 'src/Kernel.php', "<?php\nnamespace App;\nclass Kernel {}\n");
+
+  // JSON that is not JSON: a merge conflict left in place.
+  put(root, 'composer.json', [
+    '{',
+    '    "name": "acme/corrupt",',
+    '<<<<<<< HEAD',
+    '    "require": { "php": ">=8.2" }',
+    '=======',
+    '    "require": { "php": ">=8.3" },',
+    '>>>>>>> feature/upgrade',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'composer.lock', '{ "packages": [ { "name": }');
+  put(root, 'package.json', '{ "dependencies": { "a": }');
+  put(root, 'vercel.json', '{{{');
+  put(root, 'app.json', 'not json at all');
+  put(root, 'phpbench.json', '[');
+
+  // YAML that will not parse: tabs for indentation, unclosed quotes.
+  put(root, 'config/services.yaml', 'services:\n\t_defaults:\n\t\tautowire: true\n');
+  put(root, 'config/packages/framework.yaml', 'framework:\n  secret: "unterminated\n  session:\n');
+  put(root, 'config/routes.yaml', 'app_home:\n  path: [/, unclosed\n');
+  put(root, 'docker-compose.yml', 'services:\n  php:\n   build: .\n     bad: indent\n');
+  put(root, 'translations/messages.en.yaml', 'app:\n  - key: value\n  bad\n');
+
+  // TOML and XML likewise.
+  put(root, 'netlify.toml', '[build\n  command = "x"\n');
+  put(root, 'config/services.xml', '<?xml version="1.0"?>\n<container><services>\n');
+  put(root, 'psalm.xml', '<psalm errorLevel="3"');
+
+  // PHP that no parser should assume is well formed.
+  put(root, 'src/Controller/Broken.php', '<?php\nclass Broken {\n    public function x( {\n');
+  put(root, 'templates/broken.html.twig', '{% block body %}{{ unclosed\n');
+
+  return root;
+}

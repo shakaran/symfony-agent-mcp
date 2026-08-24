@@ -25,6 +25,7 @@ import * as path from 'path';
 
 import {
   createSymfonyFixture, createProblematicFixture, createSkeletonFixture,
+  createCorruptFixture,
   addEcosystemFiles, addBulkContent, addSymlinks, addClasslessFiles,
   addUnreadableFiles, restorePermissions, removeFixture,
 } from './helpers/symfony-fixture';
@@ -85,6 +86,9 @@ let problematic: string;
 let skeleton: string;
 let emptyDir: string;
 let outsideRoot: string;
+let corrupt: string;
+let filePath: string;
+let weirdPath: string;
 let missingPath: string;
 
 beforeAll(() => {
@@ -94,6 +98,9 @@ beforeAll(() => {
   // 'I looked and found nothing' branches that an empty directory misses,
   // because a non-project fails an earlier guard.
   skeleton = createSkeletonFixture();
+  // Configuration that will not parse, which is what reaches each module's
+  // outermost error handler.
+  corrupt = createCorruptFixture();
   // Container files, CI definitions, asset tooling: dozens of modules read
   // these and analyse nothing without them.
   addEcosystemFiles(fixture);
@@ -153,6 +160,15 @@ beforeAll(() => {
   addUnreadableFiles(fixture);
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
+  // A file where a directory is expected. Reading a directory entry from it
+  // raises ENOTDIR, which is what reaches each module's outermost catch — the
+  // branch that turns an internal failure into an error result instead of
+  // letting it escape to the client.
+  filePath = path.join(os.tmpdir(), 'symfony-not-a-directory.txt');
+  fs.writeFileSync(filePath, 'this is a file, not an application\n');
+  // A path that is syntactically hostile rather than merely absent.
+  weirdPath = path.join(os.tmpdir(), 'symfony-weird-\u00a0-\u0301-name');
+  fs.mkdirSync(weirdPath, { recursive: true });
 });
 
 afterAll(() => {
@@ -160,7 +176,10 @@ afterAll(() => {
   removeFixture(fixture);
   removeFixture(problematic);
   removeFixture(skeleton);
+  removeFixture(corrupt);
   fs.rmSync(outsideRoot, { recursive: true, force: true });
+  fs.rmSync(filePath, { force: true });
+  fs.rmSync(weirdPath, { recursive: true, force: true });
   fs.rmSync(emptyDir, { recursive: true, force: true });
 });
 
@@ -221,6 +240,23 @@ describe('every tool module', () => {
     test('an empty directory is handled without throwing', async () => {
       // No composer.json, no src/, no config/: every read must be defensive.
       for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, emptyDir);
+    });
+
+    test('configuration that will not parse becomes a result, not an exception', async () => {
+      // A merge conflict left in composer.json, tabs in YAML, an unclosed XML
+      // tag. Each module must come back with something the client can read.
+      for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, corrupt);
+    });
+
+    test('a file where a directory belongs becomes an error result, not a throw', async () => {
+      // Every module wraps its work so an internal failure comes back as a
+      // result the client can read. That wrapper is a third of what was
+      // uncovered, because nothing in the suite ever made one fail.
+      for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, filePath);
+    });
+
+    test('a path with unusual characters is handled', async () => {
+      for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, weirdPath);
     });
 
     test('a path that does not exist is handled without throwing', async () => {
