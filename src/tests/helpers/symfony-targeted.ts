@@ -1,0 +1,383 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
+/**
+ * Content aimed at named analysers.
+ *
+ * The generated surfaces lifted coverage from 3% to 76% and then stopped: what
+ * remains needs each module's own preconditions met, not more vocabulary. This
+ * file supplies that, module by module, for the ones holding the most
+ * uncovered code. Each block was written after reading what that module reads
+ * and what it looks for — the file paths it joins onto the application root
+ * and the literals it searches for.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+
+function put(root: string, rel: string, content: string): void {
+  const full = path.join(root, rel);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content);
+}
+
+/** profiler: reads var/, and wants profiles rather than configuration. */
+function profiler(root: string): void {
+  put(root, 'var/cache/dev/profiler/index.csv', [
+    'b1c2d3,127.0.0.1,GET,http://localhost/,200,1756000000,app_home,',
+    'e4f5a6,127.0.0.1,POST,http://localhost/orders,302,1756000060,app_order_new,',
+    'a7b8c9,10.0.0.5,GET,http://localhost/admin,403,1756000120,app_admin,',
+  ].join('\n') + '\n');
+  for (const token of ['b1c2d3', 'e4f5a6', 'a7b8c9']) {
+    put(root, `var/cache/dev/profiler/${token.slice(0, 2)}/${token.slice(2, 4)}/${token}`,
+      `O:8:"stdClass":1:{s:5:"token";s:6:"${token}";}\n`);
+  }
+  put(root, 'var/cache/dev/App_KernelDevDebugContainer.php', "<?php\nclass App_KernelDevDebugContainer {}\n");
+  put(root, 'var/cache/prod/App_KernelProdContainer.php', "<?php\nclass App_KernelProdContainer {}\n");
+  put(root, 'var/log/dev.log', '[2026-08-24T10:00:00+00:00] request.INFO: Matched route "app_home". [] []\n');
+}
+
+/** google-oauth-integration: wants the client library and a service account. */
+function googleOauth(root: string): void {
+  const composer = path.join(root, 'composer.json');
+  try {
+    const pkg = JSON.parse(fs.readFileSync(composer, 'utf-8')) as Record<string, Record<string, string>>;
+    pkg['require'] = { ...pkg['require'], 'google/apiclient': '^2.15', 'knpuniversity/oauth2-client-bundle': '^2.18' };
+    fs.writeFileSync(composer, JSON.stringify(pkg, null, 2));
+  } catch { /* fixture without composer.json */ }
+
+  put(root, 'src/Service/GoogleAuth.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Google\\Client;',
+    '',
+    'class GoogleAuth',
+    '{',
+    '    public function url(): string',
+    '    {',
+    '        $client = new Client();',
+    '        $client->setScopes(["https://www.googleapis.com/auth/userinfo.email"]);',
+    '        $client->setAccessType("offline");',
+    '        return $client->createAuthUrl();',
+    '    }',
+    '',
+    '    public function exchange(string $code): array',
+    '    {',
+    '        $client = new Google_Client();',
+    '        $token = $client->fetchAccessTokenWithAuthCode($code);',
+    '        $refresh = $client->getRefreshToken();',
+    '        $client->fetchAccessTokenWithRefreshToken($refresh);',
+    '        return $token;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  // A service-account document, without anything resembling a real key.
+  put(root, 'config/google-service-account.json', JSON.stringify({
+    type: 'service_account',
+    project_id: 'example-project',
+    client_email: 'sa@example-project.iam.gserviceaccount.com',
+  }, null, 2));
+}
+
+/** forms: wants optional fields and the option shapes it reports on. */
+function forms(root: string): void {
+  put(root, 'src/Form/ProfileType.php', [
+    '<?php',
+    'namespace App\\Form;',
+    '',
+    'use Symfony\\Component\\Form\\AbstractType;',
+    'use Symfony\\Component\\Form\\FormBuilderInterface;',
+    'use Symfony\\Component\\OptionsResolver\\OptionsResolver;',
+    '',
+    'class ProfileType extends AbstractType',
+    '{',
+    '    public function buildForm(FormBuilderInterface $builder, array $options): void',
+    '    {',
+    '        $builder',
+    '            ->add("nickname", null, ["required" => false])',
+    '            ->add("bio", null, ["required" => false, "empty_data" => ""])',
+    '            ->add("website", null, ["required" => false, "trim" => true])',
+    '            ->add("avatar", null, ["mapped" => false, "required" => false])',
+    '            ->add("agree", null, ["required" => true, "constraints" => []]);',
+    '    }',
+    '',
+    '    public function configureOptions(OptionsResolver $resolver): void',
+    '    {',
+    '        $resolver->setDefaults([',
+    '            "data_class" => null,',
+    '            "csrf_protection" => true,',
+    '            "csrf_field_name" => "_token",',
+    '            "allow_extra_fields" => true,',
+    '        ]);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** php-property-hooks: PHP 8.4 hooks, asymmetric visibility, readonly. */
+function propertyHooks(root: string): void {
+  put(root, 'src/Model/Temperature.php', [
+    '<?php',
+    'namespace App\\Model;',
+    '',
+    'class Temperature',
+    '{',
+    '    public float $celsius = 0.0;',
+    '',
+    '    public float $fahrenheit {',
+    '        get => $this->celsius * 9 / 5 + 32;',
+    '        set (float $value) { $this->celsius = ($value - 32) * 5 / 9; }',
+    '    }',
+    '',
+    '    public string $label {',
+    '        get {',
+    '            return sprintf("%.1f C", $this->celsius);',
+    '        }',
+    '    }',
+    '',
+    '    public private(set) int $readings = 0;',
+    '    protected protected(set) string $source = "sensor";',
+    '',
+    '    public function record(float $value): void',
+    '    {',
+    '        $this->celsius = $value;',
+    '        $this->readings++;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** symfony-workflow-parallel-transitions: marking API and multi-place moves. */
+function workflowParallel(root: string): void {
+  put(root, 'src/Service/OrderWorkflow.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Component\\Workflow\\WorkflowInterface;',
+    'use Symfony\\Component\\Workflow\\Marking;',
+    '',
+    'class OrderWorkflow',
+    '{',
+    '    public function __construct(private WorkflowInterface $orderProcessing) {}',
+    '',
+    '    public function advance($order): void',
+    '    {',
+    '        $marking = $this->orderProcessing->getMarking($order);',
+    '        $places = $marking->getPlaces();',
+    '',
+    '        if ($this->orderProcessing->can($order, "submit")) {',
+    '            $this->orderProcessing->apply($order, "submit");',
+    '        }',
+    '        if ($marking->has("pending") && $marking->has("reserved")) {',
+    '            $this->orderProcessing->apply($order, "pay");',
+    '        }',
+    '    }',
+    '',
+    '    public function marking($order): Marking',
+    '    {',
+    '        return $this->orderProcessing->getMarking($order);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/workflow_parallel.yaml', [
+    'framework:',
+    '    workflows:',
+    '        fulfilment:',
+    '            type: workflow',
+    '            marking_store:',
+    '                type: method',
+    '                property: marking',
+    '            supports: [App\\Entity\\Order]',
+    '            places: [received, picked, packed, invoiced, shipped]',
+    '            transitions:',
+    '                prepare:',
+    '                    from: received',
+    '                    to: [picked, invoiced]',
+    '                dispatch:',
+    '                    from: [packed, invoiced]',
+    '                    to: shipped',
+  ].join('\n') + '\n');
+}
+
+/** symfony-messenger-competing-consumers: consume commands in orchestration. */
+function competingConsumers(root: string): void {
+  put(root, 'Makefile', [
+    'consume:',
+    '\tphp bin/console messenger:consume async --limit=10 --time-limit=3600',
+    '',
+    'consume-high:',
+    '\tphp bin/console messenger:consume async_priority_high -l 100',
+    '',
+    'test:',
+    '\tvendor/bin/phpunit',
+  ].join('\n') + '\n');
+
+  put(root, 'docker-compose.yml', [
+    'services:',
+    '    php:',
+    '        build: ./docker/php',
+    '    worker:',
+    '        build: ./docker/php',
+    '        command: php bin/console messenger:consume async --limit=50 --memory-limit=128M',
+    '        deploy:',
+    '            replicas: 3',
+    '    worker_high:',
+    '        build: ./docker/php',
+    '        command: php bin/console messenger:consume async_priority_high -l 25',
+    '        deploy:',
+    '            replicas: 2',
+    '    database:',
+    '        image: mysql:8.0',
+  ].join('\n') + '\n');
+}
+
+/** paypal-checkout-v2: the SDK request objects and webhook headers. */
+function paypal(root: string): void {
+  put(root, 'src/Service/PayPalCheckout.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use PayPalCheckoutSdk\\Core\\PayPalHttpClient;',
+    'use PayPalCheckoutSdk\\Orders\\OrdersCreateRequest;',
+    'use PayPalCheckoutSdk\\Orders\\OrdersCaptureRequest;',
+    'use PayPalCheckoutSdk\\Orders\\OrdersGetRequest;',
+    '',
+    'class PayPalCheckout',
+    '{',
+    '    public function __construct(private PayPalHttpClient $client) {}',
+    '',
+    '    public function create(): array',
+    '    {',
+    '        $request = new OrdersCreateRequest();',
+    '        $request->prefer("return=representation");',
+    '        return (array) $this->client->execute($request)->result;',
+    '    }',
+    '',
+    '    public function capture(string $id): array',
+    '    {',
+    '        $request = new OrdersCaptureRequest($id);',
+    '        return (array) $this->client->execute($request)->result;',
+    '    }',
+    '',
+    '    public function get(string $id): array',
+    '    {',
+    '        return (array) $this->client->execute(new OrdersGetRequest($id))->result;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Controller/PayPalWebhookController.php', [
+    '<?php',
+    'namespace App\\Controller;',
+    '',
+    'use Symfony\\Component\\HttpFoundation\\Request;',
+    'use Symfony\\Component\\HttpFoundation\\Response;',
+    '',
+    'class PayPalWebhookController',
+    '{',
+    '    public function handle(Request $request): Response',
+    '    {',
+    '        // Signature headers present but never verified.',
+    '        $sig = $request->headers->get("PAYPAL-TRANSMISSION-SIG");',
+    '        $certUrl = $request->headers->get("PAYPAL-CERT-URL");',
+    '        return new Response($sig . $certUrl);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** netlify-deploy-config: headers block with and without the security ones. */
+function netlify(root: string): void {
+  put(root, 'netlify.toml', [
+    '[build]',
+    '    command = "composer install --no-dev && bin/console cache:warmup"',
+    '    publish = "public"',
+    '    functions = "netlify/functions"',
+    '',
+    '[build.environment]',
+    '    PHP_VERSION = "8.3"',
+    '    APP_ENV = "prod"',
+    '',
+    '[[redirects]]',
+    '    from = "/*"',
+    '    to = "/index.php"',
+    '    status = 200',
+    '',
+    '[[headers]]',
+    '    for = "/*"',
+    '    [headers.values]',
+    '        x-frame-options = "DENY"',
+    '        x-content-type-options = "nosniff"',
+    '        content-security-policy = "default-src \'self\'"',
+    '        permissions-policy = "geolocation=()"',
+    '',
+    '[[headers]]',
+    '    for = "/assets/*"',
+    '    [headers.values]',
+    '        cache-control = "public, max-age=31536000, immutable"',
+  ].join('\n') + '\n');
+}
+
+/** php-benchmark-patterns: a PHPBench suite. */
+function benchmarks(root: string): void {
+  put(root, 'benchmarks/OrderBench.php', [
+    '<?php',
+    'namespace App\\Benchmarks;',
+    '',
+    'class OrderBench',
+    '{',
+    '    /**',
+    '     * @Revs(1000)',
+    '     * @Iterations(5)',
+    '     * @Groups({"orders"})',
+    '     */',
+    '    public function benchCreate(): void',
+    '    {',
+    '        sleep(0);',
+    '    }',
+    '',
+    '    /**',
+    '     * @Revs(10)',
+    '     * @Groups({"slow"})',
+    '     */',
+    '    public function benchReport(): void',
+    '    {',
+    '        usleep(100);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+  put(root, 'phpbench.json', JSON.stringify({ 'runner.bootstrap': 'vendor/autoload.php', 'runner.path': 'benchmarks' }, null, 2));
+}
+
+/** secrets-vault: the encrypted-secrets directory layout. */
+function secretsVault(root: string): void {
+  put(root, 'config/secrets/prod/prod.list.php', "<?php\n\nreturn [\n    'APP_SECRET' => null,\n    'MAILER_DSN' => null,\n];\n");
+  put(root, 'config/secrets/prod/prod.encrypt.public.php', "<?php\n\nreturn '<public-key-placeholder>';\n");
+  put(root, 'config/secrets/dev/dev.list.php', "<?php\n\nreturn [\n    'APP_SECRET' => null,\n];\n");
+  put(root, 'src/Service/VaultReader.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'class VaultReader',
+    '{',
+    '    public function encrypt(string $value): string { return base64_encode($value); }',
+    '    public function decrypt(string $value): string { return base64_decode($value); }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Apply every targeted block. */
+export function addTargetedContent(root: string): void {
+  profiler(root);
+  googleOauth(root);
+  forms(root);
+  propertyHooks(root);
+  workflowParallel(root);
+  competingConsumers(root);
+  paypal(root);
+  netlify(root);
+  benchmarks(root);
+  secretsVault(root);
+}

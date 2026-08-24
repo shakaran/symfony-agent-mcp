@@ -29,6 +29,7 @@ import {
   addUnreadableFiles, restorePermissions, removeFixture,
 } from './helpers/symfony-fixture';
 import { addAllAreas, addPerModuleSurface } from './helpers/symfony-areas';
+import { addTargetedContent } from './helpers/symfony-targeted';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -108,6 +109,10 @@ beforeAll(() => {
   // The broken application needs volume too: a good number of checks only
   // report once a count crosses a threshold.
   addBulkContent(problematic, 25);
+  // Content aimed at the modules holding the most uncovered code, written
+  // from what each of them reads and looks for.
+  addTargetedContent(fixture);
+  addTargetedContent(problematic);
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.
