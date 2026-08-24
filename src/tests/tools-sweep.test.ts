@@ -26,7 +26,7 @@ import * as path from 'path';
 import {
   createSymfonyFixture, createProblematicFixture, addEcosystemFiles, removeFixture,
 } from './helpers/symfony-fixture';
-import { addAllAreas } from './helpers/symfony-areas';
+import { addAllAreas, addPerModuleSurface } from './helpers/symfony-areas';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -90,6 +90,10 @@ beforeAll(() => {
   // Without these the area modules parse nothing and report nothing.
   addAllAreas(fixture);
   addAllAreas(problematic);
+  // One reference class per analyser, holding the symbols that analyser
+  // searches for, so its parsing runs against something it recognises.
+  addPerModuleSurface(fixture, toolsDir);
+  addPerModuleSurface(problematic, toolsDir);
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
 });

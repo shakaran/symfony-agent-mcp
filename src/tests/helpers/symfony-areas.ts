@@ -1010,6 +1010,72 @@ export function addApiSurface(root: string): void {
   put(root, 'tests/ApiSurfaceReference.php', php.replace('final class ApiSurface', 'final class ApiSurfaceTests'));
 }
 
+/**
+ * One reference file per analyser, carrying the symbols that analyser looks for.
+ *
+ * The single shared surface file lifted coverage a long way, but each module
+ * searches for its own vocabulary — Algolia's index options, Stripe's webhook
+ * events, Psalm's configuration keys — and one file cannot plausibly contain
+ * all of them in the shapes each expects.
+ *
+ * This reads each module's own source, takes the literals it passes to
+ * `includes()`, and writes them into a file the module will scan. What that
+ * proves is deliberately narrow: it does not verify that a finding is
+ * *correct*, only that the code path which produces it runs without throwing,
+ * hanging or returning something the server cannot serialise. That is the
+ * property that was entirely untested, and the one every defect found so far
+ * would have violated.
+ */
+export function addPerModuleSurface(root: string, toolsDir: string): void {
+  const credentialish = /(secret|password|passwd|credential|api[_-]?key|private[_-]?key)/i;
+  const files = fs.readdirSync(toolsDir).filter((f) => f.endsWith('.ts'));
+
+  const phpParts: string[] = [];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(toolsDir, file), 'utf-8');
+    const literals = new Set<string>();
+    for (const m of source.matchAll(/includes\('([^']{3,70})'\)/g)) {
+      const lit = m[1];
+      if (credentialish.test(lit)) continue;
+      // Only shapes that can sit in PHP source without making it nonsense.
+      if (/^[A-Za-z_$#\\][A-Za-z0-9_\\:>.$()[\]-]*$/.test(lit)) literals.add(lit);
+    }
+    if (literals.size === 0) continue;
+
+    const cls = file.replace(/\.ts$/, '').replace(/[^A-Za-z0-9]/g, '');
+    phpParts.push(
+      `// ${file}\n` +
+      `class Ref${cls}\n{\n    public function symbols(): array\n    {\n        return [\n` +
+      [...literals].map((l) => `            ${JSON.stringify(l)},`).join('\n') +
+      '\n        ];\n    }\n}\n'
+    );
+  }
+
+  const header = [
+    '<?php',
+    '',
+    '/**',
+    ' * Per-analyser reference symbols, for the tool test-suite.',
+    ' *',
+    ' * Generated from the analysers themselves: each class holds the literals one',
+    ' * module searches for. It is a fixture — plausible, never executed — and it',
+    ' * exists so each module\'s parsing runs against something it recognises.',
+    ' */',
+    '',
+    'namespace App\\Generated;',
+    '',
+  ].join('\n');
+
+  // Split across the directories modules scan, so each sees a share.
+  const dirs = ['Controller', 'Entity', 'Service', 'Repository', 'MessageHandler', 'Security', 'Form'];
+  const chunk = Math.ceil(phpParts.length / dirs.length);
+  dirs.forEach((dir, i) => {
+    const part = phpParts.slice(i * chunk, (i + 1) * chunk);
+    if (part.length === 0) return;
+    put(root, `src/${dir}/GeneratedReference.php`, header + part.join('\n'));
+  });
+}
+
 /** Everything above, applied in one call. */
 export function addAllAreas(root: string): void {
   addMessengerFiles(root);
