@@ -654,6 +654,260 @@ function formEvents(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** http-client and scopes: every verb, scoped clients, auth and retries. */
+function httpClient(root: string): void {
+  put(root, 'config/packages/http_client.yaml', [
+    'framework:',
+    '    http_client:',
+    '        default_options:',
+    '            timeout: 30',
+    '            max_duration: 60',
+    '            headers:',
+    '                User-Agent: "acme/1.0"',
+    '            retry_failed:',
+    '                max_retries: 3',
+    '                delay: 1000',
+    '        scoped_clients:',
+    '            api.client:',
+    '                base_uri: "https://api.example.com"',
+    '                auth_bearer: "%env(API_TOKEN)%"',
+    '            internal.client:',
+    '                base_uri: "http://127.0.0.1:8080"',
+    '                verify_peer: false',
+    '            legacy.client:',
+    '                base_uri: "http://localhost:9000"',
+    '                auth_basic: "%env(LEGACY_AUTH)%"',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Service/ApiCaller.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Symfony\\Component\\HttpClient\\HttpClient;',
+    'use Symfony\\Component\\HttpClient\\ScopingHttpClient;',
+    'use Symfony\\Contracts\\HttpClient\\HttpClientInterface;',
+    '',
+    'class ApiCaller',
+    '{',
+    '    public function __construct(private HttpClientInterface $client) {}',
+    '',
+    '    public function all(): array',
+    '    {',
+    '        $c = HttpClient::create(["timeout" => 10]);',
+    '        $scoped = ScopingHttpClient::forBaseUri($c, "https://api.example.com");',
+    '',
+    '        $a = $this->client->request("GET", "/items");',
+    '        $b = $this->client->get("/items/1");',
+    '        $d = $this->client->post("/items", ["json" => []]);',
+    '        $e = $this->client->put("/items/1", ["json" => []]);',
+    '        $f = $this->client->patch("/items/1", ["json" => []]);',
+    '        $g = $this->client->delete("/items/1");',
+    '',
+    '        if ($a->getStatusCode() === 401) {',
+    '            // Unauthorized: the token may have expired and need a refresh',
+    '            $this->refresh();',
+    '        }',
+    '        return [$b, $d, $e, $f, $g, $scoped];',
+    '    }',
+    '',
+    '    private function refresh(): void {}',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** heroku, nginx unit, swarm and helm: the deployment descriptors. */
+function deployDescriptors(root: string): void {
+  put(root, 'Procfile', 'web: heroku-php-apache2 public/\nworker: php bin/console messenger:consume async\n');
+  put(root, 'app.json', JSON.stringify({
+    name: 'acme',
+    env: { APP_ENV: { value: 'prod' } },
+    formation: { web: { quantity: 1, size: 'standard-1x' } },
+    addons: ['heroku-postgresql'],
+  }, null, 2));
+
+  put(root, 'docker/unit/config.json', JSON.stringify({
+    listeners: { '*:80': { pass: 'applications/php' }, '*:8080': { pass: 'routes' } },
+    applications: { php: { type: 'php', root: '/var/www/public', script: 'index.php' } },
+  }, null, 2));
+
+  put(root, 'docker-stack.yml', [
+    'services:',
+    '    php:',
+    '        image: acme/app:1.0',
+    '        deploy:',
+    '            replicas: 3',
+    '            placement:',
+    '                constraints:',
+    '                    - node.role == worker',
+    '            resources:',
+    '                limits:',
+    '                    cpus: "0.50"',
+    '                    memory: 512M',
+    '        healthcheck:',
+    '            test: ["CMD", "php", "-v"]',
+    '            interval: 30s',
+    '        ports:',
+    '            - target: 80',
+    '              published: 80',
+    '              mode: ingress',
+  ].join('\n') + '\n');
+
+  put(root, 'chart/Chart.yaml', 'apiVersion: v2\nname: acme\nversion: 1.0.0\nappVersion: "1.0"\n');
+  put(root, 'chart/values.yaml', [
+    'image:',
+    '    repository: acme/app',
+    '    tag: latest',
+    '    pullPolicy: Always',
+    'replicaCount: 2',
+    'livenessProbe:',
+    '    httpGet:',
+    '        path: /health',
+    '        port: 80',
+    'readinessProbe:',
+    '    httpGet:',
+    '        path: /health',
+    '        port: 80',
+    'resources: {}',
+  ].join('\n') + '\n');
+}
+
+/** twig: extensions, filters, functions and the shapes the analyser reads. */
+function twig(root: string): void {
+  put(root, 'src/Twig/AppExtension.php', [
+    '<?php',
+    'namespace App\\Twig;',
+    '',
+    'use Twig\\Extension\\AbstractExtension;',
+    'use Twig\\TwigFilter;',
+    'use Twig\\TwigFunction;',
+    'use Twig\\Extension\\RuntimeExtensionInterface;',
+    '',
+    'class AppExtension extends AbstractExtension',
+    '{',
+    '    public function getFilters(): array',
+    '    {',
+    '        return [',
+    '            new TwigFilter("money", [$this, "money"]),',
+    '            new TwigFilter("markdown", [$this, "markdown"], ["is_safe" => ["html"]]),',
+    '        ];',
+    '    }',
+    '',
+    '    public function getFunctions(): array',
+    '    {',
+    '        return [new TwigFunction("asset_version", [$this, "assetVersion"])];',
+    '    }',
+    '',
+    '    public function money(int $cents): string { return number_format($cents / 100, 2); }',
+    '    public function markdown(string $text): string { return $text; }',
+    '    public function assetVersion(string $path): string { return $path . "?v=1"; }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'templates/report.html.twig', [
+    '{% extends "base.html.twig" %}',
+    '',
+    '{% block title %}{{ parent() }} — Report{% endblock %}',
+    '',
+    '{% block body %}',
+    '    {% for row in rows %}',
+    '        {{ row.total|money }}',
+    '        {{ row.notes|markdown }}',
+    '        {{ row.raw|raw }}',
+    '        <img src="{{ asset("build/logo.png") }}" alt="{{ row.name|e("html_attr") }}">',
+    '    {% else %}',
+    '        {{ "empty"|trans }}',
+    '    {% endfor %}',
+    '    {% include "partials/_row.html.twig" with { row: rows|first } only %}',
+    '    {{ include("partials/_row.html.twig") }}',
+    '{% endblock %}',
+  ].join('\n') + '\n');
+  put(root, 'templates/partials/_row.html.twig', '<tr><td>{{ row.name }}</td></tr>\n');
+}
+
+/** search-integration: Elastica and MeiliSearch wiring. */
+function search(root: string): void {
+  put(root, 'config/packages/fos_elastica.yaml', [
+    'fos_elastica:',
+    '    clients:',
+    '        default:',
+    '            host: elasticsearch',
+    '            port: 9200',
+    '    indexes:',
+    '        products:',
+    '            persistence:',
+    '                driver: orm',
+    '                model: App\\Entity\\Product',
+    '                finder: ~',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Service/ProductSearch.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use FOS\\ElasticaBundle\\Finder\\FinderInterface;',
+    'use Elastica\\Query;',
+    'use Meilisearch\\Client as MeiliSearchClient;',
+    '',
+    'class ProductSearch',
+    '{',
+    '    public function __construct(private FinderInterface $finder) {}',
+    '',
+    '    public function search(string $term): array',
+    '    {',
+    '        $query = new Query\\MultiMatch();',
+    '        $query->setQuery($term);',
+    '        return $this->finder->find($query, 20);',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Entity/SearchableProduct.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Symfony\\UX\\Autocomplete\\Attribute\\Searchable;',
+    '',
+    '#[Searchable(fields: ["name", "description"])]',
+    'class SearchableProduct',
+    '{',
+    '    public string $name = "";',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** serializer: the four attributes the analyser reads, on real properties. */
+function serializerAttributes(root: string): void {
+  put(root, 'src/Entity/SerializedOrder.php', [
+    '<?php',
+    'namespace App\\Entity;',
+    '',
+    'use Symfony\\Component\\Serializer\\Attribute\\Groups;',
+    'use Symfony\\Component\\Serializer\\Attribute\\Ignore;',
+    'use Symfony\\Component\\Serializer\\Attribute\\MaxDepth;',
+    'use Symfony\\Component\\Serializer\\Attribute\\SerializedName;',
+    '',
+    'class SerializedOrder',
+    '{',
+    '    #[Groups(["order:read", "order:write"])]',
+    '    public int $id = 0;',
+    '',
+    '    #[Groups(["order:read"])]',
+    '    #[SerializedName("reference_code")]',
+    '    public string $reference = "";',
+    '',
+    '    #[MaxDepth(2)]',
+    '    #[Groups(["order:read"])]',
+    '    public $customer;',
+    '',
+    '    #[Ignore]',
+    '    public string $internalNote = "";',
+    '',
+    '    // No group at all: invisible in both directions',
+    '    public string $auditTrail = "";',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string): void {
   profiler(root);
@@ -675,4 +929,9 @@ export function addTargetedContent(root: string): void {
   microsoftGraph(root);
   cors(root);
   formEvents(root);
+  httpClient(root);
+  deployDescriptors(root);
+  twig(root);
+  search(root);
+  serializerAttributes(root);
 }
