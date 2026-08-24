@@ -796,6 +796,187 @@ export function addRepositoryFiles(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** Worker supervision, alert rules and profiler data. */
+export function addOperationsFiles(root: string): void {
+  put(root, 'docker/supervisord.conf', [
+    '[supervisord]',
+    'nodaemon=true',
+    '',
+    '[program:messenger-consume]',
+    'command=php /var/www/bin/console messenger:consume async --time-limit=3600 --memory-limit=128M',
+    'numprocs=4',
+    'process_name=%(program_name)s_%(process_num)02d',
+    'autostart=true',
+    'autorestart=true',
+    'startsecs=0',
+    'user=www-data',
+    '',
+    '[program:messenger-failed]',
+    'command=php /var/www/bin/console messenger:consume failed --limit=10',
+    'numprocs=1',
+    'autorestart=unexpected',
+  ].join('\n') + '\n');
+
+  put(root, 'prometheus/app.rules.yaml', [
+    'groups:',
+    '    - name: symfony',
+    '      interval: 30s',
+    '      rules:',
+    '          - alert: MessengerQueueBacklog',
+    '            expr: messenger_queue_size > 1000',
+    '            for: 10m',
+    '            labels:',
+    '                severity: warning',
+    '                team: backend',
+    '            annotations:',
+    '                summary: "Queue backlog"',
+    '                runbook_url: "https://example.com/runbook"',
+    '          - alert: PhpFpmSaturation',
+    '            expr: phpfpm_active_processes / phpfpm_max_children > 0.9',
+    '            for: 5m',
+    '            labels:',
+    '                severity: critical',
+    '          - record: job:http_requests:rate5m',
+    '            expr: sum(rate(http_requests_total[5m])) by (job)',
+  ].join('\n') + '\n');
+
+  // The profiler tools read the cache directory rather than configuration.
+  put(root, 'var/cache/dev/profiler/index.csv',
+    'a1b2c3,127.0.0.1,GET,http://localhost/,200,1756000000,,\n');
+  put(root, 'var/cache/dev/profiler/a1/b2/a1b2c3', 'serialized-profile-stub\n');
+  put(root, 'var/cache/prod/url_generating_routes.php', "<?php\nreturn [];\n");
+  put(root, 'var/log/prod.deprecations.log', "[2026-08-24] deprecation: Passing null is deprecated\n");
+}
+
+/** HTML sanitizer configuration and a bundle extension. */
+export function addConfigExtensionFiles(root: string): void {
+  put(root, 'config/packages/html_sanitizer.yaml', [
+    'framework:',
+    '    html_sanitizer:',
+    '        sanitizers:',
+    '            app.comment_sanitizer:',
+    '                allow_safe_elements: true',
+    '                allow_elements:',
+    '                    span: ["class"]',
+    '                    a: ["href", "title"]',
+    '                block_elements: ["script", "iframe"]',
+    '                drop_attributes:',
+    '                    style: ["*"]',
+    '                force_https_urls: true',
+    '                max_input_length: 20000',
+  ].join('\n') + '\n');
+
+  put(root, 'src/DependencyInjection/AppExtension.php', [
+    '<?php',
+    'namespace App\\DependencyInjection;',
+    '',
+    'use Symfony\\Component\\DependencyInjection\\ContainerBuilder;',
+    'use Symfony\\Component\\DependencyInjection\\Extension\\Extension;',
+    'use Symfony\\Component\\DependencyInjection\\Loader\\YamlFileLoader;',
+    'use Symfony\\Component\\Config\\FileLocator;',
+    '',
+    'class AppExtension extends Extension',
+    '{',
+    '    public function load(array $configs, ContainerBuilder $container): void',
+    '    {',
+    '        $config = $this->processConfiguration(new Configuration(), $configs);',
+    '        $container->setParameter("app.retention_days", $config["retention_days"]);',
+    '        $loader = new YamlFileLoader($container, new FileLocator(__DIR__ . "/../../config"));',
+    '        $loader->load("services.yaml");',
+    '    }',
+    '',
+    '    public function getAlias(): string { return "app"; }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/DependencyInjection/Configuration.php', [
+    '<?php',
+    'namespace App\\DependencyInjection;',
+    '',
+    'use Symfony\\Component\\Config\\Definition\\ConfigurationInterface;',
+    'use Symfony\\Component\\Config\\Definition\\Builder\\TreeBuilder;',
+    '',
+    'class Configuration implements ConfigurationInterface',
+    '{',
+    '    public function getConfigTreeBuilder(): TreeBuilder',
+    '    {',
+    '        $tb = new TreeBuilder("app");',
+    '        $tb->getRootNode()->children()->integerNode("retention_days")->defaultValue(30)->end();',
+    '        return $tb;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/DependencyInjection/Compiler/TagPass.php', [
+    '<?php',
+    'namespace App\\DependencyInjection\\Compiler;',
+    '',
+    'use Symfony\\Component\\DependencyInjection\\Compiler\\CompilerPassInterface;',
+    'use Symfony\\Component\\DependencyInjection\\ContainerBuilder;',
+    '',
+    'class TagPass implements CompilerPassInterface',
+    '{',
+    '    public function process(ContainerBuilder $container): void',
+    '    {',
+    '        foreach ($container->findTaggedServiceIds("app.handler") as $id => $tags) {',
+    '            $container->getDefinition($id)->addMethodCall("setLogger", []);',
+    '        }',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** Low-level PHP the analysers look at: sockets, streams, APM agents. */
+export function addLowLevelPhpFiles(root: string): void {
+  put(root, 'src/Service/SocketProbe.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'class SocketProbe',
+    '{',
+    '    public function probe(string $host, int $port): bool',
+    '    {',
+    '        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);',
+    '        socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ["sec" => 2, "usec" => 0]);',
+    '        $ok = @socket_connect($socket, $host, $port);',
+    '        socket_close($socket);',
+    '        return (bool) $ok;',
+    '    }',
+    '',
+    '    public function stream(string $host, int $port)',
+    '    {',
+    '        $fp = stream_socket_client("tcp://" . $host . ":" . $port, $errno, $errstr, 5);',
+    '        stream_set_blocking($fp, false);',
+    '        fwrite($fp, "PING\\r\\n");',
+    '        $line = fgets($fp, 1024);',
+    '        fclose($fp);',
+    '        return $line;',
+    '    }',
+    '',
+    '    public function curl(string $url): string',
+    '    {',
+    '        $ch = curl_init($url);',
+    '        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);',
+    '        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);',
+    '        $body = curl_exec($ch);',
+    '        curl_close($ch);',
+    '        return (string) $body;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'docker/php/newrelic.ini', [
+    'extension = newrelic.so',
+    'newrelic.appname = "acme-app"',
+    'newrelic.license = "0123456789abcdef0123456789abcdef01234567"',
+    'newrelic.distributed_tracing_enabled = true',
+    'newrelic.transaction_tracer.enabled = true',
+    'newrelic.transaction_tracer.threshold = apdex_f',
+    'newrelic.error_collector.enabled = true',
+    'newrelic.loglevel = info',
+  ].join('\n') + '\n');
+}
+
 /** Everything above, applied in one call. */
 export function addAllAreas(root: string): void {
   addMessengerFiles(root);
@@ -812,4 +993,7 @@ export function addAllAreas(root: string): void {
   addModernPhpFiles(root);
   addUxFiles(root);
   addRepositoryFiles(root);
+  addOperationsFiles(root);
+  addConfigExtensionFiles(root);
+  addLowLevelPhpFiles(root);
 }
