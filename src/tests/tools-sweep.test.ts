@@ -26,6 +26,7 @@ import * as path from 'path';
 import {
   createSymfonyFixture, createProblematicFixture, addEcosystemFiles, removeFixture,
 } from './helpers/symfony-fixture';
+import { addAllAreas } from './helpers/symfony-areas';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -84,6 +85,11 @@ beforeAll(() => {
   // these and analyse nothing without them.
   addEcosystemFiles(fixture);
   addEcosystemFiles(problematic);
+  // Per-area content: a messenger transport with a failure queue, a workflow
+  // with places and transitions, an API Platform resource with filters.
+  // Without these the area modules parse nothing and report nothing.
+  addAllAreas(fixture);
+  addAllAreas(problematic);
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
 });
