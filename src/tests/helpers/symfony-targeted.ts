@@ -368,6 +368,292 @@ function secretsVault(root: string): void {
   ].join('\n') + '\n');
 }
 
+/** commands: console input definitions with every mode constant. */
+function commands(root: string): void {
+  put(root, 'src/Command/ReportCommand.php', [
+    '<?php',
+    'namespace App\\Command;',
+    '',
+    'use Symfony\\Component\\Console\\Attribute\\AsCommand;',
+    'use Symfony\\Component\\Console\\Command\\Command;',
+    'use Symfony\\Component\\Console\\Input\\InputArgument;',
+    'use Symfony\\Component\\Console\\Input\\InputInterface;',
+    'use Symfony\\Component\\Console\\Input\\InputOption;',
+    'use Symfony\\Component\\Console\\Output\\OutputInterface;',
+    'use Symfony\\Component\\Console\\Style\\SymfonyStyle;',
+    '',
+    '#[AsCommand(name: "app:report", description: "Builds a report")]',
+    'class ReportCommand extends Command',
+    '{',
+    '    protected function configure(): void',
+    '    {',
+    '        $this',
+    '            ->addArgument("period", InputArgument::REQUIRED, "Reporting period")',
+    '            ->addArgument("targets", InputArgument::IS_ARRAY, "Targets")',
+    '            ->addOption("format", "f", InputOption::VALUE_REQUIRED, "Output format", "json")',
+    '            ->addOption("dry-run", null, InputOption::VALUE_NONE, "Do not write")',
+    '            ->addOption("tag", "t", InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL, "Tags");',
+    '    }',
+    '',
+    '    protected function execute(InputInterface $input, OutputInterface $output): int',
+    '    {',
+    '        $io = new SymfonyStyle($input, $output);',
+    '        $io->title("Report");',
+    '        $io->progressStart(10);',
+    '        $io->success("done");',
+    '        return Command::SUCCESS;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** stripe-billing-subscriptions: the SDK calls and the env variable names. */
+function stripe(root: string): void {
+  const composer = path.join(root, 'composer.json');
+  try {
+    const pkg = JSON.parse(fs.readFileSync(composer, 'utf-8')) as Record<string, Record<string, string>>;
+    pkg['require'] = { ...pkg['require'], 'stripe/stripe-php': '^13.0' };
+    fs.writeFileSync(composer, JSON.stringify(pkg, null, 2));
+  } catch { /* fixture without composer.json */ }
+
+  put(root, 'src/Service/Billing.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Stripe\\StripeClient;',
+    '',
+    'class Billing',
+    '{',
+    '    public function __construct(private StripeClient $stripe) {}',
+    '',
+    '    public function subscribe(string $email): array',
+    '    {',
+    '        $customer = \\Stripe\\Customer::create(["email" => $email]);',
+    '        $price = \\Stripe\\Price::create(["unit_amount" => 1000, "currency" => "eur"]);',
+    '        $plan = \\Stripe\\Plan::create(["amount" => 1000, "interval" => "month"]);',
+    '        $portal = $this->stripe->billingPortal->sessions->create(["customer" => $customer->id]);',
+    '        $invoice = \\Stripe\\Invoice::upcoming(["customer" => $customer->id]);',
+    '        return [$price->id, $plan->id, $portal->url, $invoice->total];',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, '.env.stripe', 'STRIPE_PUBLISHABLE_KEY=\nSTRIPE_SECRET_KEY=\nSTRIPE_WEBHOOK_SECRET=\n');
+}
+
+/** symfony-rate-limiter-algorithms: the three policies and a burst. */
+function rateLimiter(root: string): void {
+  put(root, 'config/packages/rate_limiter.yaml', [
+    'framework:',
+    '    rate_limiter:',
+    '        anonymous_api:',
+    '            policy: "fixed_window"',
+    '            limit: 100',
+    '            interval: "60 minutes"',
+    '        authenticated_api:',
+    '            policy: "token_bucket"',
+    '            limit: 5000',
+    '            rate: { interval: "15 minutes", amount: 500 }',
+    '        login:',
+    '            policy: "sliding_window"',
+    '            limit: 5',
+    '            interval: "15 minutes"',
+    '        uploads:',
+    '            policy: "no_limit"',
+  ].join('\n') + '\n');
+}
+
+/** cloudflare and terraform: worker and infrastructure definitions. */
+function infrastructure(root: string): void {
+  put(root, 'wrangler.toml', [
+    'name = "acme-edge"',
+    'main = "src/worker.js"',
+    'compatibility_date = "2026-01-01"',
+    'workers_dev = true',
+    '',
+    '[vars]',
+    'APP_ENV = "prod"',
+    '',
+    '[[kv_namespaces]]',
+    'binding = "CACHE"',
+    'id = "0123456789abcdef"',
+  ].join('\n') + '\n');
+
+  put(root, 'infra/main.tf', [
+    'terraform {',
+    '    required_version = ">= 1.6"',
+    '    required_providers {',
+    '        aws = {',
+    '            source  = "hashicorp/aws"',
+    '            version = "~> 5.0"',
+    '        }',
+    '    }',
+    '}',
+    '',
+    'variable "db_user" {',
+    '    type    = string',
+    '    default = "app"',
+    '}',
+    '',
+    'resource "aws_db_instance" "main" {',
+    '    engine         = "mysql"',
+    '    instance_class = "db.t3.micro"',
+    '    username       = var.db_user',
+    '    publicly_accessible = true',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'azure-pipelines.yml', [
+    'trigger:',
+    '    - main',
+    '',
+    'pool:',
+    '    vmImage: ubuntu-latest',
+    '',
+    'jobs:',
+    '    - job: Test',
+    '      timeoutInMinutes: 30',
+    '      steps:',
+    '          - script: composer install',
+    '          - script: vendor/bin/phpunit',
+    '            env:',
+    '                APP_ENV: test',
+  ].join('\n') + '\n');
+}
+
+/** psalm-config: a psalm.xml with the settings the analyser reports on. */
+function psalm(root: string): void {
+  put(root, 'psalm.xml', [
+    '<?xml version="1.0"?>',
+    '<psalm',
+    '    errorLevel="3"',
+    '    findUnusedCode="true"',
+    '    findUnusedBaselineEntry="true"',
+    '    resolveFromConfigFile="true"',
+    '>',
+    '    <projectFiles>',
+    '        <directory name="src" />',
+    '        <ignoreFiles>',
+    '            <directory name="vendor" />',
+    '            <directory name="var" />',
+    '        </ignoreFiles>',
+    '    </projectFiles>',
+    '    <plugins>',
+    '        <pluginClass class="Psalm\\SymfonyPsalmPlugin\\Plugin" />',
+    '    </plugins>',
+    '</psalm>',
+  ].join('\n') + '\n');
+  put(root, '.psalm/baseline.xml', '<?xml version="1.0"?>\n<files psalm-version="5.x" />\n');
+}
+
+/** oauth2-server-config: league/oauth2-server wiring. */
+function oauth2Server(root: string): void {
+  put(root, 'src/Service/AuthServerFactory.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use League\\OAuth2\\Server\\AuthorizationServer;',
+    'use League\\OAuth2\\Server\\ResourceServer;',
+    'use League\\OAuth2\\Server\\CryptKey;',
+    'use League\\OAuth2\\Server\\Grant\\RefreshTokenGrant;',
+    '',
+    'class AuthServerFactory',
+    '{',
+    '    public function build(): AuthorizationServer',
+    '    {',
+    '        $privateKey = new \\League\\OAuth2\\Server\\CryptKey(getenv("OAUTH_PRIVATE_KEY_PATH"));',
+    '        $server = new AuthorizationServer(',
+    '            $this->clients,',
+    '            $this->tokens,',
+    '            $this->scopes,',
+    '            $privateKey,',
+    '            $_ENV["OAUTH_ENCRYPTION_KEY"]',
+    '        );',
+    '        $server->enableGrantType(new RefreshTokenGrant($this->refreshTokens), new \\DateInterval("P1M"));',
+    '        return $server;',
+    '    }',
+    '',
+    '    public function resource(): ResourceServer',
+    '    {',
+    '        return new ResourceServer($this->tokens, new CryptKey(env("OAUTH_PUBLIC_KEY_PATH")));',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** microsoft-graph-integration: the fluent Graph client. */
+function microsoftGraph(root: string): void {
+  put(root, 'src/Service/GraphClient.php', [
+    '<?php',
+    'namespace App\\Service;',
+    '',
+    'use Microsoft\\Graph\\Graph;',
+    '',
+    'class GraphClient',
+    '{',
+    '    public function __construct(private Graph $graph) {}',
+    '',
+    '    public function me(string $token): array',
+    '    {',
+    '        $this->graph->setAccessToken($token);',
+    '        $user = $this->graph->users()->get();',
+    '        $mail = $this->graph->users()->mail()->messages()->get();',
+    '        $request = $this->graph->createRequest("GET", "/me");',
+    '        return [$user, $mail, $request];',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+}
+
+/** cors: a permissive and a scoped configuration. */
+function cors(root: string): void {
+  put(root, 'config/packages/cors.yaml', [
+    'nelmio_cors:',
+    '    defaults:',
+    '        origin_regex: true',
+    '        allow_origin: ["%env(CORS_ALLOW_ORIGIN)%"]',
+    '        allow_methods: ["GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]',
+    '        allow_headers: ["Content-Type", "Authorization"]',
+    '        expose_headers: ["Link"]',
+    '        max_age: 3600',
+    '    paths:',
+    '        "^/api/":',
+    '            allow_origin: ["*"]',
+    '            allow_credentials: true',
+    '        "^/public/":',
+    '            allow_origin: ["https://app.example.com"]',
+  ].join('\n') + '\n');
+}
+
+/** symfony-form-events: form type extensions and event subscribers. */
+function formEvents(root: string): void {
+  put(root, 'src/Form/EventedType.php', [
+    '<?php',
+    'namespace App\\Form;',
+    '',
+    'use Symfony\\Component\\Form\\AbstractType;',
+    'use Symfony\\Component\\Form\\FormBuilderInterface;',
+    'use Symfony\\Component\\Form\\FormEvent;',
+    'use Symfony\\Component\\Form\\FormEvents;',
+    'use Symfony\\Component\\Form\\FormTypeInterface;',
+    '',
+    'class EventedType extends AbstractType implements FormTypeInterface',
+    '{',
+    '    public function buildForm(FormBuilderInterface $builder, array $options): void',
+    '    {',
+    '        $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {',
+    '            $event->stopPropagation();',
+    '        });',
+    '        $builder->addEventListener(FormEvents::POST_SUBMIT, [$this, "onPostSubmit"]);',
+    '        $builder->addEventListener(FormEvents::PRE_SUBMIT, [$this, "onPreSubmit"]);',
+    '    }',
+    '',
+    '    public function onPostSubmit(FormEvent $event): void {}',
+    '    public function onPreSubmit(FormEvent $event): void {}',
+    '}',
+  ].join('\n') + '\n');
+}
+
 /** Apply every targeted block. */
 export function addTargetedContent(root: string): void {
   profiler(root);
@@ -380,4 +666,13 @@ export function addTargetedContent(root: string): void {
   netlify(root);
   benchmarks(root);
   secretsVault(root);
+  commands(root);
+  stripe(root);
+  rateLimiter(root);
+  infrastructure(root);
+  psalm(root);
+  oauth2Server(root);
+  microsoftGraph(root);
+  cors(root);
+  formEvents(root);
 }
