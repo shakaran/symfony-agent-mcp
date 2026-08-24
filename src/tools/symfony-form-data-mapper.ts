@@ -64,7 +64,7 @@ function parseDataMapperFile(filePath: string): FormDataMapperInfo | null {
   const issues: string[] = [];
 
   // Check mapDataToForms handles null data
-  const mapDataToFormsM = /function\s+mapDataToForms\s*\([^)]{0,300}\)(?:\s*:\s*[?\\\\\\w|]{1,80})?\s*\{([^}]{0,2000})\}/s.exec(content);
+  const mapDataToFormsM = /function\s+mapDataToForms\s*\([^)]{0,300}\)(?:\s*:\s*[?\\\w|]{1,80})?\s*\{([^}]{0,2000})\}/s.exec(content);
   let hasMappingNull = false;
   if (mapDataToFormsM) {
     const body = mapDataToFormsM[1];

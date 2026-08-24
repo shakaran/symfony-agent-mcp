@@ -108,7 +108,7 @@ function analysePhpFile(filePath: string, base: string): FormTypeGuesserInfo | n
 
   // Check if guessType returns null for all branches
   if (foundMethods.includes('guessType')) {
-    const guessTypeMatch = /function\s+guessType\s*\([^)]{0,200}\)(?:\s*:\s*[?\\\\\\w|]{1,80})?\s*\{([^}]{0,2000})\}/s.exec(content);
+    const guessTypeMatch = /function\s+guessType\s*\([^)]{0,200}\)(?:\s*:\s*[?\\\w|]{1,80})?\s*\{([^}]{0,2000})\}/s.exec(content);
     if (guessTypeMatch) {
       const body = guessTypeMatch[1];
       const hasNonNullReturn = /return\s+new\s+TypeGuess/.test(body);

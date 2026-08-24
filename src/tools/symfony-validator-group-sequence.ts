@@ -77,7 +77,7 @@ function extractDefinedGroups(content: string): string[] {
 
 function isAlwaysSameSequence(content: string): boolean {
   // Heuristic: getGroupSequence returns a new GroupSequence with no conditional logic
-  const methodMatch = /function\s+getGroupSequence\s*\([^)]{0,50}\)(?:\s*:\s*[?\\\\\\w|]{1,80})?\s*\{([^}]{0,500})\}/.exec(content);
+  const methodMatch = /function\s+getGroupSequence\s*\([^)]{0,50}\)(?:\s*:\s*[?\\\w|]{1,80})?\s*\{([^}]{0,500})\}/.exec(content);
   if (!methodMatch) return false;
   const body = methodMatch[1];
   // If there are no if/switch/match or ternary operators, likely always same
