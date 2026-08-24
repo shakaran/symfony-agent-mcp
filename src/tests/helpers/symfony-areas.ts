@@ -977,6 +977,20 @@ export function addLowLevelPhpFiles(root: string): void {
   ].join('\n') + '\n');
 }
 
+/**
+ * A catalogue of API usage, copied in from a committed PHP fixture.
+ *
+ * The realistic fixtures cover what an application normally contains. Many
+ * analysers look for symbols a given application would not happen to use, and
+ * their parsing never runs without one. The symbol list in that file was
+ * extracted from the modules themselves — every string they search for — not
+ * guessed, and anything credential-shaped was filtered out before writing it.
+ */
+export function addApiSurface(root: string): void {
+  const source = path.join(__dirname, 'fixtures', 'api-surface.php');
+  put(root, 'src/Reference/ApiSurface.php', fs.readFileSync(source, 'utf-8'));
+}
+
 /** Everything above, applied in one call. */
 export function addAllAreas(root: string): void {
   addMessengerFiles(root);
@@ -996,4 +1010,5 @@ export function addAllAreas(root: string): void {
   addOperationsFiles(root);
   addConfigExtensionFiles(root);
   addLowLevelPhpFiles(root);
+  addApiSurface(root);
 }
