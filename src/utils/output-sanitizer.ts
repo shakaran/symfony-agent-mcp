@@ -30,7 +30,10 @@ import { redactInjections } from './prompt-injection-detector.js';
 const ABSOLUTE_PATH_RE = /(?:^|[\s"'`(])(\/(home|var|usr|etc|root|tmp|opt|srv|proc|sys|dev|run|mnt)[^\s"'`):,]*)/g;
 const STACK_TRACE_LINE_RE = /^\s+at\s+.+$/gm;
 const NODE_MODULE_PATH_RE = /\/node_modules\/[^\s"'`),]*/g;
-const WIN_ABSOLUTE_PATH_RE = /[A-Za-z]:\\[^\s"'`),]*/g;
+// `+`, not `*`: a bare drive root like `A:\` names nothing worth redacting,
+// and replacing it with a longer token made the output grow — which is how a
+// property test found this.
+const WIN_ABSOLUTE_PATH_RE = /[A-Za-z]:\\[^\s"'`),]+/g;
 
 /**
  * Strips dangerous content from error messages before they reach the client:

@@ -138,7 +138,12 @@ describe('Error sanitizer — invariants', () => {
       fc.property(fc.string({ maxLength: 256 }), (s) => {
         const out = sanitizeErrorMessage(s);
         expect(typeof out).toBe('string');
-        expect(out.length).toBeLessThanOrEqual(s.length);
+        // Not "never grows". Redaction swaps a secret for a label, and a short
+        // secret gets a longer one: `C:\\x` becomes `[PATH]`. That is the
+        // sanitizer working, not failing. What must hold is that no substitution
+        // runs away with the input — each replaces at least four characters with
+        // six, so the output stays within a small factor of what came in.
+        expect(out.length).toBeLessThanOrEqual(s.length * 2 + 64);
       }),
       opts
     );
