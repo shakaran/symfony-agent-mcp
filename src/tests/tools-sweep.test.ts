@@ -25,7 +25,8 @@ import * as path from 'path';
 
 import {
   createSymfonyFixture, createProblematicFixture, createSkeletonFixture,
-  addEcosystemFiles, addBulkContent, addSymlinks, removeFixture,
+  addEcosystemFiles, addBulkContent, addSymlinks, addClasslessFiles,
+  addUnreadableFiles, restorePermissions, removeFixture,
 } from './helpers/symfony-fixture';
 import { addAllAreas, addPerModuleSurface } from './helpers/symfony-areas';
 
@@ -110,11 +111,18 @@ beforeAll(() => {
   fs.writeFileSync(outside, 'outside the application\n');
   addSymlinks(fixture, outside);
   addSymlinks(problematic, outside);
+  // 244 guards are `!classMatch`: every file so far declared a class.
+  addClasslessFiles(fixture);
+  addClasslessFiles(problematic);
+  // A file with no read permission is the null the guarded reader returns,
+  // without a symlink the walkers would skip first.
+  addUnreadableFiles(fixture);
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
 });
 
 afterAll(() => {
+  restorePermissions(fixture);
   removeFixture(fixture);
   removeFixture(problematic);
   removeFixture(skeleton);

@@ -764,3 +764,123 @@ export function addSymlinks(root: string, outsideTarget: string): void {
   // A broken link: the target never existed.
   link('src/Service/BrokenLink.php', path.join(root, 'src/Service/DoesNotExist.php'));
 }
+
+/**
+ * PHP files that declare no class.
+ *
+ * 244 uncovered guards are `!classMatch` — the parsers extract a class name
+ * and take a different path when there is none. Every file in the fixtures so
+ * far declares one, so that path never ran. Real applications are full of
+ * these: bootstraps, returned configuration arrays, function libraries,
+ * files that are only a namespace declaration.
+ *
+ * Also adds files under a Symfony namespace, which 53 guards look for, and
+ * files that are empty or unreadable, for the null-content branches.
+ */
+export function addClasslessFiles(root: string): void {
+  put(root, 'src/bootstrap.php', [
+    '<?php',
+    '',
+    'use Symfony\\Component\\Dotenv\\Dotenv;',
+    '',
+    'require dirname(__DIR__) . "/vendor/autoload.php";',
+    '',
+    'if (!isset($_SERVER["APP_ENV"])) {',
+    '    (new Dotenv())->bootEnv(dirname(__DIR__) . "/.env");',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/functions.php', [
+    '<?php',
+    '',
+    'namespace App;',
+    '',
+    'function slugify(string $value): string',
+    '{',
+    '    return strtolower(preg_replace("/[^A-Za-z0-9]+/", "-", $value));',
+    '}',
+    '',
+    'function money(int $cents): string',
+    '{',
+    '    return number_format($cents / 100, 2) . " EUR";',
+    '}',
+    '',
+    'const APP_DEFAULT_LOCALE = "en";',
+  ].join('\n') + '\n');
+
+  put(root, 'config/parameters.php', [
+    '<?php',
+    '',
+    'return [',
+    '    "app.locale" => "en",',
+    '    "app.retention_days" => 30,',
+    '    "app.features" => ["beta" => false],',
+    '];',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Component/BundleAlias.php', [
+    '<?php',
+    '',
+    'namespace Symfony\\Component\\Legacy;',
+    '',
+    '// A file living under a Symfony namespace, which some analysers treat',
+    '// as vendor code rather than application code.',
+    'interface LegacyMarker {}',
+  ].join('\n') + '\n');
+
+  put(root, 'src/Bridge/DoctrineAlias.php', [
+    '<?php',
+    '',
+    'namespace Doctrine\\Bundle\\Legacy;',
+    '',
+    'interface LegacyDoctrineMarker {}',
+  ].join('\n') + '\n');
+
+  // Only an opening tag: no namespace, no class, no statements.
+  put(root, 'src/Service/EmptyStub.php', '<?php\n');
+  put(root, 'src/Entity/OnlyNamespace.php', '<?php\n\nnamespace App\\Entity;\n');
+
+  // A zero-byte file, which several readers treat separately from a missing one.
+  put(root, 'src/Controller/ZeroBytes.php', '');
+  put(root, 'config/packages/empty.yaml', '');
+  put(root, 'templates/empty.html.twig', '');
+}
+
+/**
+ * A file the reader cannot read.
+ *
+ * Several hundred guards handle a null from the guarded reader. A file with no
+ * read permission produces exactly that, without needing a symlink the
+ * directory walkers would skip first.
+ */
+export function addUnreadableFiles(root: string): void {
+  const make = (rel: string, content: string): void => {
+    const full = path.join(root, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, content);
+    try {
+      fs.chmodSync(full, 0o000);
+    } catch {
+      // Running as root, or a filesystem without permissions: skip.
+    }
+  };
+
+  make('src/Service/Unreadable.php', '<?php\nclass Unreadable {}\n');
+  make('config/packages/unreadable.yaml', 'framework: ~\n');
+  make('templates/unreadable.html.twig', '{% block body %}{% endblock %}\n');
+}
+
+/** Restore permissions so the fixture can be removed. */
+export function restorePermissions(root: string): void {
+  for (const rel of [
+    'src/Service/Unreadable.php',
+    'config/packages/unreadable.yaml',
+    'templates/unreadable.html.twig',
+  ]) {
+    try {
+      fs.chmodSync(path.join(root, rel), 0o644);
+    } catch {
+      // Already gone or never created.
+    }
+  }
+}
