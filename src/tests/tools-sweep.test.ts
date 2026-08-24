@@ -32,6 +32,7 @@ import {
   addAllAreas, addPerModuleSurface, addComposerDependencies,
 } from './helpers/symfony-areas';
 import { addTargetedContent } from './helpers/symfony-targeted';
+import { addLegacyStyle } from './helpers/symfony-legacy';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -121,6 +122,11 @@ beforeAll(() => {
   // write composer.json themselves.
   addComposerDependencies(fixture, toolsDir);
   addComposerDependencies(problematic, toolsDir);
+  // Docblock annotations, XML mapping and registered bundles. 81 modules
+  // handle the annotation style as well as attributes, and every fixture so
+  // far used attributes only, so the longer branch never ran.
+  addLegacyStyle(fixture);
+  addLegacyStyle(problematic);
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.
