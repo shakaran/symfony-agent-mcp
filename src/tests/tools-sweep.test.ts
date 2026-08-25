@@ -35,6 +35,7 @@ import {
 import { addTargetedContent } from './helpers/symfony-targeted';
 import { addLegacyStyle } from './helpers/symfony-legacy';
 import { addPlatformAndConfig } from './helpers/symfony-platforms';
+import { addPhpPatterns } from './helpers/symfony-php-patterns';
 import { addInsecureVariants } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -183,6 +184,9 @@ beforeAll(() => {
   // read, at the exact paths they join onto the application root.
   addPlatformAndConfig(fixture);
   addPlatformAndConfig(problematic);
+  // PHP in the shapes the source-reading analysers look for.
+  addPhpPatterns(fixture);
+  addPhpPatterns(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);
