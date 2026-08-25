@@ -34,6 +34,7 @@ import {
 } from './helpers/symfony-areas';
 import { addTargetedContent } from './helpers/symfony-targeted';
 import { addLegacyStyle } from './helpers/symfony-legacy';
+import { addPlatformAndConfig } from './helpers/symfony-platforms';
 import { addInsecureVariants } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -178,6 +179,10 @@ beforeAll(() => {
   // far used attributes only, so the longer branch never ran.
   addLegacyStyle(fixture);
   addLegacyStyle(problematic);
+  // Deployment descriptors and the Symfony configuration a dozen analysers
+  // read, at the exact paths they join onto the application root.
+  addPlatformAndConfig(fixture);
+  addPlatformAndConfig(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);
