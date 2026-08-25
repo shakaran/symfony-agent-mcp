@@ -41,16 +41,28 @@ function parseMessengerTransports(content: string): TransportDef[] {
   let currentTransport: TransportDef | null = null;
   let inOptions = false;
 
+    // The depth of a transport name follows the file's indentation: at two
+    // spaces they sit at 6, at four spaces at 12. Accepting only 4-8 meant a
+    // four-space messenger.yaml parsed as having no transports at all.
+    let transportIndent = -1;
+
   for (const line of lines) {
-    if (/^\s+transports\s*:/.test(line)) { inTransports = true; continue; }
+    if (/^\s+transports\s*:/.test(line)) {
+      inTransports = true;
+      transportIndent = -1;
+      continue;
+    }
     if (/^\s+routing\s*:/.test(line) || /^\s+buses\s*:/.test(line)) { inTransports = false; continue; }
     if (!inTransports) continue;
 
     // New transport name (4-6 spaces indent)
-    const tNameMatch = /^(\s{4,8})(\w{1,80})\s*:/.exec(line);
+    const tNameMatch = /^(\s+)(\w{1,80})\s*:/.exec(line);
     if (tNameMatch) {
       const indent = tNameMatch[1].length;
-      if (indent <= 8) {
+      // The first name under `transports:` fixes the depth; anything
+      // deeper is one of its options rather than another transport.
+      if (transportIndent === -1) transportIndent = indent;
+      if (indent === transportIndent) {
         if (currentTransport) transports.push(currentTransport);
         currentTransport = { name: tNameMatch[2], dsn: '', options: new Map() };
         inOptions = false;

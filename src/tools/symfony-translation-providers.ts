@@ -73,10 +73,13 @@ function parseProviders(appPath: string): TranslationProviderInfo[] {
     const raw = parseYamlFile(file) as Record<string, unknown> | null;
     if (!raw) continue;
 
-    // Support both top-level translation: and framework.translation:
+    // Symfony's key is framework.translator. framework.translation does
+    // not exist, so reading only that found nothing in a real project.
+    const framework = raw['framework'] as Record<string, unknown> | undefined;
     const translationSection =
       (raw['translation'] as Record<string, unknown> | undefined) ??
-      ((raw['framework'] as Record<string, unknown> | undefined)?.['translation'] as Record<string, unknown> | undefined);
+      (framework?.['translator'] as Record<string, unknown> | undefined) ??
+      (framework?.['translation'] as Record<string, unknown> | undefined);
 
     if (!translationSection) continue;
 
