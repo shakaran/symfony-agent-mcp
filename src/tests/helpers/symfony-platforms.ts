@@ -323,4 +323,187 @@ export function addSymfonyConfigFiles(root: string): void {
 export function addPlatformAndConfig(root: string): void {
   addPlatformFiles(root);
   addSymfonyConfigFiles(root);
+  addFrameworkBlocks(root);
+  addToolingFiles(root);
+}
+
+/** Framework configuration blocks several analysers read from framework.yaml. */
+export function addFrameworkBlocks(root: string): void {
+  put(root, 'config/packages/framework.yaml', [
+    'framework:',
+    '    secret: "%env(APP_SECRET)%"',
+    '    session:',
+    '        handler_id: null',
+    '        cookie_secure: auto',
+    '        cookie_samesite: lax',
+    '    php_errors:',
+    '        log: true',
+    '    trusted_proxies: "127.0.0.1,10.0.0.0/8"',
+    '    trusted_headers: ["x-forwarded-for", "x-forwarded-proto"]',
+    '',
+    '    assets:',
+    '        version: "v3"',
+    '        version_format: "%%s?version=%%s"',
+    '        json_manifest_path: "%kernel.project_dir%/public/build/manifest.json"',
+    '        packages:',
+    '            images:',
+    '                base_urls: ["https://cdn.example.com"]',
+    '',
+    '    http_client:',
+    '        default_options:',
+    '            timeout: 30',
+    '            max_redirects: 3',
+    '        scoped_clients:',
+    '            github.client:',
+    '                base_uri: "https://api.github.com"',
+    '                auth_bearer: "%env(GITHUB_TOKEN)%"',
+    '            internal.client:',
+    '                base_uri: "http://127.0.0.1:8080"',
+    '                verify_peer: false',
+    '            legacy.client:',
+    '                base_uri: "http://localhost:9000"',
+    '',
+    '    translator:',
+    '        default_path: "%kernel.project_dir%/translations"',
+    '        fallbacks: [en]',
+    '        providers:',
+    '            crowdin:',
+    '                dsn: "%env(CROWDIN_DSN)%"',
+    '                locales: [en, es]',
+    '',
+    '    rate_limiter:',
+    '        anonymous:',
+    '            policy: "sliding_window"',
+    '            limit: 100',
+    '            interval: "60 minutes"',
+    '        authenticated:',
+    '            policy: "token_bucket"',
+    '            limit: 5000',
+    '            rate: { interval: "15 minutes", amount: 500 }',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/twig.yaml', [
+    'twig:',
+    '    default_path: "%kernel.project_dir%/templates"',
+    '    form_themes: ["bootstrap_5_layout.html.twig"]',
+    '    paths:',
+    '        "%kernel.project_dir%/templates/email": email',
+    '        "%kernel.project_dir%/vendor/acme/theme/templates": AcmeTheme',
+    '    globals:',
+    '        app_name: "Demo"',
+    '    strict_variables: true',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/saml.yaml', [
+    'nbgrp_onelogin_saml:',
+    '    onelogin_settings:',
+    '        default:',
+    '            idp:',
+    '                entityId: "https://idp.example.com/metadata"',
+    '                singleSignOnService:',
+    '                    url: "https://idp.example.com/sso"',
+    '                    binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"',
+    '            sp:',
+    '                entityId: "https://app.example.com/saml/metadata"',
+    '                assertionConsumerService:',
+    '                    url: "https://app.example.com/saml/acs"',
+    '            security:',
+    '                wantAssertionsSigned: true',
+    '                wantMessagesSigned: true',
+    '                requestedAuthnContext: false',
+  ].join('\n') + '\n');
+}
+
+/** Static-analysis and container configuration read from their own files. */
+export function addToolingFiles(root: string): void {
+  put(root, 'taskdef.json', JSON.stringify({
+    family: 'acme-app',
+    networkMode: 'awsvpc',
+    cpu: '512',
+    memory: '1024',
+    containerDefinitions: [{
+      name: 'php',
+      image: 'acme/app:latest',
+      essential: true,
+      privileged: false,
+      portMappings: [{ containerPort: 8080, protocol: 'tcp' }],
+      environment: [{ name: 'APP_ENV', value: 'prod' }],
+      secrets: [{ name: 'DATABASE_URL', valueFrom: 'arn:aws:ssm:eu-west-1:0:parameter/db' }],
+      healthCheck: { command: ['CMD-SHELL', 'curl -f http://localhost:8080/health || exit 1'], interval: 30 },
+      logConfiguration: { logDriver: 'awslogs', options: { 'awslogs-group': '/ecs/acme' } },
+    }],
+  }, null, 2));
+
+  put(root, 'deptrac.yaml', [
+    'deptrac:',
+    '    paths: ["./src"]',
+    '    layers:',
+    '        - name: Controller',
+    '          collectors:',
+    '              - type: directory',
+    '                value: src/Controller/.*',
+    '        - name: Service',
+    '          collectors:',
+    '              - type: directory',
+    '                value: src/Service/.*',
+    '        - name: Entity',
+    '          collectors:',
+    '              - type: directory',
+    '                value: src/Entity/.*',
+    '    ruleset:',
+    '        Controller: [Service]',
+    '        Service: [Entity]',
+    '        Entity: ~',
+  ].join('\n') + '\n');
+
+  put(root, 'ecs.php', [
+    '<?php',
+    '',
+    'use Symplify\\EasyCodingStandard\\Config\\ECSConfig;',
+    '',
+    'return ECSConfig::configure()',
+    '    ->withPaths([__DIR__ . "/src", __DIR__ . "/tests"])',
+    '    ->withPreparedSets(psr12: true, common: true)',
+    '    ->withPhpCsFixerSets(symfony: true);',
+  ].join('\n') + '\n');
+
+  put(root, 'docker/nginx/default.conf', [
+    'server {',
+    '    listen 80;',
+    '    server_name _;',
+    '    root /var/www/public;',
+    '',
+    '    location / {',
+    '        try_files $uri /index.php$is_args$args;',
+    '    }',
+    '',
+    '    location ~ ^/index\\.php(/|$) {',
+    '        fastcgi_pass php:9000;',
+    '        fastcgi_split_path_info ^(.+\\.php)(/.*)$;',
+    '        include fastcgi_params;',
+    '        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;',
+    '        fastcgi_buffers 16 16k;',
+    '        fastcgi_read_timeout 60;',
+    '        internal;',
+    '    }',
+    '',
+    '    location ~ \\.php$ {',
+    '        return 404;',
+    '    }',
+    '}',
+  ].join('\n') + '\n');
+
+  put(root, 'docker/php/www.conf', [
+    '[www]',
+    'user = www-data',
+    'group = www-data',
+    'listen = 9000',
+    'pm = dynamic',
+    'pm.max_children = 20',
+    'pm.start_servers = 4',
+    'pm.min_spare_servers = 2',
+    'pm.max_spare_servers = 6',
+    'pm.max_requests = 500',
+    'clear_env = no',
+  ].join('\n') + '\n');
 }
