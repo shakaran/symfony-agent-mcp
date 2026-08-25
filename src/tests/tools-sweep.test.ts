@@ -74,12 +74,54 @@ async function callAndCheck(fn: (arg: string) => unknown, arg: string): Promise<
   }
 }
 
+/** Call an export of any arity and check what it gives back. */
+async function callAndCheckMulti(fn: (...a: unknown[]) => unknown, args: unknown[]): Promise<void> {
+  const returned = await Promise.resolve(fn(...args));
+
+  expect(returned).toBeDefined();
+  expect(returned).not.toBeNull();
+
+  const r = returned as McpToolResultLike;
+  if (typeof returned === 'object' && 'content' in (returned as object)) {
+    expect(Array.isArray(r.content)).toBe(true);
+  }
+}
+
 /** The one-argument exports of a module, which take the application path. */
 function pathFunctions(mod: Record<string, unknown>): Array<[string, (a: string) => unknown]> {
   return Object.entries(mod)
     .filter(([, v]) => typeof v === 'function' && (v as (a: string) => unknown).length === 1)
     .map(([k, v]) => [k, v as (a: string) => unknown]);
 }
+
+/**
+ * Exports taking more than the application path.
+ *
+ * Forty-one of them — `getWorkflowDetails(appPath, workflowName)`,
+ * `searchLog(appPath, fileName, searchTerm)` — and the sweep called none,
+ * because it only ever passed one argument. Whole functions sat unexecuted for
+ * that reason alone. Note that a parameter with a default does not count
+ * towards `length`, so those were already covered.
+ */
+function multiArgFunctions(
+  mod: Record<string, unknown>
+): Array<[string, (...a: unknown[]) => unknown, number]> {
+  return Object.entries(mod)
+    .filter(([, v]) => typeof v === 'function' && (v as (...a: unknown[]) => unknown).length >= 2)
+    .map(([k, v]) => [k, v as (...a: unknown[]) => unknown, (v as (...a: unknown[]) => unknown).length]);
+}
+
+/**
+ * Plausible values for a second or third argument.
+ *
+ * Both a name the fixture contains and one it does not: a lookup that finds
+ * something and a lookup that does not are different code paths, and the
+ * "not found" branch is usually the longer of the two.
+ */
+const ARGUMENT_GUESSES: string[][] = [
+  ['User', 'dev', 'messages'],
+  ['no-such-name-4a1c9f', 'no-such-file.log', 'zz'],
+];
 
 let fixture: string;
 let problematic: string;
@@ -239,6 +281,16 @@ describe('every tool module', () => {
 
     test('a project containing nothing is reported as finding nothing', async () => {
       for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, skeleton);
+    });
+
+    test('exports taking more than a path are called too', async () => {
+      // Once with values the fixture contains, once with values it does not.
+      for (const guesses of ARGUMENT_GUESSES) {
+        for (const [, fn, arity] of multiArgFunctions(mod)) {
+          const extra = Array.from({ length: arity - 1 }, (_, i) => guesses[i % guesses.length]);
+          await callAndCheckMulti(fn, [fixture, ...extra]);
+        }
+      }
     });
 
     test('an empty directory is handled without throwing', async () => {
