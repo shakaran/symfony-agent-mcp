@@ -447,6 +447,7 @@ function securityBundleAndPgbouncer(root: string): void {
 /** Everything in this file. */
 export function addPhpPatterns(root: string): void {
   messengerConsumers(root);
+  literalConfiguration(root);
   apiDocsAndForms(root);
   channelsAndAccess(root);
   assortedPhpAndConfig(root);
@@ -1022,5 +1023,106 @@ function channelsAndAccess(root: string): void {
     '    public function onView($event) {}',
     '    public function onFinishRequest($event) {}',
     '}',
+  ].join('\n') + '\n');
+}
+
+/**
+ * Literal values where the fixtures used environment placeholders.
+ *
+ * Several analysers classify a DSN by its scheme, or read a numeric setting
+ * and compare it. `"%env(CROWDIN_DSN)%"` tells them nothing: the scheme
+ * detection, the comparison and everything they guard never run. Real
+ * applications hold both kinds, so the fixture now does too.
+ */
+function literalConfiguration(root: string): void {
+  put(root, 'config/packages/translation.yaml', [
+    'framework:',
+    '    default_locale: en',
+    '    translator:',
+    '        default_path: "%kernel.project_dir%/translations"',
+    '        fallbacks: [en, es]',
+    '        providers:',
+    '            crowdin:',
+    '                dsn: "crowdin://PROJECT_ID:TOKEN@default"',
+    '                domains: ["messages", "validators"]',
+    '                locales: ["en", "es", "fr"]',
+    '            loco:',
+    '                dsn: "loco://API_KEY@default"',
+    '                locales: ["en"]',
+    '            lokalise:',
+    '                dsn: "lokalise://PROJECT_ID:API_KEY@default"',
+    '            phrase:',
+    '                dsn: "phrase://PROJECT_ID:TOKEN@default?userAgent=acme"',
+    '            unknown_provider:',
+    '                dsn: "somevendor://token@default"',
+    '            from_env:',
+    '                dsn: "%env(TRANSLATION_DSN)%"',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/rate_limiter.yaml', [
+    'framework:',
+    '    rate_limiter:',
+    '        anonymous_api:',
+    '            policy: "fixed_window"',
+    '            limit: 100',
+    '            interval: "60 minutes"',
+    '        authenticated_api:',
+    '            policy: "token_bucket"',
+    '            limit: 5000',
+    '            rate: { interval: "15 minutes", amount: 500 }',
+    '        login_attempts:',
+    '            policy: "sliding_window"',
+    '            limit: 5',
+    '            interval: "15 minutes"',
+    '        bursty:',
+    '            policy: "token_bucket"',
+    '            limit: 20',
+    '            rate: { interval: "1 second", amount: 20 }',
+    '        unlimited:',
+    '            policy: "no_limit"',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/cache.yaml', [
+    'framework:',
+    '    cache:',
+    '        app: cache.adapter.redis',
+    '        system: cache.adapter.system',
+    '        default_redis_provider: "redis://localhost:6379"',
+    '        default_memcached_provider: "memcached://localhost:11211"',
+    '        pools:',
+    '            app.cache.products:',
+    '                adapter: cache.adapter.array',
+    '                default_lifetime: 3600',
+    '            app.cache.chained:',
+    '                adapters: ["cache.adapter.array", "cache.adapter.redis"]',
+    '                default_lifetime: 60',
+    '            app.cache.tagged:',
+    '                adapter: cache.app',
+    '                tags: true',
+    '            app.cache.filesystem:',
+    '                adapter: cache.adapter.filesystem',
+    '                default_lifetime: 86400',
+    '            doctrine.result_cache_pool:',
+    '                adapter: cache.app',
+  ].join('\n') + '\n');
+
+  put(root, 'config/packages/messenger_literal.yaml', [
+    'framework:',
+    '    messenger:',
+    '        failure_transport: failed',
+    '        transports:',
+    '            amqp_transport:',
+    '                dsn: "amqp://guest:guest@rabbitmq:5672/%2f/messages"',
+    '                retry_strategy: { max_retries: 3, delay: 1000, multiplier: 2, max_delay: 0 }',
+    '            redis_transport:',
+    '                dsn: "redis://redis:6379/messages/symfony/consumer"',
+    '            sqs_transport:',
+    '                dsn: "https://sqs.eu-west-1.amazonaws.com/0/orders.fifo"',
+    '            beanstalkd_transport:',
+    '                dsn: "beanstalkd://localhost:11300"',
+    '            doctrine_transport:',
+    '                dsn: "doctrine://default?queue_name=default"',
+    '            failed:',
+    '                dsn: "doctrine://default?queue_name=failed"',
   ].join('\n') + '\n');
 }
