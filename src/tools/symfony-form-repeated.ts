@@ -74,15 +74,17 @@ function parseRepeatedFile(filePath: string, appPath: string): FileRepeatedResul
   const fileIssues: string[] = [];
 
   // Find all ->add( calls with RepeatedType
-  const addPattern = /->add\s*\(\s*['"]([^'"]{1,100})['"]\s*,\s*(?:\\?[\w\\]{1,100}::class|RepeatedType::class)\s*,\s*\[([^\]]{0,800})\]\s*\)/gs;
+  const addPattern = /->add\s*\(\s*['"]([^'"]{1,100})['"]\s*,\s*(\\?[\w\\]{1,100}::class)\s*,\s*\[([^\][]{0,800}(?:\[[^\][]{0,300}\][^\][]{0,800}){0,40})\]\s*\)/gs;
   let addM: RegExpExecArray | null;
   while ((addM = addPattern.exec(content)) !== null) {
     const fieldName = addM[1];
-    const optionsBlock = addM[2];
+    const fieldType = addM[2];
+    const optionsBlock = addM[3];
 
-    if (!optionsBlock.includes('RepeatedType') && !content.includes(`'${fieldName}'`) ) continue;
-    // Must reference RepeatedType somewhere in context
-    if (!content.includes('RepeatedType')) continue;
+    // Look at the type this ->add() declares. The old check asked whether
+    // the field name appeared in single quotes somewhere in the file, so a
+    // form written with double quotes — equally valid PHP — was invisible.
+    if (!fieldType.includes('RepeatedType')) continue;
 
     // Extract inner type
     const typeM = /['"]type['"]\s*=>\s*([\w\\]{1,100}::class|['"][^'"]{1,100}['"])/.exec(optionsBlock);
