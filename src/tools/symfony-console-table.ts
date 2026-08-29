@@ -49,7 +49,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function countColumns(content: string): number {
   // Count columns from setHeaders array literal
-  const headersM = /->setHeaders\s*\(\s*\[([^\]]{0,500})\]/.exec(content);
+  const headersM = /->setHeaders\s*\(\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(content);
   if (headersM) {
     const items = headersM[1].split(',').filter((s) => s.trim().length > 0);
     return items.length;

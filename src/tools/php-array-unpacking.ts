@@ -81,7 +81,7 @@ function analyseFile(filePath: string, base: string): ArrayUnpackingFinding[] {
     }
 
     // Short list [$a, $b, ...] = $array  (assignment target, not array literal)
-    const shortListMatch = /^\s*\[([^\]]{0,300})\]\s*=\s*\$/.exec(line);
+    const shortListMatch = /^\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]\s*=\s*\$/.exec(line);
     if (shortListMatch) {
       const inner = shortListMatch[1];
       // Detect string-keyed unpacking: 'key' => $var

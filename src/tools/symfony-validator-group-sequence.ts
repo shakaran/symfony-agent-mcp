@@ -48,7 +48,7 @@ function getAllPhpFiles(dir: string): string[] {
 function extractSequenceGroups(content: string): string[] {
   const groups: string[] = [];
   // Match: new GroupSequence(['GroupA', 'GroupB', ...])
-  const seqMatch = /new\s+GroupSequence\s*\(\s*\[([^\]]{0,500})\]/.exec(content);
+  const seqMatch = /new\s+GroupSequence\s*\(\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(content);
   if (!seqMatch) return groups;
 
   const inner = seqMatch[1];
@@ -63,7 +63,7 @@ function extractSequenceGroups(content: string): string[] {
 function extractDefinedGroups(content: string): string[] {
   const groups: string[] = [];
   // Extract groups from Assert constraints: groups: ['GroupA']
-  const groupsMatches = content.matchAll(/groups\s*[=:>]{1,2}\s*\[([^\]]{0,300})\]/g);
+  const groupsMatches = content.matchAll(/groups\s*[=:>]{1,2}\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/g);
   for (const m of groupsMatches) {
     const inner = m[1];
     const stringMatches = inner.matchAll(/'([^']{1,80})'|"([^"]{1,80})"/g);

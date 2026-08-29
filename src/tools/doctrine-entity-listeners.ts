@@ -52,7 +52,7 @@ function extractClassFromContent(content: string): string | null {
 function extractEntityListenerClasses(content: string): string[] {
   const listeners: string[] = [];
   // Match #[EntityListeners(['App\Entity\Listener\FooListener'])] or similar
-  const attrPattern = /#\[(?:\w+\\){0,10}EntityListeners\s*\(\s*\[([^\]]{0,500})\]/g;
+  const attrPattern = /#\[(?:\w+\\){0,10}EntityListeners\s*\(\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/g;
   let m: RegExpExecArray | null;
   while ((m = attrPattern.exec(content)) !== null) {
     const inner = m[1];

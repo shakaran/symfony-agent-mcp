@@ -135,7 +135,7 @@ function analyzePhpFile(filePath: string, base: string): UniqueEntityInfo[] {
     // Pattern 2: ignoreNull: true on non-nullable fields
     if (/ignoreNull\s*:\s*true/.test(attrText)) {
       // Extract field names from the attribute
-      const fieldsMatch = /fields\s*[=:]\s*\[([^\]]{0,200})\]/.exec(attrText);
+      const fieldsMatch = /fields\s*[=:]\s*\[([^\][]{0,200}(?:\[[^\][]{0,300}\][^\][]{0,200}){0,40})\]/.exec(attrText);
       if (fieldsMatch) {
         const fieldNames = fieldsMatch[1].split(',').map((s) => s.trim().replace(/['"]/g, ''));
         for (const fieldName of fieldNames) {
@@ -153,7 +153,7 @@ function analyzePhpFile(filePath: string, base: string): UniqueEntityInfo[] {
     }
 
     // Pattern 3: Multi-field unique constraint without errorPath
-    const fieldsMatch = /fields\s*[=:]\s*\[([^\]]{0,200})\]/.exec(attrText);
+    const fieldsMatch = /fields\s*[=:]\s*\[([^\][]{0,200}(?:\[[^\][]{0,300}\][^\][]{0,200}){0,40})\]/.exec(attrText);
     if (fieldsMatch) {
       const fieldNames = fieldsMatch[1].split(',').map((s) => s.trim()).filter(Boolean);
       if (fieldNames.length > 1 && !/\berrorPath\s*[=:]/.test(attrText)) {

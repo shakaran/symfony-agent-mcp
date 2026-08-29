@@ -88,7 +88,7 @@ function parseRectorPhp(appPath: string): Set<string> {
 function extractNodeTypes(content: string): string[] {
   const nodeTypes: string[] = [];
   // Match getNodeTypes return array: return [Xxx::class, Yyy::class]
-  const returnMatch = /getNodeTypes\s*\([^)]{0,50}\)[^{]{0,50}\{[^}]{0,500}return\s*\[([^\]]{0,500})\]/.exec(content);
+  const returnMatch = /getNodeTypes\s*\([^)]{0,50}\)[^{]{0,50}\{[^}]{0,500}return\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(content);
   if (!returnMatch) return nodeTypes;
 
   const arrayContent = returnMatch[1];

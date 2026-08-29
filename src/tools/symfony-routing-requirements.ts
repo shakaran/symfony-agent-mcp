@@ -104,7 +104,7 @@ function parsePhpRouteFile(filePath: string, appPath: string): RoutingRequiremen
 
     // Extract requirements array
     const requirements: Record<string, string> = {};
-    const reqM = /requirements\s*:\s*\[([^\]]{0,400})\]/.exec(attrBody);
+    const reqM = /requirements\s*:\s*\[([^\][]{0,400}(?:\[[^\][]{0,300}\][^\][]{0,400}){0,40})\]/.exec(attrBody);
     if (reqM) {
       const reqBody = reqM[1];
       const kvPattern = /['"](\w{1,60})['"]\s*=>\s*['"]([^'"]{1,200})['"]/g;
@@ -117,7 +117,7 @@ function parsePhpRouteFile(filePath: string, appPath: string): RoutingRequiremen
     const hostM = /host\s*:\s*['"]([^'"]{1,200})['"]/.exec(attrBody);
     const host = hostM ? hostM[1] : undefined;
 
-    const schemesM = /schemes\s*:\s*\[([^\]]{0,200})\]/.exec(attrBody);
+    const schemesM = /schemes\s*:\s*\[([^\][]{0,200}(?:\[[^\][]{0,300}\][^\][]{0,200}){0,40})\]/.exec(attrBody);
     const schemes: string[] = [];
     if (schemesM) {
       const sm = schemesM[1].match(/['"]([^'"]{1,20})['"]/g) ?? [];

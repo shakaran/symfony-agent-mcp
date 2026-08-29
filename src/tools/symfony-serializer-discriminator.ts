@@ -56,7 +56,7 @@ function extractDiscriminatorMap(content: string): {
     const field = fieldM ? fieldM[1] : 'type';
 
     const types: Record<string, string> = {};
-    const mappingM = /mapping\s*:\s*\[([^\]]{0,500})\]/.exec(attrContent);
+    const mappingM = /mapping\s*:\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(attrContent);
     if (mappingM) {
       const entries = mappingM[1].matchAll(/['"](\w{1,80})['"]\s*=>\s*(\w{1,100})::class/g);
       for (const e of entries) {
@@ -67,7 +67,7 @@ function extractDiscriminatorMap(content: string): {
   }
 
   // ClassDiscriminatorMapping constructor: new ClassDiscriminatorMapping('type', [...])
-  const classDiscM = /new\s+ClassDiscriminatorMapping\s*\(\s*['"](\w{1,80})['"]\s*,\s*\[([^\]]{0,500})\]/s.exec(content);
+  const classDiscM = /new\s+ClassDiscriminatorMapping\s*\(\s*['"](\w{1,80})['"]\s*,\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/s.exec(content);
   if (classDiscM) {
     const field = classDiscM[1];
     const types: Record<string, string> = {};

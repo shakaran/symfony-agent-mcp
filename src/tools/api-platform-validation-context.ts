@@ -39,7 +39,7 @@ function parseValidationContext(filePath: string, appPath: string): ValidationCo
   while ((m = opPattern.exec(content)) !== null) {
     const block = m[0];
     const nameM = /(?:Get|GetCollection|Post|Put|Patch|Delete)/.exec(block);
-    const vgM = /validationContext\s*:\s*\[\s*groups\s*:\s*\[([^\]]{0,200})\]\s*\]/i.exec(block);
+    const vgM = /validationContext\s*:\s*\[\s*groups\s*:\s*\[([^\][]{0,200}(?:\[[^\][]{0,300}\][^\][]{0,200}){0,40})\]\s*\]/i.exec(block);
     const groups = vgM ? vgM[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean) : [];
     operations.push({ name: nameM?.[0] ?? 'operation', validationGroups: groups });
   }

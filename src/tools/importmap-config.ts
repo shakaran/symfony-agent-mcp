@@ -19,7 +19,7 @@ function loadImportmap(appPath: string): ImportmapPackage[] {
   try { content = fs.readFileSync(importmapPath, 'utf-8'); } catch { return []; }
   const packages: ImportmapPackage[] = [];
   // Parse PHP array entries: 'package-name' => ['version' => 'x.y.z', 'url' => '...', ...]
-  const entryRe = /'([^']{1,200})'\s*=>\s*\[([^\]]{0,500})\]/g;
+  const entryRe = /'([^']{1,200})'\s*=>\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/g;
   let m: RegExpExecArray | null;
   while ((m = entryRe.exec(content)) !== null) {
     const name = m[1];

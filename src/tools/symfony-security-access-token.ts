@@ -68,7 +68,7 @@ function readSecurityYaml(appPath: string): SecurityAccessTokenConfig {
     result.hasAccessToken = raw.includes('access_token') || raw.includes('token_handler');
     const handlerM = /token_handler\s*:\s*(\S{1,200})/.exec(raw);
     if (handlerM) result.tokenHandler = handlerM[1];
-    const extractorM = /token_extractors\s*:\s*\[([^\]]{0,500})\]/.exec(raw);
+    const extractorM = /token_extractors\s*:\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(raw);
     if (extractorM) {
       result.extractors = extractorM[1].split(',').map((s) => s.trim().replace(/['"]/g, ''));
     } else {

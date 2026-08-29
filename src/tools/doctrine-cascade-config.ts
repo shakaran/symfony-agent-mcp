@@ -44,7 +44,7 @@ function parseCascadeConfig(filePath: string, appPath: string): CascadeInfo[] {
     if (!attrBlock.includes('cascade')) continue;
     const propM = /targetEntity[^)]+\)[\s\S]{0,200}(?:public|protected|private)\s+(?:\w+\s+)?\$(\w+)/.exec(content.slice(m.index, m.index + 500));
     const property = propM?.[1] ?? 'unknown';
-    const cascadeM = /cascade\s*:\s*\[([^\]]{0,200})\]/.exec(attrBlock);
+    const cascadeM = /cascade\s*:\s*\[([^\][]{0,200}(?:\[[^\][]{0,300}\][^\][]{0,200}){0,40})\]/.exec(attrBlock);
     const cascadeTypes = cascadeM ? cascadeM[1].replace(/['"]/g, '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : [];
     const hasAll = cascadeTypes.includes('all');
     const orphanBlockRe = new RegExp(`\\$${property}[^;]{0,300}orphanRemoval\\s*:\\s*true`);

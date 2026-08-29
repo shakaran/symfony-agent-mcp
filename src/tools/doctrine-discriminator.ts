@@ -41,7 +41,7 @@ function parseDiscriminator(filePath: string, appPath: string): DiscriminatorInf
   const colM = /#\[ORM\\DiscriminatorColumn\s*\([^)]{0,200}\)/.exec(content);
   const colNameM = colM ? /name\s*:\s*['"]([^'"]+)['"]/i.exec(colM[0]) : null;
   const discriminatorColumn = colNameM?.[1];
-  const mapM = /#\[ORM\\DiscriminatorMap\s*\(\s*\[([^\]]{0,800})\]/.exec(content);
+  const mapM = /#\[ORM\\DiscriminatorMap\s*\(\s*\[([^\][]{0,800}(?:\[[^\][]{0,300}\][^\][]{0,800}){0,40})\]/.exec(content);
   const discriminatorMap: Record<string, string> = {};
   if (mapM) {
     const pairPattern = /['"]([^'"]+)['"]\s*=>\s*(?:['"]([^'"]+)['"]|(\w+)::class)/g;

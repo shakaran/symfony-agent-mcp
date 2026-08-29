@@ -47,7 +47,7 @@ function parseResourceMetadata(filePath: string, appPath: string): ResourceMetad
   const shortNameM = /shortName\s*:\s*['"]([^'"]{0,100})['"]/i.exec(block);
   const descriptionM = /description\s*:\s*['"]([^'"]{0,200})['"]/i.exec(block);
   const iriM = /iri\s*:\s*['"]([^'"]{0,200})['"]/i.exec(block);
-  const typePattern = /types\s*:\s*\[([^\]]{0,400})\]/i.exec(block);
+  const typePattern = /types\s*:\s*\[([^\][]{0,400}(?:\[[^\][]{0,300}\][^\][]{0,400}){0,40})\]/i.exec(block);
   const types: string[] = typePattern ? typePattern[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const uriM = /uriTemplate\s*:\s*['"]([^'"]{0,200})['"]/i.exec(block);
   const issues: string[] = [];

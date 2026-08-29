@@ -34,7 +34,7 @@ function extractEntityName(content: string, filePath: string): string {
 }
 
 function extractSourceFields(slugAttrText: string): string[] {
-  const fieldsMatch = /fields\s*:\s*\[([^\]]{0,500})\]/.exec(slugAttrText);
+  const fieldsMatch = /fields\s*:\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(slugAttrText);
   if (!fieldsMatch) return [];
   return fieldsMatch[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
 }

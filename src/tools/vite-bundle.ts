@@ -137,7 +137,7 @@ function parseViteConfig(appPath: string): {
       }
     }
     // Also: input: ['./assets/app.ts']
-    const inputArrayMatch = /\binput\s*:\s*\[([^\]]{0,500})\]/.exec(content);
+    const inputArrayMatch = /\binput\s*:\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(content);
     if (inputArrayMatch) {
       const arrContent = inputArrayMatch[1];
       const filePattern = /['"`]([^'"`]{1,100})['"`]/g;

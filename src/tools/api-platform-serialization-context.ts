@@ -39,7 +39,7 @@ function parseSerializationContext(filePath: string, appPath: string): Serializa
   const normalizationGroups: string[][] = [];
   let m: RegExpExecArray | null;
   while ((m = normPattern.exec(content)) !== null) {
-    const groupsM = /groups\s*:\s*\[([^\]]{0,300})\]/i.exec(m[0]);
+    const groupsM = /groups\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/i.exec(m[0]);
     if (groupsM) {
       const groups = groupsM[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
       normalizationGroups.push(groups);
@@ -48,7 +48,7 @@ function parseSerializationContext(filePath: string, appPath: string): Serializa
   const denormPattern = /denormalizationContext\s*:\s*\[[^\]]{0,400}\]/g;
   const denormalizationGroups: string[][] = [];
   while ((m = denormPattern.exec(content)) !== null) {
-    const groupsM = /groups\s*:\s*\[([^\]]{0,300})\]/i.exec(m[0]);
+    const groupsM = /groups\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/i.exec(m[0]);
     if (groupsM) {
       const groups = groupsM[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
       denormalizationGroups.push(groups);
