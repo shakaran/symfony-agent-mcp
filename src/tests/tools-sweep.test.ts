@@ -37,6 +37,7 @@ import { addLegacyStyle } from './helpers/symfony-legacy';
 import { addPlatformAndConfig } from './helpers/symfony-platforms';
 import { addPhpPatterns } from './helpers/symfony-php-patterns';
 import { addPhpLanguageFeatures } from './helpers/symfony-php-language';
+import { addNestedArrays } from './helpers/symfony-nested';
 import { addInsecureVariants } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -193,6 +194,10 @@ beforeAll(() => {
   // uncalled.
   addPhpLanguageFeatures(fixture);
   addPhpLanguageFeatures(problematic);
+  // Nested arrays: seventeen analysers could not match them until their
+  // option pattern was fixed, and nothing in the fixtures exercised it.
+  addNestedArrays(fixture);
+  addNestedArrays(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);
