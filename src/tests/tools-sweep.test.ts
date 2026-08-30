@@ -43,6 +43,7 @@ import { addEcosystemMore } from './helpers/symfony-ecosystem-more';
 import { addBatchThree } from './helpers/symfony-batch3';
 import { addBatchFour } from './helpers/symfony-batch4';
 import { addBatchFive } from './helpers/symfony-batch5';
+import { createSparseFixture } from './helpers/symfony-sparse';
 import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -142,6 +143,7 @@ let filePath: string;
 let weirdPath: string;
 let scratchRoot: string;
 let missingPath: string;
+let sparse: string;
 
 beforeAll(() => {
   fixture = createSymfonyFixture();
@@ -239,6 +241,10 @@ beforeAll(() => {
   // A file with no read permission is the null the guarded reader returns,
   // without a symlink the walkers would skip first.
   addUnreadableFiles(fixture);
+  // The same application with every configuration file cut back to its
+  // opening section: what reaches the half of each module that reports on
+  // the options an application never set.
+  sparse = createSparseFixture(fixture, fixture + '-sparse');
   emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'symfony-empty-'));
   missingPath = path.join(os.tmpdir(), 'symfony-does-not-exist-4a1c9f');
   // A file where a directory is expected. Reading a directory entry from it
@@ -264,6 +270,7 @@ afterAll(() => {
   removeFixture(corrupt);
   fs.rmSync(outsideRoot, { recursive: true, force: true });
   fs.rmSync(scratchRoot, { recursive: true, force: true });
+  removeFixture(sparse);
   fs.rmSync(emptyDir, { recursive: true, force: true });
 });
 
@@ -315,6 +322,10 @@ describe('every tool module', () => {
       // that runs once a finding exists — injection-shaped SQL, shelled-out
       // commands, weak hashing, permissive CORS, debug left on in prod.
       for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, problematic);
+    });
+
+    test('an application that configured nothing past the section header', async () => {
+      for (const [, fn] of pathFunctions(mod)) await callAndCheck(fn, sparse);
     });
 
     test('a project containing nothing is reported as finding nothing', async () => {
