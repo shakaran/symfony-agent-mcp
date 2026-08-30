@@ -40,6 +40,7 @@ import { addPhpLanguageFeatures } from './helpers/symfony-php-language';
 import { addNestedArrays } from './helpers/symfony-nested';
 import { addMoreContent } from './helpers/symfony-more';
 import { addEcosystemMore } from './helpers/symfony-ecosystem-more';
+import { addBatchThree } from './helpers/symfony-batch3';
 import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -204,6 +205,8 @@ beforeAll(() => {
   addMoreContent(problematic);
   addEcosystemMore(fixture);
   addEcosystemMore(problematic);
+  addBatchThree(fixture);
+  addBatchThree(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);

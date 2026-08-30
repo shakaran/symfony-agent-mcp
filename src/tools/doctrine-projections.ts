@@ -87,9 +87,11 @@ function scanProjections(appPath: string): DqlProjection[] {
   for (const file of getAllPhpFiles(srcDir)) {
     let content = '';
     try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
-    if (!content.includes('SELECT NEW') && !content.includes('select new')) continue;
+    // The QueryBuilder spells it ->select('NEW App\\Dto\\X(...)'), with no
+    // SELECT keyword anywhere in the file — the docblock above names that form.
+    if (!/\bNEW\s+[\w\\]/i.test(content) || !/select/i.test(content)) continue;
 
-    for (const m of content.matchAll(/SELECT\s+NEW\s+([\w\\]+)\s*\(([^)]*)\)/gi)) {
+    for (const m of content.matchAll(/(?:SELECT|(?:add)?[Ss]elect\s*\(\s*['"])\s*NEW\s+([\w\\]+)\s*\(([^)]*)\)/gi)) {
       const dtoClass = m[1].replace(/^\\/, '');
       const args     = m[2].split(',').map((s) => s.trim()).filter(Boolean);
       const shortName = dtoClass.split('\\').pop() ?? dtoClass;
