@@ -14,8 +14,11 @@ interface ChannelMapping {
 function loadChannelMappings(appPath: string): ChannelMapping[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'monolog.yaml'),
+    path.join(appPath, 'config', 'packages', 'monolog.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'monolog.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'monolog.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'monolog.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'monolog.yml'),
   ];
   const channelMap = new Map<string, { handlers: Set<string>; excluded: Set<string> }>();
   const handlerDefs: Record<string, Record<string, unknown>> = {};

@@ -47,8 +47,11 @@ interface SymfonyCacheInfo {
 function parseCacheConfig(appPath: string): Record<string, unknown> | null {
   const configPaths = [
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'cache.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'cache.yml'),
   ];
 
   for (const configPath of configPaths) {

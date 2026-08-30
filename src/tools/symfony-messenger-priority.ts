@@ -23,7 +23,9 @@ function inferPriorityFromName(name: string): number | undefined {
 function loadMessengerPriorityConfig(appPath: string): MessengerPriorityInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const filePath of candidates) {

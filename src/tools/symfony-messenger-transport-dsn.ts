@@ -72,8 +72,11 @@ function extractEnvVarName(dsn: string): string | null {
 function scanMessengerTransports(appPath: string): TransportDsnInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'test', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'test', 'messenger.yml'),
   ];
 
   const envKeys = loadEnvKeys(appPath);

@@ -179,7 +179,9 @@ function scanPhpForTasks(appPath: string): SchedulerTaskEntry[] {
 function scanSchedulerYaml(appPath: string): SchedulerTaskEntry[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'scheduler.yaml'),
+    path.join(appPath, 'config', 'packages', 'scheduler.yml'),
     path.join(appPath, 'config', 'scheduler.yaml'),
+    path.join(appPath, 'config', 'scheduler.yml'),
   ];
 
   const results: SchedulerTaskEntry[] = [];

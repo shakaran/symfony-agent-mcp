@@ -87,7 +87,9 @@ function getAllTwigFiles(dir: string): string[] {
 function loadSanitizerConfigs(appPath: string): SanitizerConfig[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'html_sanitizer.yaml'),
+    path.join(appPath, 'config', 'packages', 'html_sanitizer.yml'),
   ];
 
   for (const filePath of candidates) {

@@ -59,7 +59,9 @@ function detectStoreType(dsn: string): string {
 function loadLockStores(appPath: string): LockStore[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'lock.yaml'),
+    path.join(appPath, 'config', 'packages', 'lock.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const file of candidates) {

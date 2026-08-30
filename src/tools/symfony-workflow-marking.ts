@@ -18,7 +18,9 @@ function loadWorkflowMarkings(appPath: string): WorkflowMarkingInfo[] {
   const markings: WorkflowMarkingInfo[] = [];
   const candidates = [
     path.join(appPath, 'config', 'packages', 'workflow.yaml'),
+    path.join(appPath, 'config', 'packages', 'workflow.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;

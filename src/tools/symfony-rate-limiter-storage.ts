@@ -51,7 +51,9 @@ interface PoolTypeMap {
 function loadCachePoolTypes(appPath: string): PoolTypeMap {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
   ];
   const poolTypes: PoolTypeMap = {};
 
@@ -108,7 +110,9 @@ function detectStorageType(cachePool: string, poolTypes: PoolTypeMap): string {
 function buildRateLimiterStorageInfos(appPath: string): RateLimiterStorageInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'rate_limiter.yaml'),
+    path.join(appPath, 'config', 'packages', 'rate_limiter.yml'),
   ];
 
   const poolTypes = loadCachePoolTypes(appPath);

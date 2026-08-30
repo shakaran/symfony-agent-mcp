@@ -22,7 +22,9 @@ function loadMailerDkimConfig(appPath: string): MailerDkimInfo[] {
   const results: MailerDkimInfo[] = [];
   const candidates = [
     path.join(appPath, 'config', 'packages', 'mailer.yaml'),
+    path.join(appPath, 'config', 'packages', 'mailer.yml'),
     path.join(appPath, 'config', 'mailer.yaml'),
+    path.join(appPath, 'config', 'mailer.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;

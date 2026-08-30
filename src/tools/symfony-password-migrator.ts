@@ -96,6 +96,7 @@ function scanSrcForPasswordMigration(appPath: string): SrcScanResult {
 function buildPasswordMigrationInfos(appPath: string): PasswordMigrationInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'security.yaml'),
+    path.join(appPath, 'config', 'packages', 'security.yml'),
   ];
 
   const results: PasswordMigrationInfo[] = [];

@@ -32,7 +32,9 @@ function maskDsn(dsn: string): string {
 function loadNotifierTransports(appPath: string): NotifierTransportDetail[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'notifier.yaml'),
+    path.join(appPath, 'config', 'packages', 'notifier.yml'),
     path.join(appPath, 'config', 'notifier.yaml'),
+    path.join(appPath, 'config', 'notifier.yml'),
   ];
   const transports: NotifierTransportDetail[] = [];
   for (const filePath of candidates) {

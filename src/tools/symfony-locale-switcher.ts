@@ -35,7 +35,9 @@ function buildLocaleSwitcherInfos(appPath: string): LocaleSwitcherInfo[] {
 
   const routingFiles = [
     path.join(appPath, 'config', 'routes.yaml'),
+    path.join(appPath, 'config', 'routes.yml'),
     path.join(appPath, 'config', 'routes', 'annotations.yaml'),
+    path.join(appPath, 'config', 'routes', 'annotations.yml'),
   ];
 
   for (const routingFile of routingFiles) {

@@ -41,7 +41,9 @@ function collectConfigFiles(dir: string, base: string, exts: string[]): string[]
 function hasReverseProxyConfig(appPath: string): boolean {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'framework.yml'),
   ];
   for (const f of candidates) {
     const resolved = path.resolve(f);

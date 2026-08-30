@@ -25,7 +25,9 @@ function loadYamlRetryConfigs(appPath: string): HttpClientRetryConfig[] {
   const configs: HttpClientRetryConfig[] = [];
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'http_client.yaml'),
+    path.join(appPath, 'config', 'packages', 'http_client.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;

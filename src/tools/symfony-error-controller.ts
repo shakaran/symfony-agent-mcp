@@ -53,7 +53,9 @@ function getAllPhpFiles(dir: string): string[] {
 function readErrorControllerConfig(appPath: string): string | undefined {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'framework.yaml'),
+    path.join(appPath, 'config', 'framework.yml'),
   ];
 
   for (const filePath of candidates) {

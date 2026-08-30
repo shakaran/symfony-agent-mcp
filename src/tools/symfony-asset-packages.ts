@@ -108,7 +108,9 @@ function parsePackageEntry(
 function parseAssetPackages(appPath: string): AssetPackageInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'assets.yaml'),
+    path.join(appPath, 'config', 'packages', 'assets.yml'),
   ];
 
   for (const file of candidates) {

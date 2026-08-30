@@ -32,7 +32,9 @@ function getAllPhpFiles(dir: string): string[] {
 function loadRegisteredHydrators(appPath: string): string[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'doctrine.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;

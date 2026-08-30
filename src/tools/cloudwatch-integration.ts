@@ -59,7 +59,9 @@ function buildCloudwatchIntegrationInfos(appPath: string): CloudwatchIntegration
   // 2. Check monolog.yaml for CloudWatch handler
   const monologPaths = [
     path.join(appPath, 'config', 'packages', 'monolog.yaml'),
+    path.join(appPath, 'config', 'packages', 'monolog.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'monolog.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'monolog.yml'),
   ];
   let hasCloudwatchHandler = false;
   for (const mPath of monologPaths) {

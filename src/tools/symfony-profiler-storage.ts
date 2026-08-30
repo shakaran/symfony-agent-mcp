@@ -44,8 +44,11 @@ function classifyDsn(dsn: string): string {
 function readProfilerSection(appPath: string): { dsn: string; enabled: boolean; collect: boolean; onlyExceptions: boolean; onlyMainRequests: boolean } {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'web_profiler.yaml'),
+    path.join(appPath, 'config', 'packages', 'web_profiler.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'web_profiler.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'web_profiler.yml'),
   ];
 
   let dsn = '';
@@ -83,7 +86,9 @@ function readProfilerSection(appPath: string): { dsn: string; enabled: boolean; 
 function isProfilerEnabledInProd(appPath: string): boolean {
   const prodFiles = [
     path.join(appPath, 'config', 'packages', 'prod', 'web_profiler.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'web_profiler.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'framework.yml'),
   ];
 
   for (const filePath of prodFiles) {

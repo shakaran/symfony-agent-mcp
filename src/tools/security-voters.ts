@@ -59,7 +59,9 @@ interface Firewall {
 function loadSecurityYaml(appPath: string): Record<string, unknown> | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'security.yaml'),
+    path.join(appPath, 'config', 'packages', 'security.yml'),
     path.join(appPath, 'config', 'security.yaml'),
+    path.join(appPath, 'config', 'security.yml'),
   ];
   for (const f of candidates) {
     const raw = parseYamlFile(f) as Record<string, unknown> | null;

@@ -98,7 +98,9 @@ function buildAssetMapperInfo(appPath: string): AssetMapperInfo {
 
   const cfgCandidates = [
     path.join(appPath, 'config', 'packages', 'asset_mapper.yaml'),
+    path.join(appPath, 'config', 'packages', 'asset_mapper.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const cfgPath of cfgCandidates) {

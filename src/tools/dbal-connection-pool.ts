@@ -17,7 +17,9 @@ interface DbalPoolConfig {
 function loadDbalPoolConfigs(appPath: string): DbalPoolConfig[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'doctrine.yml'),
   ];
   const configs: DbalPoolConfig[] = [];
   for (const filePath of candidates) {

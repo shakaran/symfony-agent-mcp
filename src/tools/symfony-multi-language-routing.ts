@@ -43,8 +43,11 @@ function buildMultiLangRoutingInfos(appPath: string): MultiLangRoutingInfo[] {
 
   const routingYamlCandidates = [
     path.join(appPath, 'config', 'routes.yaml'),
+    path.join(appPath, 'config', 'routes.yml'),
     path.join(appPath, 'config', 'routing.yaml'),
+    path.join(appPath, 'config', 'routing.yml'),
     path.join(appPath, 'config', 'routes', 'annotations.yaml'),
+    path.join(appPath, 'config', 'routes', 'annotations.yml'),
   ];
 
   for (const routingYaml of routingYamlCandidates) {

@@ -114,7 +114,9 @@ function extractLimiterSection(content: string, limiterName: string): string {
 function buildRateLimiterAlgorithmInfos(appPath: string): RateLimiterAlgorithmInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'rate_limiter.yaml'),
+    path.join(appPath, 'config', 'packages', 'rate_limiter.yml'),
     path.join(appPath, 'config', 'rate_limiter.yaml'),
+    path.join(appPath, 'config', 'rate_limiter.yml'),
   ];
 
   const results: RateLimiterAlgorithmInfo[] = [];

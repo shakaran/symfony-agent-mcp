@@ -47,7 +47,9 @@ function extractClassFromContent(content: string): string | null {
 function detectDatabasePlatform(appPath: string): string {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'doctrine.yml'),
   ];
 
   for (const candidate of candidates) {

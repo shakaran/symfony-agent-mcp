@@ -49,7 +49,9 @@ function buildRedisStreamsInfos(appPath: string): RedisStreamsInfo[] {
 
   const redisDsn = [
     path.join(appPath, 'config', 'packages', 'snc_redis.yaml'),
+    path.join(appPath, 'config', 'packages', 'snc_redis.yml'),
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
     path.join(appPath, '.env'),
   ];
 

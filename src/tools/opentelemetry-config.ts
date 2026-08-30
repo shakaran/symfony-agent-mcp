@@ -40,8 +40,11 @@ function loadOtelConfig(appPath: string): OtelInfo {
   const issues: string[] = [];
   const candidates = [
     path.join(appPath, 'config', 'packages', 'open_telemetry.yaml'),
+    path.join(appPath, 'config', 'packages', 'open_telemetry.yml'),
     path.join(appPath, 'config', 'packages', 'opentelemetry.yaml'),
+    path.join(appPath, 'config', 'packages', 'opentelemetry.yml'),
     path.join(appPath, 'config', 'opentelemetry.yaml'),
+    path.join(appPath, 'config', 'opentelemetry.yml'),
   ];
   let configFound = false;
   for (const filePath of candidates) {

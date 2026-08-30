@@ -167,8 +167,11 @@ function parseYamlViteConfig(appPath: string): {
 } {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'pentatrion_vite.yaml'),
+    path.join(appPath, 'config', 'packages', 'pentatrion_vite.yml'),
     path.join(appPath, 'config', 'packages', 'vite.yaml'),
+    path.join(appPath, 'config', 'packages', 'vite.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'pentatrion_vite.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'pentatrion_vite.yml'),
   ];
 
   for (const filePath of candidates) {

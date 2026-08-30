@@ -23,9 +23,13 @@ function buildSamlAuthInfos(appPath: string): SamlAuthInfo[] {
 
   const samlConfigPaths = [
     path.join(appPath, 'config', 'packages', 'hslavich_onelogin_saml.yaml'),
+    path.join(appPath, 'config', 'packages', 'hslavich_onelogin_saml.yml'),
     path.join(appPath, 'config', 'packages', 'nbgrp_onelogin_saml.yaml'),
+    path.join(appPath, 'config', 'packages', 'nbgrp_onelogin_saml.yml'),
     path.join(appPath, 'config', 'packages', 'saml.yaml'),
+    path.join(appPath, 'config', 'packages', 'saml.yml'),
     path.join(appPath, 'app', 'config', 'saml.yaml'),
+    path.join(appPath, 'app', 'config', 'saml.yml'),
   ];
 
   for (const cfgPath of samlConfigPaths) {

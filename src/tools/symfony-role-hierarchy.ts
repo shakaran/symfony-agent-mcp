@@ -19,7 +19,9 @@ interface RoleNode {
 function loadRoleHierarchy(appPath: string): Map<string, string[]> {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'security.yaml'),
+    path.join(appPath, 'config', 'packages', 'security.yml'),
     path.join(appPath, 'config', 'security.yaml'),
+    path.join(appPath, 'config', 'security.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;
@@ -62,7 +64,9 @@ function scanUsedRoles(appPath: string): Set<string> {
   const used = new Set<string>();
   const candidates = [
     path.join(appPath, 'config', 'packages', 'security.yaml'),
+    path.join(appPath, 'config', 'packages', 'security.yml'),
     path.join(appPath, 'config', 'security.yaml'),
+    path.join(appPath, 'config', 'security.yml'),
   ];
   for (const filePath of candidates) {
     try {

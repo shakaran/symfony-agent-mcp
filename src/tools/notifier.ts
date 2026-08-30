@@ -86,7 +86,9 @@ function loadNotifierConfig(appPath: string): {
 } {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'notifier.yaml'),
+    path.join(appPath, 'config', 'packages', 'notifier.yml'),
     path.join(appPath, 'config', 'notifier.yaml'),
+    path.join(appPath, 'config', 'notifier.yml'),
   ];
 
   for (const file of candidates) {

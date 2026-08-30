@@ -169,7 +169,9 @@ function scanExceptions(appPath: string): ExceptionMappingInfo[] {
 function loadErrorTemplates(appPath: string): string[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'twig.yaml'),
+    path.join(appPath, 'config', 'packages', 'twig.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
   const templates: string[] = [];
   for (const filePath of candidates) {

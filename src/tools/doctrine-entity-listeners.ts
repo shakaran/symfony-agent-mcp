@@ -101,8 +101,11 @@ function loadRegisteredListenersFromYaml(appPath: string): Set<string> {
   const registered = new Set<string>();
   const candidates = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'doctrine.yml'),
     path.join(appPath, 'config', 'services.yaml'),
+    path.join(appPath, 'config', 'services.yml'),
   ];
 
   for (const candidate of candidates) {

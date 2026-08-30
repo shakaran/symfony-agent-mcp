@@ -29,8 +29,11 @@ function buildNelmioSecurityInfos(appPath: string): NelmioSecurityInfo[] {
 
   const yamlCandidates = [
     path.join(appPath, 'config', 'packages', 'nelmio_security.yaml'),
+    path.join(appPath, 'config', 'packages', 'nelmio_security.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'nelmio_security.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'nelmio_security.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'nelmio_security.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'nelmio_security.yml'),
   ];
 
   let mainContent = '';

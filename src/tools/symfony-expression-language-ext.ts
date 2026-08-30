@@ -61,7 +61,9 @@ function extractClassName(content: string): string {
 function checkServiceTagged(appPath: string, className: string): boolean {
   const servicesCandidates = [
     path.join(appPath, 'config', 'services.yaml'),
+    path.join(appPath, 'config', 'services.yml'),
     path.join(appPath, 'config', 'services_test.yaml'),
+    path.join(appPath, 'config', 'services_test.yml'),
   ];
   for (const cfgPath of servicesCandidates) {
     try {

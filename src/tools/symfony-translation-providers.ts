@@ -66,7 +66,9 @@ function hasHardcodedCredentials(dsn: string): boolean {
 function parseProviders(appPath: string): TranslationProviderInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'translation.yaml'),
+    path.join(appPath, 'config', 'packages', 'translation.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const file of candidates) {

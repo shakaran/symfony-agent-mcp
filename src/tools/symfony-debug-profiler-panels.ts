@@ -73,6 +73,7 @@ interface TagInfo {
 function parseServicesYaml(appPath: string): TagInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'services.yaml'),
+    path.join(appPath, 'config', 'services.yml'),
     path.join(appPath, 'config', 'services.xml'),
   ];
   const tags: TagInfo[] = [];

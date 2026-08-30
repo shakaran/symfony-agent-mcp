@@ -53,7 +53,9 @@ function isTagAwareAdapter(name: string): boolean {
 function parseChainPools(appPath: string): CacheChainInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const file of candidates) {

@@ -55,7 +55,9 @@ function getAllTwigFiles(dir: string): string[] {
 function loadGlobalThemes(appPath: string): string[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'framework.yaml'),
+    path.join(appPath, 'config', 'framework.yml'),
   ];
 
   for (const configPath of candidates) {

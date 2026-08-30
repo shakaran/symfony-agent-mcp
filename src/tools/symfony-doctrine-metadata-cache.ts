@@ -131,8 +131,11 @@ function analyzeDoctrineYaml(yamlPath: string, appPath: string): MetadataCacheIn
 function buildMetadataCacheInfos(appPath: string): MetadataCacheInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'doctrine.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'doctrine.yml'),
   ];
 
   const results: MetadataCacheInfo[] = [];

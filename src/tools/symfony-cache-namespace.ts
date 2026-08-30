@@ -41,8 +41,11 @@ function maskSecret(dsn: string): string {
 function loadCacheYaml(appPath: string): string | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'cache.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'cache.yml'),
   ];
   for (const c of candidates) {
     const content = safeRead(c, appPath);

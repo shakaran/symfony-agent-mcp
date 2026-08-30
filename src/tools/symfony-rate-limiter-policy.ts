@@ -50,8 +50,11 @@ function parseIntervalSeconds(interval: string): number {
 function loadRateLimiterPolicies(appPath: string): RateLimiterPolicyEntry[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'rate_limiter.yaml'),
+    path.join(appPath, 'config', 'packages', 'rate_limiter.yml'),
     path.join(appPath, 'config', 'rate_limiter.yaml'),
+    path.join(appPath, 'config', 'rate_limiter.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const candidate of candidates) {

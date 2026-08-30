@@ -118,7 +118,9 @@ interface ServicesNameConverterInfo {
 function scanServicesForNameConverters(appPath: string): ServicesNameConverterInfo {
   const candidates = [
     path.join(appPath, 'config', 'services.yaml'),
+    path.join(appPath, 'config', 'services.yml'),
     path.join(appPath, 'config', 'services_test.yaml'),
+    path.join(appPath, 'config', 'services_test.yml'),
   ];
 
   const registeredConverters: string[] = [];

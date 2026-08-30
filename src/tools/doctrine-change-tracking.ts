@@ -121,7 +121,9 @@ function parseChangeTrackingFile(filePath: string): DoctrineChangeTrackingInfo |
 function readGlobalPolicy(appPath: string): string | null {
   const configPaths = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'doctrine.yml'),
   ];
   for (const configPath of configPaths) {
     const config = parseYamlFile(configPath);

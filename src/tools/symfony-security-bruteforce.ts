@@ -57,7 +57,9 @@ function buildSymfonySecurityBruteforceInfos(appPath: string): BruteforceProtect
   // Check rate limiter in services.yaml or framework.yaml
   const rateLimiterFiles = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'services.yaml'),
+    path.join(appPath, 'config', 'services.yml'),
   ];
   let hasRateLimiter = false;
   for (const cfgFile of rateLimiterFiles) {

@@ -90,8 +90,11 @@ function parseTwoFactorConfig(appPath: string): {
 } {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'scheb_two_factor.yaml'),
+    path.join(appPath, 'config', 'packages', 'scheb_two_factor.yml'),
     path.join(appPath, 'config', 'packages', 'security.yaml'),
+    path.join(appPath, 'config', 'packages', 'security.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'scheb_two_factor.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'scheb_two_factor.yml'),
   ];
 
   const providers: string[] = [];

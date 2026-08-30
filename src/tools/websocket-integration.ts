@@ -93,7 +93,9 @@ function buildWebsocketIntegrationInfos(appPath: string): WebsocketIntegrationIn
   // 3. Check Mercure config
   const mercurePaths = [
     path.join(appPath, 'config', 'packages', 'mercure.yaml'),
+    path.join(appPath, 'config', 'packages', 'mercure.yml'),
     path.join(appPath, 'config', 'mercure.yaml'),
+    path.join(appPath, 'config', 'mercure.yml'),
   ];
   for (const mPath of mercurePaths) {
     if (!fs.existsSync(mPath)) continue;

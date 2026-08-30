@@ -52,7 +52,9 @@ function getAllPhpFiles(dir: string): string[] {
 function parseSemaphoreConfig(appPath: string): SemaphoreConfigEntry[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'semaphore.yaml'),
+    path.join(appPath, 'config', 'packages', 'semaphore.yml'),
   ];
 
   for (const file of candidates) {

@@ -67,7 +67,9 @@ function detectRisks(cfg: Omit<CorsPathConfig, 'risks'>): string[] {
 function parseCorsConfig(appPath: string): CorsGlobalConfig | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'nelmio_cors.yaml'),
+    path.join(appPath, 'config', 'packages', 'nelmio_cors.yml'),
     path.join(appPath, 'config', 'packages', 'cors.yaml'),
+    path.join(appPath, 'config', 'packages', 'cors.yml'),
   ];
 
   for (const file of candidates) {

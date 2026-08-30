@@ -36,7 +36,9 @@ interface MultiConnectionInfo {
 function loadDoctrineConfig(appPath: string): Record<string, unknown> | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine.yml'),
     path.join(appPath, 'config', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'doctrine.yml'),
   ];
   for (const candidate of candidates) {
     const raw = parseYamlFile(candidate) as Record<string, unknown> | null;

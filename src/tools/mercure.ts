@@ -53,7 +53,9 @@ function maskUrl(url: string): string {
 function loadMercureConfig(appPath: string): MercureHub[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'mercure.yaml'),
+    path.join(appPath, 'config', 'packages', 'mercure.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const file of candidates) {

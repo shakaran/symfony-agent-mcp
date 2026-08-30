@@ -26,7 +26,9 @@ function buildMemcachedIntegrationInfos(appPath: string): MemcachedIntegrationIn
 
   const cacheYamlPaths = [
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const cacheYamlPath of cacheYamlPaths) {

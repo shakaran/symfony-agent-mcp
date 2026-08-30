@@ -68,8 +68,11 @@ function checkComposerForOdm(appPath: string): boolean {
 function readOdmConfig(appPath: string): { defaultDatabase?: string; issues: string[] } {
   const configPaths = [
     path.join(appPath, 'config', 'packages', 'doctrine_mongodb.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine_mongodb.yml'),
     path.join(appPath, 'config', 'packages', 'doctrine_odm.yaml'),
+    path.join(appPath, 'config', 'packages', 'doctrine_odm.yml'),
     path.join(appPath, 'config', 'doctrine_mongodb.yaml'),
+    path.join(appPath, 'config', 'doctrine_mongodb.yml'),
   ];
   const issues: string[] = [];
   let defaultDatabase: string | undefined;

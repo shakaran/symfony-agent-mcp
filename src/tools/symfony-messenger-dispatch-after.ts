@@ -49,7 +49,9 @@ function getAllPhpFiles(dir: string): string[] {
 function checkMiddlewareConfigured(appPath: string): boolean {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const filePath of candidates) {
@@ -77,7 +79,9 @@ function checkMiddlewareConfigured(appPath: string): boolean {
 function hasTransactionMiddleware(appPath: string): boolean {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
   for (const filePath of candidates) {
     try {

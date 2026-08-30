@@ -104,7 +104,9 @@ function loadUxIconConfig(appPath: string): UxIconConfig {
   // Check ux_icons.yaml
   const candidates = [
     path.join(appPath, 'config', 'packages', 'ux_icons.yaml'),
+    path.join(appPath, 'config', 'packages', 'ux_icons.yml'),
     path.join(appPath, 'config', 'ux_icons.yaml'),
+    path.join(appPath, 'config', 'ux_icons.yml'),
   ];
 
   for (const candidate of candidates) {

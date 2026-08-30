@@ -73,7 +73,9 @@ function detectProvider(text: string): string | undefined {
 function loadWebhookConfig(appPath: string): WebhookEndpoint[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'webhook.yaml'),
+    path.join(appPath, 'config', 'packages', 'webhook.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
 
   for (const file of candidates) {

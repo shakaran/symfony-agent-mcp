@@ -75,7 +75,9 @@ function getAllPhpFiles(dir: string): string[] {
 function loadMercureHubConfig(appPath: string): boolean {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'api_platform.yaml'),
+    path.join(appPath, 'config', 'packages', 'api_platform.yml'),
     path.join(appPath, 'config', 'packages', 'mercure.yaml'),
+    path.join(appPath, 'config', 'packages', 'mercure.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;

@@ -51,7 +51,9 @@ interface OAuth2Config {
 function loadJwtConfig(appPath: string): JwtConfig | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'lexik_jwt_authentication.yaml'),
+    path.join(appPath, 'config', 'packages', 'lexik_jwt_authentication.yml'),
     path.join(appPath, 'config', 'packages', 'lexik_jwt.yaml'),
+    path.join(appPath, 'config', 'packages', 'lexik_jwt.yml'),
   ];
 
   for (const file of candidates) {
@@ -125,7 +127,9 @@ function loadFirewallAuth(appPath: string): FirewallAuth[] {
 function loadOAuth2Config(appPath: string): OAuth2Config | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'league_oauth2_server.yaml'),
+    path.join(appPath, 'config', 'packages', 'league_oauth2_server.yml'),
     path.join(appPath, 'config', 'packages', 'trikoder_oauth2.yaml'),
+    path.join(appPath, 'config', 'packages', 'trikoder_oauth2.yml'),
   ];
 
   for (const file of candidates) {

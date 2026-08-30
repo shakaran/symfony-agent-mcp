@@ -53,7 +53,9 @@ interface PoolInfo {
 function loadCachePools(appPath: string): PoolInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
     path.join(appPath, 'config', 'packages', 'cache.yaml'),
+    path.join(appPath, 'config', 'packages', 'cache.yml'),
   ];
 
   const pools: PoolInfo[] = [];

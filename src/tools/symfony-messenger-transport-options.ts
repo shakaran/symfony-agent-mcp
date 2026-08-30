@@ -29,7 +29,9 @@ function loadTransportDetails(appPath: string): TransportDetail[] {
   const details: TransportDetail[] = [];
   const candidates = [
     path.join(appPath, 'config', 'packages', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'framework.yaml'),
+    path.join(appPath, 'config', 'packages', 'framework.yml'),
   ];
   for (const filePath of candidates) {
     const raw = parseYamlFile(filePath) as Record<string, unknown> | null;

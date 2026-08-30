@@ -48,8 +48,11 @@ function getAllPhpFiles(dir: string): string[] {
 function loadValidatorYaml(appPath: string): string | null {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'validator.yaml'),
+    path.join(appPath, 'config', 'packages', 'validator.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'validator.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'validator.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'validator.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'validator.yml'),
   ];
   for (const c of candidates) {
     const content = safeRead(c, appPath);

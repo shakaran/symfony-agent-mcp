@@ -92,8 +92,11 @@ function extractRoutingEntries(content: string): Array<{ messageClass: string; t
 function loadAllMessengerYamls(appPath: string): string {
   const candidates = [
     path.join(appPath, 'config', 'packages', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'dev', 'messenger.yml'),
     path.join(appPath, 'config', 'packages', 'prod', 'messenger.yaml'),
+    path.join(appPath, 'config', 'packages', 'prod', 'messenger.yml'),
   ];
   const parts: string[] = [];
   for (const candidate of candidates) {
