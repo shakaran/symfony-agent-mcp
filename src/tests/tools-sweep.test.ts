@@ -38,7 +38,7 @@ import { addPlatformAndConfig } from './helpers/symfony-platforms';
 import { addPhpPatterns } from './helpers/symfony-php-patterns';
 import { addPhpLanguageFeatures } from './helpers/symfony-php-language';
 import { addNestedArrays } from './helpers/symfony-nested';
-import { addInsecureVariants } from './helpers/symfony-insecure';
+import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
 
@@ -201,6 +201,9 @@ beforeAll(() => {
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);
+  // The .yml spelling, so both candidate forms are exercised: the analysers
+  // accepted only .yaml until recently, and a pre-Flex project uses .yml.
+  useYmlSpelling(problematic);
   // 761 uncovered guards are entry.isSymbolicLink(), and 191 more are the null
   // a guarded read returns for a path resolving outside the application. Both
   // need actual links on disk.

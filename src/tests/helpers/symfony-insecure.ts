@@ -145,3 +145,30 @@ export function addInsecureVariants(root: string): void {
     '        public: true',
   ].join('\n') + '\n');
 }
+
+/**
+ * Rename the configuration to the .yml spelling.
+ *
+ * Symfony loads either, and a project predating Flex — or migrated from
+ * Symfony 3 — uses .yml throughout. Applied to the broken fixture only, so
+ * between the two every candidate list is exercised in both spellings.
+ */
+export function useYmlSpelling(root: string): void {
+  const dir = path.join(root, 'config', 'packages');
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    if (!name.endsWith('.yaml')) continue;
+    const from = path.join(dir, name);
+    const to = path.join(dir, name.replace(/\.yaml$/, '.yml'));
+    try {
+      fs.renameSync(from, to);
+    } catch {
+      // Leave it where it is if the rename cannot happen.
+    }
+  }
+}
