@@ -301,6 +301,11 @@ function gedmoAndCache(root: string): void {
     '                tags: app.cache.tag_store',
     '            app.cache.tag_store:',
     '                adapter: cache.adapter.redis',
+    '            app.cache.sessions:',
+    '                adapter: cache.adapter.memcached',
+    '                provider: "memcached://memcached:11211?weight=50"',
+    '                default_lifetime: 1800',
+    '        default_memcached_provider: "memcached://memcached:11211"',
   ].join('\n') + '\n');
 
   put(root, 'src/Cache/LayeredCache.php', [
