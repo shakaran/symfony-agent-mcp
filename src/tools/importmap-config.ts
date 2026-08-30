@@ -19,14 +19,15 @@ function loadImportmap(appPath: string): ImportmapPackage[] {
   try { content = fs.readFileSync(importmapPath, 'utf-8'); } catch { return []; }
   const packages: ImportmapPackage[] = [];
   // Parse PHP array entries: 'package-name' => ['version' => 'x.y.z', 'url' => '...', ...]
-  const entryRe = /'([^']{1,200})'\s*=>\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/g;
+  // Either quote: the recipe writes single quotes, hand-edited files often don't.
+  const entryRe = /(['"])([^'"]{1,200})\1\s*=>\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/g;
   let m: RegExpExecArray | null;
   while ((m = entryRe.exec(content)) !== null) {
-    const name = m[1];
-    const body = m[2];
-    const versionM = /'version'\s*=>\s*'([^']{1,50})'/.exec(body);
-    const urlM = /'url'\s*=>\s*'([^']{1,500})'/.exec(body);
-    const isPolyfill = name.toLowerCase().includes('polyfill') || body.includes("'polyfill'");
+    const name = m[2];
+    const body = m[3];
+    const versionM = /['"]version['"]\s*=>\s*['"]([^'"]{1,50})['"]/.exec(body);
+    const urlM = /['"]url['"]\s*=>\s*['"]([^'"]{1,500})['"]/.exec(body);
+    const isPolyfill = name.toLowerCase().includes('polyfill') || /['"]polyfill['"]/.test(body);
     const isLocal = name.startsWith('@') && name.includes('/') && !urlM;
     const issues: string[] = [];
     if (!versionM && !urlM && !isLocal) issues.push(`"${name}" has no pinned version or url — use "importmap:require ${name}" to pin`);

@@ -93,6 +93,8 @@ export function createSymfonyFixture(): string {
     '            lazy: true',
     '            provider: app_user_provider',
     '    access_control:',
+    '        - { path: ^/admin, roles: ROLE_ADMIN, ips: [192.168.1.0/24, 10.0.0.0/8] }',
+    '        - { path: ^/internal/metrics, roles: PUBLIC_ACCESS, ips: 203.0.113.42 }',
     '        - { path: ^/admin, roles: ROLE_ADMIN }',
   ].join('\n') + '\n');
 

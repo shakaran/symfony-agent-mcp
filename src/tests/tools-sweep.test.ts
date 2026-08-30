@@ -38,6 +38,7 @@ import { addPlatformAndConfig } from './helpers/symfony-platforms';
 import { addPhpPatterns } from './helpers/symfony-php-patterns';
 import { addPhpLanguageFeatures } from './helpers/symfony-php-language';
 import { addNestedArrays } from './helpers/symfony-nested';
+import { addMoreContent } from './helpers/symfony-more';
 import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -198,6 +199,8 @@ beforeAll(() => {
   // option pattern was fixed, and nothing in the fixtures exercised it.
   addNestedArrays(fixture);
   addNestedArrays(problematic);
+  addMoreContent(fixture);
+  addMoreContent(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);

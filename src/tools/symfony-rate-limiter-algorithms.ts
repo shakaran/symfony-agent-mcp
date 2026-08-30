@@ -80,22 +80,41 @@ function parseLimiterSection(name: string, sectionContent: string): RateLimiterA
   return { name, policy, limit, interval, issues };
 }
 
+function rateLimiterIndent(content: string): number {
+  const m = /^([ ]*)rate_limiter\s*:/m.exec(content);
+  if (!m) return -1;
+  const base = m[1].length;
+  const after = content.slice(m.index + m[0].length);
+  for (const line of after.split('\n')) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const indent = line.length - line.trimStart().length;
+    return indent > base ? indent : -1;
+  }
+  return -1;
+}
+
 function extractLimiterNames(content: string): string[] {
-  // Find lines like "  limiter_name:" (2-space indent under rate_limiter:)
+  // The limiter keys sit one level under "rate_limiter:", whatever that level
+  // is — two spaces at the top of the file, eight under "framework:" with
+  // Symfony's own four-space style.
   const names: string[] = [];
+  const depth = rateLimiterIndent(content);
+  if (depth < 0) return names;
+
   const lines = content.split('\n');
   let inRateLimiter = false;
 
   for (const line of lines) {
     if (/rate_limiter\s*:/.test(line)) { inRateLimiter = true; continue; }
-    if (inRateLimiter) {
-      // A new top-level key ends the section
-      if (/^[a-zA-Z]/.test(line) && !line.startsWith(' ')) { inRateLimiter = false; continue; }
-      // 2-space or 4-space indented key with no leading spaces beyond indent
-      const m = /^[ ]{2,4}(\w[\w_-]{0,80})\s*:/.exec(line);
-      if (m && !['policy', 'limit', 'interval', 'rate', 'amount', 'lock_factory', 'cache_pool', 'burst'].includes(m[1])) {
-        names.push(m[1]);
-      }
+    if (!inRateLimiter) continue;
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const indent = line.length - line.trimStart().length;
+    // A key at or above the parent level ends the section
+    if (indent < depth) { inRateLimiter = false; continue; }
+    if (indent > depth) continue;
+    const m = /^\s*(\w[\w_-]{0,80})\s*:/.exec(line);
+    if (m && !['policy', 'limit', 'interval', 'rate', 'amount', 'lock_factory', 'cache_pool', 'burst'].includes(m[1])) {
+      names.push(m[1]);
     }
   }
 
@@ -103,12 +122,15 @@ function extractLimiterNames(content: string): string[] {
 }
 
 function extractLimiterSection(content: string, limiterName: string): string {
-  const idx = content.indexOf(`  ${limiterName}:`);
-  if (idx === -1) return '';
-  // Read until next sibling key at same indent level
-  const after = content.slice(idx + limiterName.length + 3);
-  const nextKeyM = /\n[ ]{2}[a-zA-Z]/.exec(after);
-  return nextKeyM ? after.slice(0, nextKeyM.index) : after.slice(0, 500);
+  const depth = rateLimiterIndent(content);
+  if (depth < 0) return '';
+  const keyRe = new RegExp(`^[ ]{${depth}}${limiterName.replace(/[^\w-]/g, '')}\\s*:`, 'm');
+  const keyM = keyRe.exec(content);
+  if (!keyM) return '';
+  const after = content.slice(keyM.index + keyM[0].length);
+  // Read until the next key at the same level or shallower
+  const nextKeyM = new RegExp(`\\n[ ]{0,${depth}}[a-zA-Z]`).exec(after);
+  return nextKeyM ? after.slice(0, nextKeyM.index) : after;
 }
 
 function buildRateLimiterAlgorithmInfos(appPath: string): RateLimiterAlgorithmInfo[] {

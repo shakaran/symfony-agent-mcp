@@ -67,7 +67,9 @@ function buildGedmoSluggableInfos(appPath: string): GedmoSluggableInfo[] {
     const relFile = path.relative(appPath, file);
     const entity = extractEntityName(content, file);
 
-    const slugAttrRe = /#\[Gedmo\\Slug\s*\(([^)]{0,600})\)\][^;]{0,300}(?:private|protected|public)\s+[^\s$]+\s+\$([a-zA-Z_][a-zA-Z0-9_]{0,100})/g;
+    // The property type is optional: Gedmo's own examples still show untyped
+    // properties, and they are valid PHP.
+    const slugAttrRe = /#\[Gedmo\\Slug\s*\(([^)]{0,600})\)\][^;]{0,300}(?:private|protected|public)\s+(?:readonly\s+)?(?:[^\s$]{1,80}\s+)?\$([a-zA-Z_][a-zA-Z0-9_]{0,100})/g;
     let sm: RegExpExecArray | null;
     while ((sm = slugAttrRe.exec(content)) !== null) {
       const attrArgs = sm[1];
