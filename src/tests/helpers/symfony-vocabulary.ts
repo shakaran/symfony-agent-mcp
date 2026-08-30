@@ -9,7 +9,7 @@
  */
 
 import * as fs from 'fs';
-import { sampleFor } from './symfony-regex-samples';
+import { sampleFor } from './symfony-regex-samples.js';
 
 const CREDENTIALISH = /(secret|password|passwd|credential|api[_-]?key|private[_-]?key)/i;
 
