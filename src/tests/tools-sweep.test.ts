@@ -48,6 +48,8 @@ import { addBatchSeven, addAnalysisBaselines } from './helpers/symfony-batch7';
 import { addBatchEight } from './helpers/symfony-batch8';
 import { addBatchNine } from './helpers/symfony-batch9';
 import { addBatchTen } from './helpers/symfony-batch10';
+import { addBatchEleven } from './helpers/symfony-batch11';
+import { addBatchTwelve } from './helpers/symfony-batch12';
 import { addPatternSamples } from './helpers/symfony-regex-samples';
 import { addBadTwins } from './helpers/symfony-bad-twins';
 import { addWalkerEntries, addLargeCacheEntry } from './helpers/symfony-walkers';
@@ -246,6 +248,10 @@ beforeAll(() => {
   addBatchNine(problematic);
   addBatchTen(fixture);
   addBatchTen(problematic);
+  addBatchEleven(fixture);
+  addBatchEleven(problematic);
+  addBatchTwelve(fixture);
+  addBatchTwelve(problematic);
   // Lines built from the analysers' own patterns, which is what the parsing
   // half of a module needs before any of its reporting can run.
   addPatternSamples(fixture, toolsDir);
