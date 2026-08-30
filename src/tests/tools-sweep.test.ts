@@ -44,7 +44,8 @@ import { addBatchThree } from './helpers/symfony-batch3';
 import { addBatchFour } from './helpers/symfony-batch4';
 import { addBatchFive } from './helpers/symfony-batch5';
 import { addBatchSix } from './helpers/symfony-batch6';
-import { addBatchSeven } from './helpers/symfony-batch7';
+import { addBatchSeven, addAnalysisBaselines } from './helpers/symfony-batch7';
+import { addBatchEight } from './helpers/symfony-batch8';
 import { createSparseFixture } from './helpers/symfony-sparse';
 import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
@@ -232,6 +233,10 @@ beforeAll(() => {
   addBatchSix(problematic);
   addBatchSeven(fixture);
   addBatchSeven(problematic);
+  addAnalysisBaselines(fixture);
+  addAnalysisBaselines(problematic);
+  addBatchEight(fixture);
+  addBatchEight(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);

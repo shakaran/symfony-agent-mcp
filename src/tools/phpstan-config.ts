@@ -75,6 +75,30 @@ const KNOWN_EXTENSIONS: Record<string, string> = {
   'phpstan-beberlei-assert':   'beberlei/assert',
 };
 
+/**
+ * The body of a NEON key, wherever it sits.
+ *
+ * Every key a phpstan.neon cares about lives under "parameters:", so the
+ * whole file is indented; anchoring these to column zero found nothing in a
+ * configuration written the way PHPStan documents it.
+ */
+function sectionBody(content: string, key: string): string | null {
+  const start = new RegExp(`^([ \\t]*)${key}\\s*:(.*)$`, 'm').exec(content);
+  if (!start) return null;
+
+  const indent = start[1].length;
+  const rest = content.slice(start.index + start[0].length).split('\n');
+  const kept: string[] = [start[2]];
+  for (const line of rest) {
+    if (!line.trim()) { kept.push(line); continue; }
+    const lineIndent = line.length - line.trimStart().length;
+    if (lineIndent <= indent) break;
+    kept.push(line);
+  }
+
+  return kept.join('\n');
+}
+
 function parseNeonFile(filePath: string): Record<string, unknown> | null {
   if (!fs.existsSync(filePath)) return null;
   let content = '';
@@ -84,14 +108,14 @@ function parseNeonFile(filePath: string): Record<string, unknown> | null {
   const result: Record<string, unknown> = {};
 
   // Extract level
-  const levelM = /^level\s*:\s*(\d+)/m.exec(content);
+  const levelM = /^[ \t]*level\s*:\s*(\d+)/m.exec(content);
   if (levelM) result['level'] = parseInt(levelM[1], 10);
 
   // Extract paths
-  const pathsSection = /^paths\s*:(.*?)(?=^\w)/ms.exec(content);
+  const pathsSection = sectionBody(content, 'paths');
   const paths: string[] = [];
   if (pathsSection) {
-    for (const m of pathsSection[1].matchAll(/[-\s]+['"]?(%?[^'"\n#]+)['"]?/g)) {
+    for (const m of pathsSection.matchAll(/[-\s]+['"]?(%?[^'"\n#]+)['"]?/g)) {
       const p = m[1].trim().replace(/^%rootDir%\//, '');
       if (p && !p.startsWith('#')) paths.push(p);
     }
@@ -99,10 +123,10 @@ function parseNeonFile(filePath: string): Record<string, unknown> | null {
   result['paths'] = paths;
 
   // Extract includes
-  const includesSection = /^includes\s*:(.*?)(?=^\w)/ms.exec(content);
+  const includesSection = sectionBody(content, 'includes');
   const includes: string[] = [];
   if (includesSection) {
-    for (const m of includesSection[1].matchAll(/[-\s]+['"]?([^'"\n#]+)['"]?/g)) {
+    for (const m of includesSection.matchAll(/[-\s]+['"]?([^'"\n#]+)['"]?/g)) {
       const inc = m[1].trim();
       if (inc) includes.push(inc);
     }
@@ -110,16 +134,16 @@ function parseNeonFile(filePath: string): Record<string, unknown> | null {
   result['includes'] = includes;
 
   // ignoreErrors
-  const ignoreSection = /^ignoreErrors\s*:(.*?)(?=^\w)/ms.exec(content);
+  const ignoreSection = sectionBody(content, 'ignoreErrors');
   result['ignoreErrorCount'] = ignoreSection
-    ? (ignoreSection[1].match(/^\s*-/mg) ?? []).length
+    ? (ignoreSection.match(/^\s*-/mg) ?? []).length
     : 0;
 
   // excludePaths
-  const excludeSection = /^excludePaths\s*:(.*?)(?=^\w)/ms.exec(content);
+  const excludeSection = sectionBody(content, 'excludePaths');
   const excludePaths: string[] = [];
   if (excludeSection) {
-    for (const m of excludeSection[1].matchAll(/[-\s]+['"]?([^'"\n#]+)['"]?/g)) {
+    for (const m of excludeSection.matchAll(/[-\s]+['"]?([^'"\n#]+)['"]?/g)) {
       const p = m[1].trim();
       if (p) excludePaths.push(p);
     }
