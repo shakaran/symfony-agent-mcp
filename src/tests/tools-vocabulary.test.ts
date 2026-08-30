@@ -96,6 +96,45 @@ function buildApp(dir: string, lines: string[]): void {
   write('package.json', JSON.stringify({ name: 'acme', scripts: { build: comment.slice(0, 80) } }));
   write('assets/app.js', `// ${comment}\n`);
   write('migrations/Version20260101000000.php', `<?php\n\nnamespace DoctrineMigrations;\n\n// ${comment}\n`);
+
+  // And the rest of the files the ecosystem modules open, each with the same
+  // line inside it, since a module that reads only netlify.toml sees nothing
+  // in any of the above.
+  write('config/routes.yaml', `app_home:\n    path: /\n    controller: App\\Controller\\HomeController::index\n${hashed}`);
+  write('config/bundles.php', `<?php\n\nreturn [\n    // ${comment}\n];\n`);
+  write('importmap.php', `<?php\n\nreturn [\n    // ${comment}\n];\n`);
+  write('psalm.xml', `<?xml version="1.0"?>\n<psalm errorLevel="3"><!-- ${comment.replace(/-->/g, '')} --></psalm>\n`);
+  write('.php-cs-fixer.php', `<?php\n\n// ${comment}\n`);
+  write('infection.json', JSON.stringify({ source: { directories: ['src'] }, note: comment.slice(0, 120) }));
+  write('cypress.config.js', `module.exports = {\n    // ${comment}\n};\n`);
+  write('wrangler.toml', `name = "acme"\n${hashed}`);
+  write('netlify.toml', `[build]\ncommand = "make build"\n${hashed}`);
+  write('vercel.json', JSON.stringify({ version: 2, note: comment.slice(0, 120) }));
+  write('service.yaml', `apiVersion: serving.knative.dev/v1\nkind: Service\n${hashed}`);
+  write('consul.json', JSON.stringify({ service: { name: 'acme' }, note: comment.slice(0, 120) }));
+  write('sonar-project.properties', `sonar.projectKey=acme\n${hashed}`);
+  write('features/vocabulary.feature', `Feature: vocabulary\n\n    Scenario: line\n        Given ${comment}\n`);
+  write('proto/vocabulary.proto', `syntax = "proto3";\n\n// ${comment}\n`);
+  write('.env.local', `APP_ENV=dev\n# ${comment}\n`);
+  write('.env.prod', `APP_ENV=prod\n# ${comment}\n`);
+  write('php.ini', `[PHP]\n; ${comment}\n`);
+  write('supervisord.conf', `[supervisord]\n; ${comment}\n`);
+  write('crontab', `# ${comment}\n`);
+  write('helm/values.yaml', `image:\n    tag: latest\n${hashed}`);
+  write('terraform/main.tf', `# ${comment}\n`);
+  write('ansible/playbook.yml', `- hosts: all\n  tasks: []\n  ${comment}\n`);
+  write('src/Form/VocabularyType.php', `<?php\n\nnamespace App\\Form;\n\nclass VocabularyType\n{\n    public function build(): void\n    {\n        ${line}\n    }\n}\n`);
+  write('src/Twig/VocabularyExtension.php', `<?php\n\nnamespace App\\Twig;\n\nclass VocabularyExtension\n{\n    public function run(): void\n    {\n        ${line}\n    }\n}\n`);
+  write('src/Doctrine/VocabularyType.php', `<?php\n\nnamespace App\\Doctrine;\n\nclass VocabularyType\n{\n    public function run(): void\n    {\n        ${line}\n    }\n}\n`);
+
+  // The same line in the other shapes a PHP file takes, since a good number
+  // of checks ask what kind of declaration they are looking at.
+  write('src/Contract/VocabularyInterface.php', `<?php\n\nnamespace App\\Contract;\n\n// ${comment}\ninterface VocabularyInterface\n{\n    public function run(): void;\n}\n`);
+  write('src/Enum/VocabularyEnum.php', `<?php\n\nnamespace App\\Enum;\n\n// ${comment}\nenum VocabularyEnum: string\n{\n    case One = "one";\n    case Two = "two";\n}\n`);
+  write('src/Trait/VocabularyTrait.php', `<?php\n\nnamespace App\\Traits;\n\ntrait VocabularyTrait\n{\n    public function run(): void\n    {\n        ${line}\n    }\n}\n`);
+  write('src/Final/VocabularyFinal.php', `<?php\n\nnamespace App\\FinalNs;\n\nfinal class VocabularyFinal extends VocabularyBase implements \\Stringable\n{\n    public function run(): void\n    {\n        ${line}\n    }\n\n    public function __toString(): string { return "v"; }\n}\n`);
+  write('src/Abstract/VocabularyBase.php', `<?php\n\nnamespace App\\AbstractNs;\n\nabstract class VocabularyBase\n{\n    abstract public function run(): void;\n}\n`);
+  write('src/Classless/vocabulary.php', `<?php\n\n// ${comment}\n\nreturn [\n    "line" => ${JSON.stringify(comment.slice(0, 120))},\n];\n`);
 }
 
 describe('every module against an application holding one thing at a time', () => {
