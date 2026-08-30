@@ -43,6 +43,7 @@ import { addEcosystemMore } from './helpers/symfony-ecosystem-more';
 import { addBatchThree } from './helpers/symfony-batch3';
 import { addBatchFour } from './helpers/symfony-batch4';
 import { addBatchFive } from './helpers/symfony-batch5';
+import { addBatchSix } from './helpers/symfony-batch6';
 import { createSparseFixture } from './helpers/symfony-sparse';
 import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
@@ -128,9 +129,20 @@ function multiArgFunctions(
  * something and a lookup that does not are different code paths, and the
  * "not found" branch is usually the longer of the two.
  */
+// The second argument is usually a name to look up, and a name that matches
+// nothing only ever reaches the "not found" half of the function. These are
+// the identifiers the fixture actually contains, one set per shape of name.
 const ARGUMENT_GUESSES: string[][] = [
   ['User', 'dev', 'messages'],
   ['no-such-name-4a1c9f', 'no-such-file.log', 'zz'],
+  ['prod', 'error', 'prod.log'],
+  ['app:import', 'dev', 'import'],
+  ['App\\Entity\\User', 'en', 'user'],
+  ['main', 'api', 'ROLE_ADMIN'],
+  ['async', 'orders', 'publication'],
+  ['app_home', 'base.html.twig', 'emails/invoice.html.twig'],
+  ['a7b8c9', 'invoice', 'slug'],
+  ['', 'a', '%'],
 ];
 
 let fixture: string;
@@ -215,6 +227,8 @@ beforeAll(() => {
   addBatchFour(problematic);
   addBatchFive(fixture);
   addBatchFive(problematic);
+  addBatchSix(fixture);
+  addBatchSix(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);
