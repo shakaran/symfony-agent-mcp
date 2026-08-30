@@ -117,8 +117,11 @@ function parseSerializerFile(filePath: string): SerializerClass | null {
 
   // Match property declarations preceded by attributes
   // Pattern: attribute lines + optional visibility/type + $propName
+  // The argument list holds an array in the ordinary case — #[Groups(['read'])] —
+  // so the attribute body has to be read past one level of brackets.
+  const ATTR = '#\\[(?:Groups|SerializedName|Ignore|MaxDepth|Context)[^\\][]{0,300}(?:\\[[^\\][]{0,300}\\][^\\][]{0,300}){0,20}\\]';
   const propPattern =
-    /((?:#\[(?:Groups|SerializedName|Ignore|MaxDepth|Context)[^\]]*\]\s*)+)(?:(?:private|protected|public|readonly)\s+)+(?:[\w\\?|]+\s+)?\$(\w+)/g;
+    new RegExp(`((?:${ATTR}\\s*)+)(?:(?:private|protected|public|readonly)\\s+)+(?:[\\w\\\\?|]+\\s+)?\\$(\\w+)`, 'g');
 
   let m: RegExpExecArray | null;
   while ((m = propPattern.exec(content)) !== null) {
@@ -141,7 +144,7 @@ function parseSerializerFile(filePath: string): SerializerClass | null {
   if (ctorMatch) {
     const ctorBody = ctorMatch[1];
     const promotedPattern =
-      /((?:#\[(?:Groups|SerializedName|Ignore|MaxDepth)[^\]]*\]\s*)+)(?:private|protected|public|readonly)\s+(?:readonly\s+)?(?:[\w\\?|]+\s+)?\$(\w+)/g;
+      new RegExp(`((?:${ATTR}\\s*)+)(?:private|protected|public|readonly)\\s+(?:readonly\\s+)?(?:[\\w\\\\?|]+\\s+)?\\$(\\w+)`, 'g');
     while ((m = promotedPattern.exec(ctorBody)) !== null) {
       const attrBlock = m[1];
       const propName = m[2];

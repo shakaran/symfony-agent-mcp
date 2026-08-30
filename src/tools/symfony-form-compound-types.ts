@@ -64,13 +64,14 @@ function analyzeFormType(content: string): FormTypeAnalysis | null {
   const hasDataClass = /data_class/.test(content);
 
   // Find all $builder->add() calls to detect embedded custom types
-  const addPattern = /\$builder\s*->\s*add\s*\(\s*['"][^'"]{1,80}['"]\s*,\s*([A-Za-z][A-Za-z0-9_\\]{0,120}Type)(?:::class)?/g;
+  // Forms are built fluently — only the first add() in a chain follows $builder.
+  const addPattern = /->\s*add\s*\(\s*['"][^'"]{1,80}['"]\s*,\s*([A-Za-z][A-Za-z0-9_\\]{0,120}Type)(?:::class)?/g;
   const embeddedTypes: string[] = [];
   let fieldCount = 0;
 
   let m: RegExpExecArray | null;
   // Count all $builder->add calls
-  const addAllPattern = /\$builder\s*->\s*add\s*\(/g;
+  const addAllPattern = /->\s*add\s*\(/g;
   while ((addAllPattern.exec(content)) !== null) {
     fieldCount++;
   }

@@ -104,8 +104,11 @@ function parseSchedulerYaml(content: string, relFile: string): SchedulerTranspor
     if (!inSchedulerSection) continue;
 
     // Detect transport name entries (indented keys under scheduler:)
-    const nameMatch = /^\s{2,4}(\w[\w_-]*):\s*$/.exec(line);
-    if (nameMatch && !['transport', 'options', 'lock', 'failure_transport'].includes(nameMatch[1])) {
+    // Any depth: under "framework:" with four-space indentation the schedule
+    // names sit twelve spaces in, not two.
+    const nameMatch = /^\s{2,}(\w[\w_-]*):\s*$/.exec(line);
+    const structural = ['transport', 'options', 'lock', 'failure_transport', 'scheduler', 'schedules', 'framework', 'messenger', 'transports', 'retry_strategy', 'routing', 'buses'];
+    if (nameMatch && !structural.includes(nameMatch[1])) {
       // Save previous
       if (currentName && currentDsn) {
         const transport = detectTransportType(currentDsn);

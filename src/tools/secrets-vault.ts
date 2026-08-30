@@ -106,8 +106,11 @@ function discoverSecrets(vaultDir: string, localDir: string | null): SecretEntry
   for (const entry of entries) {
     if (!entry.isFile()) continue;
 
-    // Secret files are named like: SECRET_NAME.sodium or SECRET_NAME.gpg
-    const nameMatch = /^(.+)\.(sodium|gpg|asc)$/.exec(entry.name);
+    // Symfony's own vault writes SECRET_NAME.<hash>.php; the .sodium/.gpg
+    // spellings come from vaults kept outside the framework.
+    if (/\.(list|encrypt\.public|decrypt\.private)\.php$/.test(entry.name)) continue;
+    const nameMatch = /^(.+)\.(sodium|gpg|asc)$/.exec(entry.name) ??
+                      /^([A-Za-z_][A-Za-z0-9_]{0,100})\.[0-9a-f]{4,64}\.(php)$/.exec(entry.name);
     if (!nameMatch) continue;
 
     // Skip key files

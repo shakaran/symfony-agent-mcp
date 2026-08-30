@@ -84,8 +84,9 @@ function parsePhpUnitXml(appPath: string): XmlConfig {
 
     const extensions: XmlExtension[] = [];
 
-    // Match <extension class="..." /> or <extension class="...">...</extension>
-    const extPattern = /<extension\s[^>]{0,500}class\s*=\s*["']([^"']{1,200})["'][^>]{0,200}>/g;
+    // <extension class="..."> is the PHPUnit 9 spelling; from PHPUnit 10 the
+    // same section holds <bootstrap class="...">.
+    const extPattern = /<(?:extension|bootstrap)\s[^>]{0,500}class\s*=\s*["']([^"']{1,200})["'][^>]{0,200}>/g;
     let m: RegExpExecArray | null;
     while ((m = extPattern.exec(content)) !== null) {
       const className = m[1];
