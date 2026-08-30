@@ -21,7 +21,7 @@
  */
 
 /** Flipped per test; the mocks below read it on every call. */
-let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' = 'none';
+let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' | 'escape' = 'none';
 
 // The test's own path calls must keep working while the modules' fail.
 const path = jest.requireActual<typeof import('path')>('path');
@@ -37,9 +37,13 @@ jest.mock('path', () => {
     }
     return fn(...args);
   };
+  // What a configuration value holding "../.." produces: a path that is built
+  // from the application root but no longer inside it.
+  const escaping = (...args: string[]): string =>
+    (failMode === 'escape' ? real.join('/outside-the-application', ...args.slice(1)) : real.join(...args));
   return {
     ...real,
-    join: guard(real.join),
+    join: guard(escaping),
     resolve: guard(real.resolve),
     relative: guard(real.relative),
   };
@@ -160,6 +164,16 @@ describe('every module survives a failing filesystem', () => {
           expect(Array.isArray(r.content)).toBe(true);
           expect(r.content!.length).toBeGreaterThan(0);
         }
+      }
+    });
+
+    test('a path that lands outside the application is refused', async () => {
+      // Every module guards the reads it builds; this is the branch that
+      // refuses one, and the reason a traversal in configuration is inert.
+      failMode = 'escape';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        await expect(Promise.resolve(fn(appPath))).resolves.toBeDefined();
       }
     });
 
