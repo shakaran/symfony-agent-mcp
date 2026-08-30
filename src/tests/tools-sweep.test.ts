@@ -46,6 +46,8 @@ import { addBatchFive } from './helpers/symfony-batch5';
 import { addBatchSix } from './helpers/symfony-batch6';
 import { addBatchSeven, addAnalysisBaselines } from './helpers/symfony-batch7';
 import { addBatchEight } from './helpers/symfony-batch8';
+import { addBatchNine } from './helpers/symfony-batch9';
+import { addBatchTen } from './helpers/symfony-batch10';
 import { addBadTwins } from './helpers/symfony-bad-twins';
 import { addWalkerEntries, addLargeCacheEntry } from './helpers/symfony-walkers';
 import { createSparseFixture } from './helpers/symfony-sparse';
@@ -239,6 +241,10 @@ beforeAll(() => {
   addAnalysisBaselines(problematic);
   addBatchEight(fixture);
   addBatchEight(problematic);
+  addBatchNine(fixture);
+  addBatchNine(problematic);
+  addBatchTen(fixture);
+  addBatchTen(problematic);
   // Last, so it has the final word on the paths it rewrites.
   addBadTwins(problematic);
   // A symlink and a subdirectory in every directory, which is what the
