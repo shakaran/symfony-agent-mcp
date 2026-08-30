@@ -20,10 +20,30 @@
  * lives in its own file with its own mock.
  */
 
-import * as path from 'path';
+/** Flipped per test; the mocks below read it on every call. */
+let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' = 'none';
 
-/** Flipped per test; the mock below reads it on every call. */
-let failMode: 'none' | 'read' | 'stat' | 'exists' = 'none';
+// The test's own path calls must keep working while the modules' fail.
+const path = jest.requireActual<typeof import('path')>('path');
+
+// Not every module calls existsSync: some read straight into a try/catch and
+// never touch the filesystem outside a helper that swallows its own errors.
+// Building the path, though, every one of them does, and unguarded.
+jest.mock('path', () => {
+  const real = jest.requireActual<typeof import('path')>('path');
+  const guard = <A extends unknown[], R>(fn: (...a: A) => R) => (...args: A): R => {
+    if (failMode === 'path') {
+      throw Object.assign(new Error('ENAMETOOLONG: simulated failure, join'), { code: 'ENAMETOOLONG' });
+    }
+    return fn(...args);
+  };
+  return {
+    ...real,
+    join: guard(real.join),
+    resolve: guard(real.resolve),
+    relative: guard(real.relative),
+  };
+});
 
 jest.mock('fs', () => {
   const real = jest.requireActual<typeof import('fs')>('fs');
@@ -122,6 +142,22 @@ describe('every module survives a failing filesystem', () => {
         if (typeof returned === 'object' && 'content' in (returned as object)) {
           expect(Array.isArray(r.content)).toBe(true);
           // The failure is reported, not swallowed into an empty answer.
+          expect(r.content!.length).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    test('a path that cannot be built reaches the outermost handler', async () => {
+      // The one call every module makes before it can read anything.
+      failMode = 'path';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
           expect(r.content!.length).toBeGreaterThan(0);
         }
       }
