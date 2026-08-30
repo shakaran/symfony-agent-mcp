@@ -42,6 +42,7 @@ import { addMoreContent } from './helpers/symfony-more';
 import { addEcosystemMore } from './helpers/symfony-ecosystem-more';
 import { addBatchThree } from './helpers/symfony-batch3';
 import { addBatchFour } from './helpers/symfony-batch4';
+import { addBatchFive } from './helpers/symfony-batch5';
 import { addInsecureVariants, useYmlSpelling } from './helpers/symfony-insecure';
 
 const toolsDir = path.resolve(__dirname, '../tools');
@@ -210,6 +211,8 @@ beforeAll(() => {
   addBatchThree(problematic);
   addBatchFour(fixture);
   addBatchFour(problematic);
+  addBatchFive(fixture);
+  addBatchFive(problematic);
   // The opposite value for every setting the analysers check, on the broken
   // fixture only, so between the two both branches of each check run.
   addInsecureVariants(problematic);
