@@ -49,7 +49,7 @@ function buildMysqlInfos(appPath: string): MysqlFeatureInfo[] {
 
     const relFile = path.relative(appPath, file);
 
-    if (content.includes("'fulltext'") || content.includes("'fulltext: true'") || content.includes('options: {fulltext') ||
+    if (content.includes("'fulltext'") || content.includes('"fulltext"') || content.includes("'fulltext: true'") || content.includes('"fulltext: true"') || content.includes('options: {fulltext') ||
         content.includes('FULLTEXT INDEX') || content.includes('MATCH(') || content.includes('AGAINST(')) {
       const issues: string[] = [];
       const notInnodb = content.includes('engine') && content.includes('MyISAM');
@@ -59,16 +59,16 @@ function buildMysqlInfos(appPath: string): MysqlFeatureInfo[] {
       results.push({ file: relFile, feature: 'FULLTEXT index', type: 'fulltext', issues });
     }
 
-    if (content.includes("'json'") || content.includes('JSON_EXTRACT') || content.includes('JSON_CONTAINS')) {
+    if (content.includes("'json'") || content.includes('"json"') || content.includes('JSON_EXTRACT') || content.includes('JSON_CONTAINS')) {
       const issues: string[] = [];
-      const useVarchar = content.includes("'string'") && content.includes('json');
+      const useVarchar = content.includes("'string'") || content.includes('"string"') && content.includes('json');
       if (useVarchar) {
         issues.push('JSON data stored as VARCHAR/string — use type: json for MySQL JSON validation and JSON_* function support');
       }
       results.push({ file: relFile, feature: 'JSON column', type: 'json', issues });
     }
 
-    if (content.includes('PointType') || content.includes('GeometryType') || content.includes("'spatial: true'") ||
+    if (content.includes('PointType') || content.includes('GeometryType') || content.includes("'spatial: true'") || content.includes('"spatial: true"') ||
         content.includes('ST_Distance') || content.includes('ST_Contains')) {
       results.push({ file: relFile, feature: 'Spatial type', type: 'spatial', issues: [] });
     }

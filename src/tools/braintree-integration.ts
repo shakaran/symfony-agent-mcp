@@ -123,7 +123,7 @@ function buildBraintreeIntegrationInfos(appPath: string): BraintreeIntegrationIn
 
       // Check for hardcoded credentials in gateway instantiation
       if (/new\s+Braintree[\\]?Gateway\s*\(\s*\[/.test(content)) {
-        if (content.includes("'merchantId'") && !/env\(|getenv\(/.test(content)) {
+        if (content.includes("'merchantId'") || content.includes('"merchantId"') && !/env\(|getenv\(/.test(content)) {
           issues.push(`Braintree Gateway in ${relFile} may have hardcoded credentials — use env vars ($_ENV or getenv()) for merchantId, publicKey, privateKey`);
         }
       }

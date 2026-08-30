@@ -41,7 +41,7 @@ function parseCookieUsage(filePath: string, appPath: string): CookieUsage | null
   if (content.includes('namespace Symfony\\Component\\HttpFoundation\\')) return null;
   const classM = /class\s+(\w{1,120})/.exec(content);
   const hasHttpOnly = /httpOnly\s*[:=]\s*true/i.test(content) || /new Cookie\s*\([^)]{0,300}true\s*,\s*true/.test(content);
-  const hasSecure = /secure\s*[:=]\s*true/i.test(content) || content.includes("'auto'");
+  const hasSecure = /secure\s*[:=]\s*true/i.test(content) || content.includes("'auto'") || content.includes('"auto"');
   const hasSameSite = /sameSite\s*[:=]\s*['"](?:Strict|Lax|None)['"]/i.test(content) || content.includes('Cookie::SAMESITE_');
   const usesRawCookie = content.includes('setcookie(');
   const issues: string[] = [];

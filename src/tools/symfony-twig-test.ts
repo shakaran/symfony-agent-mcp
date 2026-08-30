@@ -138,7 +138,7 @@ function buildTwigTestInfos(appPath: string): TwigTestFunctionInfo[] {
     for (const entry of allTestEntries) {
       const { testName, callable } = entry;
       const isUsedInTemplates = usedTests.has(testName);
-      const isDeprecated = content.includes('deprecated_node_type') || content.includes("'deprecated'");
+      const isDeprecated = content.includes('deprecated_node_type') || content.includes("'deprecated'") || content.includes('"deprecated"');
       const issues: string[] = [];
 
       if (!isUsedInTemplates && testName !== '(unknown)') {

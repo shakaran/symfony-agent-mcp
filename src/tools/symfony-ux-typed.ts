@@ -71,7 +71,7 @@ function buildUxTypedInfos(appPath: string): UxTypedInfo[] {
       let content = '';
       try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
 
-      if (!content.includes('ux-typed') && !content.includes('symfony_ux_typed') && !content.includes("'typed'")) continue;
+      if (!content.includes('ux-typed') && !content.includes('symfony_ux_typed') && !content.includes("'typed'") || content.includes('"typed"')) continue;
 
       const relFile = path.relative(appPath, file);
       const issues: string[] = [];

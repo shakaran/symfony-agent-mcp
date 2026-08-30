@@ -91,9 +91,9 @@ function parseCropperFile(filePath: string): CropperFormType | null {
   // Check if output format is specified
   const hasFormat = content.includes("'format'") ||
     content.includes('"format"') ||
-    content.includes("'jpeg'") ||
-    content.includes("'webp'") ||
-    content.includes("'png'");
+    content.includes("'jpeg'") || content.includes('"jpeg"') ||
+    content.includes("'webp'") || content.includes('"webp"') ||
+    content.includes("'png'") || content.includes('"png"');
 
   const issues: string[] = [];
 
@@ -115,7 +115,7 @@ function parseCropperFile(filePath: string): CropperFormType | null {
   const hasMaxSize = content.includes('maxSize') ||
     content.includes('max_size') ||
     content.includes('File::MAX_SIZE') ||
-    content.includes("'maxSize'");
+    content.includes("'maxSize'") || content.includes('"maxSize"');
   if (!hasMaxSize) {
     issues.push('No max file size configured for CropperField source image — large uploads may cause memory exhaustion');
   }
@@ -143,7 +143,7 @@ function checkTwigForEnctype(appPath: string): { missingEnctype: string[] } {
         const hasCropperForm = content.includes('form_row') && content.includes('cropper');
         const hasEnctype = content.includes('enctype') ||
           content.includes('multipart') ||
-          content.includes('form_start(') && content.includes("'enctype'");
+          content.includes('form_start(') && content.includes("'enctype'") || content.includes('"enctype"');
         if (hasCropperForm && !hasEnctype) {
           missingEnctype.push(path.basename(f));
         }

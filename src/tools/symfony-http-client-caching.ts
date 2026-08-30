@@ -77,7 +77,7 @@ function buildHttpClientCachingInfos(appPath: string): HttpClientCachingInfo[] {
       results.push({ file: relFile, type: 'caching-client', pattern: 'CachingHttpClient', issues });
     }
 
-    if (content.includes("'no-cache'") || content.includes('"no-cache"') || content.includes("'Cache-Control'")) {
+    if (content.includes("'no-cache'") || content.includes('"no-cache"') || content.includes("'Cache-Control'") || content.includes('"Cache-Control"')) {
       const noStoreMatch = content.includes('no-store') || content.includes('no_store');
       if (noStoreMatch) {
         results.push({ file: relFile, type: 'no-cache', pattern: 'Cache-Control: no-store on request', issues: ['Cache-Control: no-store on outgoing request — correct for sensitive requests; verify this is intentional and not accidentally added to all requests'] });

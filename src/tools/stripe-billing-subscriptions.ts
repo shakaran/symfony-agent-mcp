@@ -174,7 +174,7 @@ function buildStripeBillingSubscriptionsInfos(appPath: string): StripeBillingSub
     const isWebhookHandler = content.includes('constructEvent(') || content.includes('webhook') || detectedWebhookEvents.size > 0;
     if (isWebhookHandler) {
       const hasSignatureCheck = content.includes('constructEvent(') || content.includes('Stripe-Signature') || content.includes('webhook_secret');
-      if (!hasSignatureCheck && content.includes("'type'")) {
+      if (!hasSignatureCheck && content.includes("'type'") || content.includes('"type"')) {
         results.push({
           source: relFile,
           type: 'webhook',

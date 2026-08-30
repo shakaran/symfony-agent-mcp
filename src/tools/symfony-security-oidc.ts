@@ -120,7 +120,7 @@ function parseOidcPhpFile(filePath: string): OidcInfo | null {
       content.includes('setState(') ||
       content.includes('verifyState') ||
       content.includes('$state') ||
-      content.includes("'state'"));
+      content.includes("'state'") || content.includes('"state"'));
 
   if (!hasStateValidation) {
     issues.push('OIDC implementation does not validate the state parameter — CSRF attacks on the authorization callback are possible');

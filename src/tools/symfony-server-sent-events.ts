@@ -78,7 +78,7 @@ function parseSseFile(filePath: string): SseInfo | null {
   const isSse =
     content.includes('EventStreamResponse') ||
     content.includes('text/event-stream') ||
-    (content.includes('StreamedResponse') && (content.includes('data: ') || content.includes("'data: '"))) ||
+    (content.includes('StreamedResponse') && (content.includes('data: ') || content.includes("'data: '") || content.includes('"data: "'))) ||
     (content.includes('echo "data:') || content.includes("echo 'data:"));
 
   if (!isSse) return null;
@@ -118,7 +118,7 @@ function parseSseFile(filePath: string): SseInfo | null {
     content.includes('keepalive') ||
     content.includes('keep-alive') ||
     content.includes(': ping') ||
-    content.includes("'comment'") ||
+    content.includes("'comment'") || content.includes('"comment"') ||
     content.includes(': comment') ||
     content.includes('retry:');
 

@@ -122,7 +122,7 @@ function parseChartFile(filePath: string): UxChartInfo | null {
     content.includes('"labels"') ||
     content.includes('->setLabels(') ||
     content.includes('label:') ||
-    content.includes("'label'");
+    content.includes("'label'") || content.includes('"label"');
 
   const isRenderedInTwig = false; // Determined separately via Twig scan
 

@@ -50,16 +50,16 @@ function buildValidatorPayloadInfos(appPath: string): ValidatorPayloadInfo[] {
 
     if (isConstraint) {
       const hasPayloadProp = content.includes('$payload') || content.includes('public mixed $payload');
-      const usesPayload = content.includes("'payload'") || /\bpayload\b/.test(content);
-      const hasSeverity = content.includes("'severity'") || content.includes('severity');
-      const hasTranslationDomain = content.includes('$translationDomain') || content.includes("'translationDomain'");
+      const usesPayload = content.includes("'payload'") || content.includes('"payload"') || /\bpayload\b/.test(content);
+      const hasSeverity = content.includes("'severity'") || content.includes('"severity"') || content.includes('severity');
+      const hasTranslationDomain = content.includes('$translationDomain') || content.includes("'translationDomain'") || content.includes('"translationDomain"');
 
       if (!hasPayloadProp && usesPayload) {
         issues.push(`Constraint "${constraint}" references payload but has no $payload property — payload metadata not persisted`);
       }
       if (hasPayloadProp) {
         const optionsMethod = content.includes('getDefaultOption') || content.includes('getRequiredOptions');
-        if (!optionsMethod && !content.includes("'payload'")) {
+        if (!optionsMethod && !content.includes("'payload'") || content.includes('"payload"')) {
           issues.push(`Constraint "${constraint}" has $payload property but 'payload' not included in options() array — payload not passed through`);
         }
       }

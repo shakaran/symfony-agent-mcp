@@ -68,7 +68,7 @@ function buildTurboStreamInfos(appPath: string): TurboStreamInfo[] {
       const issues: string[] = [];
 
       if (content.includes('TurboStreamResponse') || content.includes('turbo_stream(')) {
-        const hasAcceptCheck = content.includes("'text/vnd.turbo-stream.html'") || content.includes('turbo_stream_response') || content.includes('isTurboStreamRequest');
+        const hasAcceptCheck = content.includes("'text/vnd.turbo-stream.html'") || content.includes('"text/vnd.turbo-stream.html"') || content.includes('turbo_stream_response') || content.includes('isTurboStreamRequest');
         if (!hasAcceptCheck) {
           issues.push('Turbo Stream response served without checking Accept: text/vnd.turbo-stream.html — regular browser requests would receive stream markup instead of HTML');
         }

@@ -123,7 +123,7 @@ function buildAwsS3IntegrationInfos(appPath: string): AwsS3IntegrationInfo[] {
 
     const type: AwsS3IntegrationInfo['type'] = content.includes('createPresignedRequest') ? 'presigned'
       : content.includes('getObject') ? 'download'
-      : content.includes("'ACL'") ? 'acl'
+      : content.includes("'ACL'") || content.includes('"ACL"') ? 'acl'
       : 'upload';
 
     const bucketM = /['"]Bucket['"]\s*=>\s*['"]([a-zA-Z0-9_-]{1,63})['"]/.exec(content);

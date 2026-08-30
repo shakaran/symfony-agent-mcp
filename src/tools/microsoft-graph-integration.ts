@@ -124,7 +124,7 @@ function buildMicrosoftGraphIntegrationInfos(appPath: string): MicrosoftGraphInt
   const srcDir = path.join(appPath, 'src');
 
   scanPhpFiles(srcDir, appPath, (filePath, content) => {
-    const hasMsCode = content.includes('Microsoft\\Graph') || content.includes('new Graph(') || content.includes('->setAccessToken(') || content.includes('GraphServiceClient') || content.includes("'microsoft'") || content.includes('oauth2-azure');
+    const hasMsCode = content.includes('Microsoft\\Graph') || content.includes('new Graph(') || content.includes('->setAccessToken(') || content.includes('GraphServiceClient') || content.includes("'microsoft'") || content.includes('"microsoft"') || content.includes('oauth2-azure');
     if (!hasMsCode) return;
 
     const relFile = path.relative(appPath, filePath);

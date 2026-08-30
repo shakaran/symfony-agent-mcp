@@ -81,10 +81,10 @@ function scanFormChoiceValues(appPath: string): FormChoiceValueInfo[] {
     let content = '';
     try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
 
-    const hasChoiceOption = content.includes("'choice_value'") ||
-      content.includes("'choice_label'") ||
-      content.includes("'choice_attr'") ||
-      content.includes("'choices'");
+    const hasChoiceOption = content.includes("'choice_value'") || content.includes('"choice_value"') ||
+      content.includes("'choice_label'") || content.includes('"choice_label"') ||
+      content.includes("'choice_attr'") || content.includes('"choice_attr"') ||
+      content.includes("'choices'") || content.includes('"choices"');
 
     const isFormRelated = content.includes('ChoiceType') ||
       content.includes('EntityType') ||
@@ -98,8 +98,8 @@ function scanFormChoiceValues(appPath: string): FormChoiceValueInfo[] {
     const className = classMatch ? classMatch[1] : path.basename(file, '.php');
     const formType = detectFormType(content);
 
-    const hasChoiceValue = content.includes("'choice_value'");
-    const hasChoiceLabel = content.includes("'choice_label'");
+    const hasChoiceValue = content.includes("'choice_value'") || content.includes('"choice_value"');
+    const hasChoiceLabel = content.includes("'choice_label'") || content.includes('"choice_label"');
 
     const issues: string[] = [];
 
@@ -111,11 +111,11 @@ function scanFormChoiceValues(appPath: string): FormChoiceValueInfo[] {
       issues.push(`choice_label callback returns a hardcoded string literal — consider using $this->translator for i18n`);
     }
 
-    if (content.includes("'choice_attr'") && hasNonArrayChoiceAttr(content)) {
+    if (content.includes("'choice_attr'") || content.includes('"choice_attr"') && hasNonArrayChoiceAttr(content)) {
       issues.push(`choice_attr callback may not return an array — will cause TypeError when rendering`);
     }
 
-    if (formType === 'EntityType' && content.includes("'choices'")) {
+    if (formType === 'EntityType' && content.includes("'choices'") || content.includes('"choices"')) {
       const intKeyPattern = /['"]choices['"]\s*=>\s*\[\s*\d{1,10}\s*=>/.test(content);
       if (intKeyPattern) {
         issues.push(`EntityType choices with integer keys — risk of id collision between different entity sets`);

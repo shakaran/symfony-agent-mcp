@@ -60,7 +60,7 @@ function buildPrometheusInfos(appPath: string): PrometheusMetricInfo[] {
 
     const relFile = path.relative(appPath, file);
 
-    if (content.includes('getOrRegisterCounter') || content.includes('registerCounter') || content.includes("'counter'")) {
+    if (content.includes('getOrRegisterCounter') || content.includes('registerCounter') || content.includes("'counter'") || content.includes('"counter"')) {
       const nameMatch = /getOrRegisterCounter\([^,]{0,100},\s*['"]([^'"]{1,80})['"]/.exec(content);
       const metricName = nameMatch ? nameMatch[1] : 'counter';
       const issues: string[] = [];

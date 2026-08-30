@@ -105,7 +105,7 @@ function buildSodiumInfos(appPath: string): SodiumCryptoInfo[] {
       }
     }
 
-    if (content.includes('openssl_encrypt(') && content.includes("'AES-128-CBC'")) {
+    if (content.includes('openssl_encrypt(') && content.includes("'AES-128-CBC'") || content.includes('"AES-128-CBC"')) {
       results.push({ file: relFile, type: 'weak', pattern: 'AES-128-CBC', issues: ['AES-128-CBC without authentication — use authenticated encryption: sodium_crypto_aead_chacha20poly1305_encrypt() or AES-256-GCM with tag verification'] });
     }
   }

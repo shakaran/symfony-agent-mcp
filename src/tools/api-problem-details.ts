@@ -49,7 +49,7 @@ function buildProblemDetailsInfos(appPath: string): ProblemDetailsInfo[] {
     const issues: string[] = [];
 
     const hasProblemJson = content.includes("'application/problem+json'") || content.includes('"application/problem+json"') ||
-      (content.includes("'type'") && content.includes("'title'") && content.includes("'status'") && content.includes("'detail'"));
+      (content.includes("'type'") || content.includes('"type"') && content.includes("'title'") || content.includes('"title"') && content.includes("'status'") || content.includes('"status"') && content.includes("'detail'") || content.includes('"detail"'));
 
     if (!hasProblemJson) continue;
 
@@ -67,7 +67,7 @@ function buildProblemDetailsInfos(appPath: string): ProblemDetailsInfo[] {
       issues.push('RFC 7807 problem detail response missing "type" field — RFC MUST requirement (use "about:blank" if no specific URI)');
     }
 
-    if (content.includes("'application/json'") && !content.includes("'application/problem+json'")) {
+    if (content.includes("'application/json'") || content.includes('"application/json"') && !content.includes("'application/problem+json'")) {
       issues.push('Error response served as application/json instead of application/problem+json — use correct Content-Type for RFC 7807 compliance');
     }
 

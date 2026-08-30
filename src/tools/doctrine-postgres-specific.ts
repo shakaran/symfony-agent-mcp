@@ -50,7 +50,7 @@ function buildPostgresInfos(appPath: string): PostgresFeatureInfo[] {
 
     const relFile = path.relative(appPath, file);
 
-    if (content.includes("'json'") || content.includes("type: 'json'") || content.includes('JsonType') || content.includes("columnDefinition: 'jsonb'")) {
+    if (content.includes("'json'") || content.includes('"json"') || content.includes("type: 'json'") || content.includes('JsonType') || content.includes("columnDefinition: 'jsonb'")) {
       const issues: string[] = [];
       const usesJsonFilter = content.includes('JSON_GET_FIELD') || content.includes('JSON_CONTAINS') ||
         content.includes("WHERE") && content.includes("->") && content.includes('json');

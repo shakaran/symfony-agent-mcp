@@ -51,7 +51,7 @@ function buildFormAjaxInfos(appPath: string): FormAjaxInfo[] {
       const relFile = path.relative(appPath, file);
       const issues: string[] = [];
 
-      if (content.includes('TurboStreamResponse') || content.includes("'application/vnd.turbo-stream.html'")) {
+      if (content.includes('TurboStreamResponse') || content.includes("'application/vnd.turbo-stream.html'") || content.includes('"application/vnd.turbo-stream.html"')) {
         const hasCsrf = content.includes('csrf') || content.includes('_token') || content.includes('getToken(');
         if (!hasCsrf) {
           issues.push('TurboStreamResponse returned without CSRF token validation — Turbo Stream forms bypass CSRF if not validated server-side');

@@ -156,7 +156,7 @@ function buildPaypalCheckoutV2Infos(appPath: string): PaypalCheckoutV2Info[] {
 
     // Environment check — SandboxEnvironment in production
     if (content.includes('SandboxEnvironment(')) {
-      const isProductionApp = appEnv === 'prod' || detectedEnvironment === 'production' || content.includes("APP_ENV') === 'prod'") || content.includes("'prod'");
+      const isProductionApp = appEnv === 'prod' || detectedEnvironment === 'production' || content.includes("APP_ENV') === 'prod'") || content.includes("'prod'") || content.includes('"prod"');
       const hasDynamicEnvSwitch = content.includes('if') && (content.includes('SandboxEnvironment') && content.includes('ProductionEnvironment'));
       results.push({
         source: relFile,
