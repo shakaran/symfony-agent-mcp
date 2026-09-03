@@ -74,3 +74,71 @@ export function samplesForModule(modulePath: string): string[] {
 
   return [...lines];
 }
+
+const SKIP_PATH = /^(\/|\.\.|node_modules|vendor)/;
+
+/**
+ * The paths one module reads, taken from its own source.
+ *
+ * A module that opens `.circleci/config.yml` and nothing else sees nothing in
+ * an application built from a list of paths somebody guessed. These are the
+ * ones it names itself: every `path.join(appPath, ...)` it builds and every
+ * literal in it shaped like a file name.
+ */
+export function pathsForModule(modulePath: string): string[] {
+  let source = '';
+  try { source = fs.readFileSync(modulePath, 'utf-8'); } catch { return []; }
+
+  const out = new Set<string>();
+
+  for (const m of source.matchAll(/path\.join\(\s*appPath\s*,([^)]{0,200})\)/g)) {
+    const parts = [...m[1].matchAll(/'([^']{1,60})'/g)].map((p) => p[1]);
+    if (parts.length > 0) out.add(parts.join('/'));
+  }
+
+  const named = /'([A-Za-z0-9._][A-Za-z0-9._/-]{2,60}\.(?:ya?ml|json|neon|xml|toml|ini|conf|php|js|ts|env|dist|properties|hcl|proto|avsc|lock|md|feature|twig|sh|tf))'/g;
+  for (const m of source.matchAll(named)) out.add(m[1]);
+
+  return [...out].filter((p) => !SKIP_PATH.test(p) && !p.includes('..') && !p.includes('*'));
+}
+
+/**
+ * The environment variables one module reads, from its own source.
+ *
+ * A name mentioned in a comment is not an environment variable; several
+ * dozen modules do nothing until they find one set.
+ */
+export function envNamesForModule(modulePath: string): string[] {
+  let source = '';
+  try { source = fs.readFileSync(modulePath, 'utf-8'); } catch { return []; }
+
+  const out = new Set<string>();
+  for (const m of source.matchAll(/'([A-Z][A-Z0-9_]{3,50})'/g)) out.add(m[1]);
+  for (const m of source.matchAll(/\b([A-Z][A-Z0-9_]{3,50})\s*=/g)) out.add(m[1]);
+
+  return [...out].filter((n) => !/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(n)).slice(0, 60);
+}
+
+/**
+ * The Composer packages one module gates on.
+ *
+ * An integration analyser reads composer.json first, does not find the
+ * package it is about, and returns before anything else it does can run.
+ */
+export function packagesForModule(modulePath: string): string[] {
+  let source = '';
+  try { source = fs.readFileSync(modulePath, 'utf-8'); } catch { return []; }
+
+  const notAPackage = /\.(php|ya?ml|json|xml|twig|ini|conf|toml|lock|md|js|ts)$/;
+  const pathPrefix = /^(src|config|var|bin|public|templates|tests|docker|vendor|node_modules)\//;
+  const mimeish = /^(application|text|image|audio|video|multipart|message|font)\//;
+
+  const out = new Set<string>();
+  for (const m of source.matchAll(/'([a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)'/g)) {
+    const name = m[1];
+    if (notAPackage.test(name) || pathPrefix.test(name) || mimeish.test(name)) continue;
+    out.add(name);
+  }
+
+  return [...out].slice(0, 60);
+}
