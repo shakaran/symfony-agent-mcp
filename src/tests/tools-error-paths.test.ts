@@ -39,8 +39,16 @@ jest.mock('path', () => {
   };
   // What a configuration value holding "../.." produces: a path that is built
   // from the application root but no longer inside it.
-  const escaping = (...args: string[]): string =>
-    (failMode === 'escape' ? real.join('/outside-the-application', ...args.slice(1)) : real.join(...args));
+  const escaping = (...args: string[]): string => {
+    if (failMode !== 'escape') return real.join(...args);
+    // Only the file itself lands outside. Sending the directories out too
+    // means the walk finds nothing and the guard around the read — which is
+    // the one being exercised — is never reached.
+    const last = args[args.length - 1] ?? '';
+    if (!/\.[A-Za-z0-9]{1,10}$/.test(last)) return real.join(...args);
+
+    return real.join('/outside-the-application', ...args.slice(1));
+  };
   return {
     ...real,
     join: guard(escaping),
@@ -88,11 +96,37 @@ let appPath: string;
 
 beforeAll(() => {
   appPath = realFs.mkdtempSync(path.join(os.tmpdir(), 'symfony-errors-'));
-  realFs.writeFileSync(path.join(appPath, 'composer.json'), JSON.stringify({
-    require: { 'symfony/framework-bundle': '^7.0' },
+
+  // An application with something in it. An empty one sends most walkers
+  // home before they read anything, and the guards around each read — the
+  // ones this file exists to reach — sit inside the loop over entries.
+  const write = (rel: string, content: string): void => {
+    const full = path.join(appPath, rel);
+    realFs.mkdirSync(path.dirname(full), { recursive: true });
+    realFs.writeFileSync(full, content);
+  };
+
+  write('composer.json', JSON.stringify({
+    require: { 'symfony/framework-bundle': '^7.0', 'doctrine/orm': '^3.0' },
   }));
-  realFs.mkdirSync(path.join(appPath, 'src'), { recursive: true });
-  realFs.mkdirSync(path.join(appPath, 'config', 'packages'), { recursive: true });
+  write('composer.lock', JSON.stringify({ packages: [{ name: 'symfony/framework-bundle', version: 'v7.0.0' }] }));
+  write('src/Controller/HomeController.php', '<?php\n\nnamespace App\\Controller;\n\nclass HomeController\n{\n}\n');
+  write('src/Entity/User.php', '<?php\n\nnamespace App\\Entity;\n\nclass User\n{\n}\n');
+  write('src/Service/Importer.php', '<?php\n\nnamespace App\\Service;\n\nclass Importer\n{\n}\n');
+  write('config/packages/framework.yaml', 'framework:\n    secret: "%env(APP_SECRET)%"\n');
+  write('config/packages/security.yaml', 'security:\n    firewalls:\n        main:\n            lazy: true\n');
+  write('config/services.yaml', 'services:\n    _defaults:\n        autowire: true\n');
+  write('config/routes.yaml', 'app_home:\n    path: /\n');
+  write('templates/base.html.twig', '<html>{% block body %}{% endblock %}</html>\n');
+  write('templates/home/index.html.twig', '{% extends "base.html.twig" %}\n');
+  write('translations/messages.en.yaml', 'hello: Hello\n');
+  write('tests/Unit/ImporterTest.php', '<?php\n\nnamespace App\\Tests\\Unit;\n\nclass ImporterTest\n{\n}\n');
+  write('migrations/Version20260101000000.php', '<?php\n\nnamespace DoctrineMigrations;\n');
+  write('var/log/prod.log', '[2026-08-01T10:00:00+00:00] app.ERROR: boom [] []\n');
+  write('public/index.php', '<?php\n\nrequire dirname(__DIR__)."/vendor/autoload.php";\n');
+  write('docker-compose.yml', 'services:\n    app:\n        image: acme\n');
+  write('.env', 'APP_ENV=prod\nAPP_SECRET=value\n');
+  write('phpunit.xml.dist', '<?xml version="1.0"?>\n<phpunit bootstrap="tests/bootstrap.php"/>\n');
 });
 
 afterAll(() => {
