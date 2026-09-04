@@ -140,7 +140,10 @@ function parseSerializerFile(filePath: string): SerializerClass | null {
   }
 
   // Also scan constructor promoted properties
-  const ctorMatch = /function\s+__construct\s*\(([^)]+)\)/s.exec(content);
+  // A promoted property carries its attributes, and those have parentheses of
+  // their own, #[Groups(['read'])], so the argument list has to be read past
+  // one level of them or it ends inside the first attribute.
+  const ctorMatch = /function\s+__construct\s*\(((?:[^()]|\([^()]{0,300}\)){0,3000})\)/s.exec(content);
   if (ctorMatch) {
     const ctorBody = ctorMatch[1];
     const promotedPattern =

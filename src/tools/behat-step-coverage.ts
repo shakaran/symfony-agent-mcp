@@ -92,6 +92,18 @@ function extractStepDefinitions(phpFiles: string[]): StepDefinition[] {
       definitions.push({ pattern: m[2], file: path.basename(filePath), annotation: m[1] });
     }
 
+    // Behat's own documentation writes the annotation with no parentheses,
+    // "@Given I am on the home page", and only the parenthesised form was
+    // being read, so a context written the usual way defined no steps at all.
+    for (const m of content.matchAll(/@(Given|When|Then|Step)[ \t]+([^\n]{2,300})/g)) {
+      let pattern = m[2].trim().replace(/\*\/\s*$/, '').trim();
+      if (pattern.startsWith('(')) continue;
+      pattern = pattern.replace(/^["']|["']$/g, '');
+      if (!pattern) continue;
+      if (definitions.some((d) => d.pattern === pattern && d.file === path.basename(filePath))) continue;
+      definitions.push({ pattern, file: path.basename(filePath), annotation: m[1] });
+    }
+
     // PHP 8 attributes: #[Given("...")], #[When("...")], #[Then("...")]
     const attributeMatches = content.matchAll(/#\[(Given|When|Then)\s*\(\s*["']([^"']{0,300})["']\s*\)\]/g);
     for (const m of attributeMatches) {

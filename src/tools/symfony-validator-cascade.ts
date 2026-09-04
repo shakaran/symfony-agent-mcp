@@ -90,8 +90,14 @@ function scanValidatorCascade(appPath: string): ValidatorCascadeInfo[] {
     const validProperties: string[] = [];
     const relationsWithoutValid: string[] = [];
 
-    // Split by property-like blocks to analyze each property
-    const propertyBlocks = content.split(/(?=\s*(?:#\[|\/\*\*|\s+(?:private|protected|public)\s))/);
+    // A property and the attributes above it are one block. Splitting before
+    // every attribute put them in separate pieces, so the piece with
+    // #[Assert\Valid] had no property name and the piece with the property
+    // had no constraint. An entity mapped with attributes, which is all of
+    // them, reported nothing.
+    const propertyBlocks = content.match(
+      /(?:(?:#\[[^\][]{0,200}(?:\[[^\][]{0,200}\][^\][]{0,200}){0,10}\]|\/\*\*[\s\S]{0,400}?\*\/)[ \t]*\n[ \t]*){0,12}(?:private|protected|public)[^;{]{0,200}\$\w{1,80}[^;]{0,200};/g,
+    ) ?? [];
 
     for (const block of propertyBlocks) {
       const hasRelation = DOCTRINE_RELATIONS.some((r) => block.includes(r));

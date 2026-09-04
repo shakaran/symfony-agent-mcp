@@ -119,22 +119,35 @@ function parseDomainEventFile(filePath: string, appPath: string): DomainEventInf
   };
 }
 
-function checkDispatcherUsage(srcDir: string, aggregateClasses: string[]): Map<string, boolean> {
+function checkDispatcherUsage(
+  srcDir: string,
+  aggregates: Array<{ class: string; file: string }>,
+): Map<string, boolean> {
   const dispatched = new Map<string, boolean>();
-  for (const cls of aggregateClasses) dispatched.set(cls, false);
+  for (const agg of aggregates) dispatched.set(agg.class, false);
 
-  if (aggregateClasses.length === 0) return dispatched;
+  if (aggregates.length === 0) return dispatched;
+
+  // An aggregate declaring releaseEvents() is not the same as something
+  // calling it: counting its own file marked every aggregate as dispatched,
+  // and the report below could never fire.
+  const ownFiles = new Set(aggregates.map((a) => a.file));
 
   for (const file of getAllPhpFiles(srcDir)) {
+    if (ownFiles.has(file)) continue;
+
     let content = '';
     try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
 
-    for (const cls of aggregateClasses) {
-      if (content.includes(`releaseEvents`) || content.includes(`getRecordedEvents`) ||
-        content.includes(`pullDomainEvents`)) {
-        dispatched.set(cls, true);
-      }
-    }
+    const releases = content.includes('releaseEvents') ||
+      content.includes('getRecordedEvents') ||
+      content.includes('pullDomainEvents');
+    if (!releases) continue;
+
+    // A handler naming the aggregate dispatches that one; a generic one that
+    // names none of them is taken to dispatch them all, as before.
+    const named = aggregates.filter((a) => content.includes(a.class.split('\\').pop() ?? a.class));
+    for (const agg of (named.length > 0 ? named : aggregates)) dispatched.set(agg.class, true);
   }
 
   return dispatched;
@@ -152,7 +165,7 @@ function loadDomainEvents(appPath: string): DomainEventInfo[] {
 
   // Cross-check: find aggregates whose events are never dispatched
   const aggregates = results.filter((r) => r.isAggregate && r.hasRelease);
-  const dispatched = checkDispatcherUsage(srcDir, aggregates.map((a) => a.class));
+  const dispatched = checkDispatcherUsage(srcDir, aggregates.map((a) => ({ class: a.class, file: path.join(appPath, a.file) })));
 
   for (const agg of aggregates) {
     const isDispatched = dispatched.get(agg.class) ?? false;
