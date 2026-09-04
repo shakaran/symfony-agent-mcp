@@ -44,7 +44,7 @@ export function sampleFor(src: string): string | null {
       if (next === 'b' || next === 'B') { i += 2; continue; }
       out += CLASS_SAMPLE[next] ?? next;
       i += 2;
-      i = skipQuantifier(src, i, () => { /* already emitted once */ });
+      i = skipQuantifier(src, i);
       continue;
     }
 
@@ -57,7 +57,7 @@ export function sampleFor(src: string): string | null {
         const end = matchingParen(src, i);
         if (end === -1) return null;
         i = end + 1;
-        i = skipQuantifier(src, i, () => { /* nothing emitted */ });
+        i = skipQuantifier(src, i);
         continue;
       }
       const end = matchingParen(src, i);
@@ -69,7 +69,7 @@ export function sampleFor(src: string): string | null {
       if (sample === null) return null;
       out += sample;
       i = end + 1;
-      i = skipQuantifier(src, i, () => { /* one repetition is enough */ });
+      i = skipQuantifier(src, i);
       continue;
     }
 
@@ -81,14 +81,14 @@ export function sampleFor(src: string): string | null {
       if (sample === null) return null;
       out += sample;
       i = end + 1;
-      i = skipQuantifier(src, i, () => { /* one character is enough */ });
+      i = skipQuantifier(src, i);
       continue;
     }
 
     if (ch === '.') {
       out += 'x';
       i++;
-      i = skipQuantifier(src, i, () => { /* one character */ });
+      i = skipQuantifier(src, i);
       continue;
     }
 
@@ -99,7 +99,7 @@ export function sampleFor(src: string): string | null {
 
     if (ch === '*' || ch === '+' || ch === '?' || ch === '{') {
       // A quantifier with nothing before it that we emitted: skip it.
-      i = skipQuantifier(src, i, () => { /* nothing */ });
+      i = skipQuantifier(src, i);
       if (src[i - 1] === ch) i++;
       continue;
     }
@@ -111,7 +111,7 @@ export function sampleFor(src: string): string | null {
   return out;
 }
 
-function skipQuantifier(src: string, i: number, _emit: () => void): number {
+function skipQuantifier(src: string, i: number): number {
   const ch = src[i];
   if (ch === '*' || ch === '+' || ch === '?') {
     let j = i + 1;
