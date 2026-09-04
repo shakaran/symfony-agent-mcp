@@ -155,8 +155,12 @@ function buildNetlifyDeployConfigInfos(appPath: string): NetlifyDeployConfigInfo
       }
     }
 
-    // [[headers]] section
-    if (sectionName === 'headers') {
+    // [[headers]] section, and the [headers.values] block that belongs to it.
+    //
+    // The splitter treats every bracketed line as the start of a section, so a
+    // file written the way Netlify documents it — [[headers]] then
+    // [headers.values] — kept its header names in a section nobody looked at.
+    if (sectionName === 'headers' || sectionName.startsWith('headers.')) {
       hasHeaders = true;
       let headerPath = '';
       let inValues = false;
@@ -171,6 +175,7 @@ function buildNetlifyDeployConfigInfos(appPath: string): NetlifyDeployConfigInfo
           inValues = true;
           continue;
         }
+        if (sectionName.startsWith('headers.')) inValues = true;
         if (inValues || headerPath) {
           const kv = extractKv(line);
           if (!kv) continue;

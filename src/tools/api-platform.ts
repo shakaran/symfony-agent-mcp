@@ -116,13 +116,15 @@ function parseOperations(content: string): ApiOperation[] {
 
     const normMatch = /normalizationContext\s*:\s*\[([^\]]+)\]/.exec(args);
     if (normMatch) {
-      const groupsMatch = /groups\s*:\s*\[([^\]]+)\]/.exec(normMatch[1]);
+      // In PHP the context is an array — ['groups' => ['read']] — and only the
+      // named-argument spelling uses a colon.
+      const groupsMatch = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(normMatch[1]);
       if (groupsMatch) op.normalizationGroups = parseStringGroups(groupsMatch[1]);
     }
 
     const denormMatch = /denormalizationContext\s*:\s*\[([^\]]+)\]/.exec(args);
     if (denormMatch) {
-      const groupsMatch = /groups\s*:\s*\[([^\]]+)\]/.exec(denormMatch[1]);
+      const groupsMatch = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(denormMatch[1]);
       if (groupsMatch) op.denormalizationGroups = parseStringGroups(groupsMatch[1]);
     }
 
@@ -209,14 +211,14 @@ function parseApiResourceFile(filePath: string): ApiResource | null {
   const normMatch = /normalizationContext\s*:\s*\[([^\]]+)\]/.exec(resourceArgs);
   let normGroups: string[] = [];
   if (normMatch) {
-    const gm = /groups\s*:\s*\[([^\]]+)\]/.exec(normMatch[1]);
+    const gm = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(normMatch[1]);
     if (gm) normGroups = parseStringGroups(gm[1]);
   }
 
   const denormMatch = /denormalizationContext\s*:\s*\[([^\]]+)\]/.exec(resourceArgs);
   let denormGroups: string[] = [];
   if (denormMatch) {
-    const gm = /groups\s*:\s*\[([^\]]+)\]/.exec(denormMatch[1]);
+    const gm = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(denormMatch[1]);
     if (gm) denormGroups = parseStringGroups(gm[1]);
   }
 
