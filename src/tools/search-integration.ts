@@ -171,7 +171,9 @@ function scanSearchableClasses(appPath: string, detectedEngines: string[]): Sear
       content.includes('FinderInterface') ||
       (detectedEngines.includes('elasticsearch') && content.includes('Finder'));
 
-    if (!isSearchable) return [];
+    // Returning here dropped every class already found and stopped the scan
+    // at the first ordinary PHP file in src/, which is the usual case.
+    if (!isSearchable) continue;
 
     const classM = /class\s+(\w+)/.exec(content);
     if (!classM) continue;
