@@ -35,20 +35,22 @@ function parseSerializationContext(filePath: string, appPath: string): Serializa
   if (content.includes('namespace ApiPlatform\\')) return null;
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
-  const normPattern = /normalizationContext\s*:\s*\[[^\]]{0,400}\]/g;
+  // The context holds an array — ['groups' => ['read']] — so both the context
+  // and the groups inside it have to be read past one level of brackets.
+  const normPattern = /normalizationContext\s*:\s*\[[^\][]{0,400}(?:\[[^\][]{0,300}\][^\][]{0,400}){0,10}\]/g;
   const normalizationGroups: string[][] = [];
   let m: RegExpExecArray | null;
   while ((m = normPattern.exec(content)) !== null) {
-    const groupsM = /groups\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/i.exec(m[0]);
+    const groupsM = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/i.exec(m[0]);
     if (groupsM) {
       const groups = groupsM[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
       normalizationGroups.push(groups);
     }
   }
-  const denormPattern = /denormalizationContext\s*:\s*\[[^\]]{0,400}\]/g;
+  const denormPattern = /denormalizationContext\s*:\s*\[[^\][]{0,400}(?:\[[^\][]{0,300}\][^\][]{0,400}){0,10}\]/g;
   const denormalizationGroups: string[][] = [];
   while ((m = denormPattern.exec(content)) !== null) {
-    const groupsM = /groups\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/i.exec(m[0]);
+    const groupsM = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,40})\]/i.exec(m[0]);
     if (groupsM) {
       const groups = groupsM[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
       denormalizationGroups.push(groups);
