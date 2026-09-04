@@ -46,7 +46,9 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
   }
 
   // jobs — extract job names
-  const jobSectionMatch = content.match(/^jobs\s*:([\s\S]{0,10000}?)(?=^workflows\s*:|^orbs\s*:|$)/m);
+  // The lazy match cannot end at "$" with the m flag: that is the end of the
+  // first line, so the jobs section came back empty and no job was ever read.
+  const jobSectionMatch = content.match(/^jobs\s*:([\s\S]{0,10000}?)(?=^workflows\s*:|^orbs\s*:|$(?![\s\S]))/m);
   const jobSection = jobSectionMatch ? jobSectionMatch[1] : content;
 
   // Simple job name extraction: lines with 2-space indent + word:

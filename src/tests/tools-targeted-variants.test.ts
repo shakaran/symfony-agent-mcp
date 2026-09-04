@@ -501,4 +501,83 @@ describe('the other half of the question', () => {
     const text = await runModule('symfony-workflow-parallel-transitions.js', app);
     expect(text.length).toBeGreaterThan(0);
   });
+
+  test('cache pools found through the environment, and a kernel not called Kernel', async () => {
+    const app = appWith('env-and-kernel', {
+      'config/packages/cache.yaml': 'framework:\n    cache:\n        app: cache.adapter.filesystem\n',
+      'src/AppKernel.php': [
+        '<?php',
+        'namespace App;',
+        '',
+        'use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;',
+        '',
+        'class AppKernel extends BaseKernel',
+        '{',
+        '    public function registerBundles(): iterable',
+        '    {',
+        '        return [new \\Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle()];',
+        '    }',
+        '',
+        '    public function registerContainerConfiguration($loader): void',
+        '    {',
+        '        $loader->load(__DIR__ . "/../config/services.yaml");',
+        '    }',
+        '',
+        '    public function getCacheDir(): string { return "/tmp/acme/cache"; }',
+        '}',
+      ].join('\n') + '\n',
+      'config/bundles.php': [
+        '<?php',
+        '',
+        'return [',
+        '    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ["all" => true],',
+        '    Symfony\\Bundle\\WebProfilerBundle\\WebProfilerBundle::class => ["dev" => true, "test" => true],',
+        '    Symfony\\Bundle\\DebugBundle\\DebugBundle::class => ["dev" => true],',
+        '    Nelmio\\CorsBundle\\NelmioCorsBundle::class => ["prod" => true],',
+        '];',
+      ].join('\n') + '\n',
+      'config/services.yaml': 'services:\n    _defaults:\n        autowire: true\n',
+    });
+
+    const previous = { redis: process.env['REDIS_URL'], memcached: process.env['MEMCACHED_DSN'] };
+    process.env['REDIS_URL'] = 'redis://localhost:6379';
+    process.env['MEMCACHED_DSN'] = 'memcached://localhost:11211';
+    try {
+      const results = await Promise.all([
+        runModule('cache-inspector.js', app, ['prod']),
+        runModule('kernel-analysis.js', app),
+      ]);
+      expect(results.join('').length).toBeGreaterThan(0);
+    } finally {
+      if (previous.redis === undefined) delete process.env['REDIS_URL'];
+      else process.env['REDIS_URL'] = previous.redis;
+      if (previous.memcached === undefined) delete process.env['MEMCACHED_DSN'];
+      else process.env['MEMCACHED_DSN'] = previous.memcached;
+    }
+  });
+
+  test('an operation whose groups are written as a plain array', async () => {
+    const app = appWith('api-groups', {
+      'src/Entity/Note.php': [
+        '<?php',
+        'namespace App\\Entity;',
+        '',
+        'use ApiPlatform\\Metadata\\ApiResource;',
+        'use ApiPlatform\\Metadata\\Get;',
+        'use ApiPlatform\\Metadata\\GetCollection;',
+        '',
+        "#[Get(normalizationContext: ['groups' => ['note:read', 'note:detail']])]",
+        "#[GetCollection(normalizationContext: ['groups' => ['note:list']], denormalizationContext: ['groups' => ['note:write']])]",
+        "#[ApiResource(normalizationContext: ['groups' => ['note:read']], denormalizationContext: ['groups' => ['note:write']])]",
+        'class Note',
+        '{',
+        '    public int $id = 0;',
+        '}',
+      ].join('\n') + '\n',
+      'config/packages/api_platform.yaml': 'api_platform:\n    title: Notes\n    version: 1.0.0\n',
+    }, { 'api-platform/core': '^3.2' });
+
+    const text = await runModule('api-platform.js', app, ['Note']);
+    expect(text).toContain('note:read');
+  });
 });

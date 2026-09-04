@@ -45,7 +45,10 @@ function buildRoadrunnerInfos(appPath: string): RoadrunnerConfigInfo[] {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
-    if (/^[a-z_]+:/.test(trimmed) && !trimmed.includes('  ')) {
+    // A section is a top-level key with nothing after the colon. Matching any
+    // "key: value" line instead made "address: 127.0.0.1:8080" a section of its
+    // own, and everything below it was then read as belonging to that.
+    if (/^[a-z_]+:\s*$/.test(trimmed) && line.length === trimmed.length) {
       currentSection = trimmed.replace(':', '').trim();
     }
 

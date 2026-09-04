@@ -114,7 +114,7 @@ function parseOperations(content: string): ApiOperation[] {
     const nameMatch = /\bname\s*:\s*['"]([^'"]+)['"]/.exec(args);
     if (nameMatch) op.name = nameMatch[1];
 
-    const normMatch = /normalizationContext\s*:\s*\[([^\]]+)\]/.exec(args);
+    const normMatch = /normalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(args);
     if (normMatch) {
       // In PHP the context is an array — ['groups' => ['read']] — and only the
       // named-argument spelling uses a colon.
@@ -122,7 +122,7 @@ function parseOperations(content: string): ApiOperation[] {
       if (groupsMatch) op.normalizationGroups = parseStringGroups(groupsMatch[1]);
     }
 
-    const denormMatch = /denormalizationContext\s*:\s*\[([^\]]+)\]/.exec(args);
+    const denormMatch = /denormalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(args);
     if (denormMatch) {
       const groupsMatch = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(denormMatch[1]);
       if (groupsMatch) op.denormalizationGroups = parseStringGroups(groupsMatch[1]);
@@ -208,14 +208,14 @@ function parseApiResourceFile(filePath: string): ApiResource | null {
   const descMatch = /\bdescription\s*:\s*['"]([^'"]+)['"]/.exec(resourceArgs);
 
   // Global normalization/denormalization groups
-  const normMatch = /normalizationContext\s*:\s*\[([^\]]+)\]/.exec(resourceArgs);
+  const normMatch = /normalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(resourceArgs);
   let normGroups: string[] = [];
   if (normMatch) {
     const gm = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(normMatch[1]);
     if (gm) normGroups = parseStringGroups(gm[1]);
   }
 
-  const denormMatch = /denormalizationContext\s*:\s*\[([^\]]+)\]/.exec(resourceArgs);
+  const denormMatch = /denormalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(resourceArgs);
   let denormGroups: string[] = [];
   if (denormMatch) {
     const gm = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(denormMatch[1]);
