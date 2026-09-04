@@ -106,15 +106,23 @@ function loadPhpStanConfig(appPath: string): PHPStanConfig | null {
   const excludes: string[] = [];
   const extensions: string[] = [];
 
-  for (const m of content.matchAll(/paths\s*:([^-]*(?:\s+-[^\n]+)*)/g)) {
-    for (const p of m[1].matchAll(/- (.+)/g)) paths.push(p[1].trim().replace(/['"]/g, ''));
-  }
-  for (const m of content.matchAll(/excludePaths\s*:([^-]*(?:\s+-[^\n]+)*)/g)) {
-    for (const p of m[1].matchAll(/- (.+)/g)) excludes.push(p[1].trim().replace(/['"]/g, ''));
-  }
-  for (const m of content.matchAll(/includes\s*:([^-]*(?:\s+-[^\n]+)*)/g)) {
-    for (const p of m[1].matchAll(/- (.+)/g)) extensions.push(p[1].trim().replace(/['"]/g, ''));
-  }
+  // The trailing (?:\s+-...)* is satisfied by zero repetitions, so the capture
+  // stopped at the first dash and every list came back empty. Take the
+  // indented block under the key instead.
+  const listUnder = (key: string): string[] => {
+    const items: string[] = [];
+    const re = new RegExp(`^[ \\t]*${key}\\s*:[ \\t]*(?:\\r?\\n)((?:[ \\t]+-[^\\n]{0,300}(?:\\r?\\n|$))+)`, 'gm');
+    for (const m of content.matchAll(re)) {
+      for (const item of m[1].matchAll(/-[ \t]+([^\n]{1,300})/g)) {
+        items.push(item[1].trim().replace(/['"]/g, ''));
+      }
+    }
+    return items;
+  };
+
+  paths.push(...listUnder('paths'));
+  excludes.push(...listUnder('excludePaths'));
+  extensions.push(...listUnder('includes'));
 
   return {
     level: levelM ? levelM[1] : String(params['level'] ?? '?'),

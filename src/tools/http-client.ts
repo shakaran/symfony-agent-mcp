@@ -84,7 +84,9 @@ function loadHttpClientConfig(appPath: string): {
     const httpClientSection = framework['http_client'] as Record<string, unknown> | undefined;
     if (!httpClientSection) continue;
 
-    const defaultsRaw = httpClientSection as Record<string, unknown>;
+    // base_uri, timeout, max_redirects and headers live under default_options
+    // in a Symfony application; reading http_client directly found none of them.
+    const defaultsRaw = (httpClientSection['default_options'] ?? httpClientSection) as Record<string, unknown>;
     const defaults: HttpClientDefault = {
       baseUri: defaultsRaw['base_uri'] ? maskAuthUri(String(defaultsRaw['base_uri'])) : undefined,
       timeout: defaultsRaw['timeout'] ? Number(defaultsRaw['timeout']) : undefined,

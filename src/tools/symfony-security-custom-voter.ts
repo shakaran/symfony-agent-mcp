@@ -217,7 +217,9 @@ function getAccessControlAttributes(appPath: string): string[] {
   try { content = fs.readFileSync(securityYaml, 'utf-8'); } catch { return attrs; }
 
   // Look for access_control: - { path: ..., roles: ['IS_AUTHENTICATED', 'CUSTOM_ATTR'] }
-  const attrRegex = /['"]([A-Z][A-Z_0-9]{2,})['"]/g;
+  // roles: INVOICE_VIEW is as common as roles: ['INVOICE_VIEW'], and only the
+  // quoted spelling was read.
+  const attrRegex = /\b([A-Z][A-Z_0-9]{2,})\b/g;
   let m: RegExpExecArray | null;
   const accessControlSection = /access_control:([\s\S]+?)(?=\n\w|\n$)/m.exec(content);
   if (!accessControlSection) return attrs;

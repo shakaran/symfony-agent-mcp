@@ -53,13 +53,15 @@ function parseCommandOptions(filePath: string, appPath: string): CommandOptionsI
   const commandNameM = /->setName\s*\(\s*['"]([^'"]{1,80})['"]\)|AsCommand\s*\([^)]{0,100}name\s*:\s*['"]([^'"]{1,80})['"]\)|AsCommand\s*\(\s*['"]([^'"]{1,80})['"]\)/.exec(content);
   const commandName = commandNameM ? (commandNameM[1] ?? commandNameM[2] ?? commandNameM[3]) : undefined;
   const options: CommandOption[] = [];
-  const optRe = /->addOption\s*\(\s*['"](\w{1,60})['"]\s*(?:,\s*(?:['"]([^'"]{0,10})['"]\s*|null\s*))?(?:,\s*InputOption::VALUE_(\w{1,30}))?\s*(?:,\s*['"]([^'"]{0,200})['"]\s*)?(?:,\s*([^)]{0,80}))?\)/g;
+  // --dry-run and --no-interaction are ordinary option names, and \w skipped
+  // every one of them.
+  const optRe = /->addOption\s*\(\s*['"]([\w-]{1,60})['"]\s*(?:,\s*(?:['"]([^'"]{0,10})['"]\s*|null\s*))?(?:,\s*InputOption::VALUE_(\w{1,30}))?\s*(?:,\s*['"]([^'"]{0,200})['"]\s*)?(?:,\s*([^)]{0,80}))?\)/g;
   let m: RegExpExecArray | null;
   while ((m = optRe.exec(content)) !== null) {
     options.push({ name: m[1], shortcut: m[2] ?? undefined, mode: m[3] ?? 'NONE', description: m[4] ?? '', default: m[5]?.trim() });
   }
   const args: CommandArgument[] = [];
-  const argRe = /->addArgument\s*\(\s*['"](\w{1,60})['"]\s*(?:,\s*InputArgument::(\w{1,30}))?\s*(?:,\s*['"]([^'"]{0,200})['"]\s*)?(?:,\s*([^)]{0,80}))?\)/g;
+  const argRe = /->addArgument\s*\(\s*['"]([\w-]{1,60})['"]\s*(?:,\s*InputArgument::(\w{1,30}))?\s*(?:,\s*['"]([^'"]{0,200})['"]\s*)?(?:,\s*([^)]{0,80}))?\)/g;
   while ((m = argRe.exec(content)) !== null) {
     args.push({ name: m[1], mode: m[2] ?? 'OPTIONAL', description: m[3] ?? '', default: m[4]?.trim() });
   }

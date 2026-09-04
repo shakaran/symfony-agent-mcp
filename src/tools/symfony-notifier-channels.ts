@@ -77,9 +77,19 @@ function loadNotifierConfig(appPath: string): NotifierConfig | null {
 
     // Channels: chat_transports, sms_transports, email_transports, push_transports
     const channels: ChannelConfig[] = [];
+    // Symfony spells the chat and sms transports chatter_ and texter_; only the
+    // short spellings were read, so a real notifier.yaml declared no channels.
+    const TRANSPORT_KEYS: Record<string, string[]> = {
+      chat: ['chat_transports', 'chatter_transports'],
+      sms: ['sms_transports', 'texter_transports'],
+      email: ['email_transports'],
+      push: ['push_transports'],
+    };
     for (const key of ['chat', 'sms', 'email', 'push']) {
-      const transportKey = `${key}_transports`;
-      const transRaw = notifier[transportKey] as Record<string, unknown> | string[] | undefined;
+      const transportKey = TRANSPORT_KEYS[key].find((k) => notifier[k]);
+      const transRaw = transportKey
+        ? (notifier[transportKey] as Record<string, unknown> | string[] | undefined)
+        : undefined;
       if (!transRaw) continue;
       const transports = Array.isArray(transRaw) ? transRaw.map((v) => maskDsn(String(v))) : Object.values(transRaw).map((v) => maskDsn(String(v)));
       if (transports.length > 0) channels.push({ name: key, transports });

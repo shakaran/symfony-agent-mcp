@@ -183,7 +183,13 @@ function scanDoctrineYamls(appPath: string): DbalConnectionInfo[] {
     if (!connectionsSection) continue;
 
     const connBlock = connectionsSection[1];
-    const connBlockRegex = /^ {8}(\w[\w_]*):\s*\n((?:[ \t]{10,}[^\n]*\n)*)/gm;
+    // Eight spaces is the indentation of a connection name only when the file
+    // is written without the doctrine: root; take it from the block instead.
+    const indent = /^([ \t]+)\S/m.exec(connBlock)?.[1] ?? '        ';
+    const connBlockRegex = new RegExp(
+      `^${indent}(\\w[\\w_]*):\\s*\\n((?:[ \\t]{${indent.length + 1},}[^\\n]*\\n)*)`,
+      'gm',
+    );
     let m: RegExpExecArray | null;
     while ((m = connBlockRegex.exec(connBlock)) !== null) {
       results.push(analyzeConnection(m[1], m[2], relFile));
