@@ -68,7 +68,8 @@ function parseEmbeddable(filePath: string): Embeddable | null {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  if (!content.includes('#[Embeddable') && !content.includes('@Embeddable')) return null;
+  // Written with the mapping alias in practice: #[ORM\\Embeddable].
+  if (!/#\[[\w\\]{0,40}Embeddable\b/.test(content) && !content.includes('@Embeddable')) return null;
 
   const className = extractClassName(content);
   if (!className) return null;
@@ -94,7 +95,7 @@ function parseEntityEmbedded(filePath: string): EntityWithEmbedded | null {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  if (!content.includes('#[Embedded') && !content.includes('@Embedded')) return null;
+  if (!/#\[[\w\\]{0,40}Embedded\b/.test(content) && !content.includes('@Embedded')) return null;
 
   const className = extractClassName(content);
   if (!className) return null;
@@ -138,12 +139,13 @@ function loadEmbeddables(appPath: string): { embeddables: Embeddable[]; entities
     const content = safeRead(file, appPath) ?? '';
     if (!content) continue;
 
-    if (content.includes('#[Embeddable') || content.includes('@Embeddable')) {
+    // The alias is part of the attribute in practice: #[ORM\\Embeddable].
+    if (/#\[[\w\\]{0,40}Embeddable\b/.test(content) || content.includes('@Embeddable')) {
       const e = parseEmbeddable(file);
       if (e) embeddables.push(e);
     }
 
-    if (content.includes('#[Embedded') || content.includes('@Embedded')) {
+    if (/#\[[\w\\]{0,40}Embedded\b/.test(content) || content.includes('@Embedded')) {
       const e = parseEntityEmbedded(file);
       if (e) entities.push(e);
     }
