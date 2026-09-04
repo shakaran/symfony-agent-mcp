@@ -45,7 +45,7 @@ function parseValidationGroups(filePath: string, appPath: string): ValidationGro
   if (content.includes('namespace Symfony\\')) return null;
   const classM = /class\s+(\w+)/.exec(content);
   const groupNames: string[] = [];
-  for (const m of content.matchAll(/#\[Assert\\[A-Z]\w+[^]]*groups\s*:\s*\[([^\]]+)\]/g)) {
+  for (const m of content.matchAll(/#\[Assert\\[A-Z]\w+[^\]]*groups\s*:\s*\[([^\]]+)\]/g)) {
     for (const gm of m[1].matchAll(/['"]([^'"]+)['"]/g)) groupNames.push(gm[1]);
   }
   const formValidationGroups: string[][] = [];

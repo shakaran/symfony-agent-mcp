@@ -81,7 +81,7 @@ function parseResourceSecurity(filePath: string): ApiResourceSecurity | null {
   const allOps = [...WRITE_OPERATIONS, ...READ_OPERATIONS];
 
   for (const op of allOps) {
-    const pattern = new RegExp(`#\\[${op}[^]]*?(?:\\]|security[^\\]]*\\])`, 'gs');
+    const pattern = new RegExp(`#\\[${op}[^\\]]*?(?:\\]|security[^\\]]*\\])`, 'gs');
     for (const m of content.matchAll(pattern)) {
       const block = m[0];
       const securityM       = /security\s*:\s*['"]([^'"]+)['"]/.exec(block);
@@ -105,7 +105,7 @@ function parseResourceSecurity(filePath: string): ApiResourceSecurity | null {
 
   // If no per-operation attrs but #[ApiResource] found with security
   if (operations.length === 0 && content.includes('#[ApiResource')) {
-    const resourceSecM = /#\[ApiResource[^]]*security\s*:\s*['"]([^'"]+)['"]/.exec(content);
+    const resourceSecM = /#\[ApiResource[^\]]*security\s*:\s*['"]([^'"]+)['"]/.exec(content);
     if (!resourceSecM) {
       // Resource-level, assume all operations exist without security
       for (const op of allOps) {
@@ -115,7 +115,7 @@ function parseResourceSecurity(filePath: string): ApiResourceSecurity | null {
   }
 
   // Sensitive groups check
-  const normCtxM = /normalizationContext[^]]*groups[^]]*\[([^\]]+)\]/.exec(content);
+  const normCtxM = /normalizationContext[^\]]*groups[^\]]*\[([^\]]+)\]/.exec(content);
   const hasSensitiveGroups = normCtxM ? SENSITIVE_FIELD_PATTERNS.some((p) =>
     normCtxM[1].toLowerCase().includes(p)
   ) : false;

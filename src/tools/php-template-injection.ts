@@ -207,6 +207,15 @@ function loadAll(appPath: string): TemplateInjectionInfo[] {
     }
   }
 
+  // Templates live in templates/, not in src/, so scanning src/ alone read
+  // none of the Twig in a Symfony application.
+  const templatesDir = path.join(appPath, 'templates');
+  if (fs.existsSync(templatesDir)) {
+    for (const f of collectFiles(templatesDir, appPath, ['.twig'])) {
+      results.push(...analyzeTwigFile(f, appPath));
+    }
+  }
+
   return results.sort((a, b) => {
     const sev: Record<string, number> = { critical: 0, high: 1, medium: 2 };
     return (sev[a.severity] ?? 3) - (sev[b.severity] ?? 3) || a.file.localeCompare(b.file) || a.line - b.line;
@@ -294,7 +303,7 @@ export function getPhpTemplateInjectionTools(): Array<{
   return [
     {
       name: 'list_php_template_injection',
-      description: 'Scan src/**/*.php and src/**/*.twig for template injection: Twig createTemplate() with user input (SSTI), eval() with user data (RCE), Smarty::display() with user-controlled path, {{ var | raw }} in Twig on suspect variables, custom renderer with superglobals',
+      description: 'Scan src/**/*.php, src/**/*.twig and templates/**/*.twig for template injection: Twig createTemplate() with user input (SSTI), eval() with user data (RCE), Smarty::display() with user-controlled path, {{ var | raw }} in Twig on suspect variables, custom renderer with superglobals',
       inputSchema: { type: 'object', properties: prop, required: ['app_path'] },
     },
     {

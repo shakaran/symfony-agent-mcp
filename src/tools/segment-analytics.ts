@@ -127,7 +127,7 @@ function buildSegmentAnalyticsInfos(appPath: string): SegmentAnalyticsInfo[] {
 
     // PII in properties array: detect keys like email, phone, ssn, credit_card
     const piiKeys = ['email', 'phone', 'ssn', 'credit_card', 'creditCard', 'social_security', 'dob', 'date_of_birth'];
-    const propertiesMatches = [...content.matchAll(/['"]properties['"]\s*=>\s*\[([^]]{0,800})/g)];
+    const propertiesMatches = [...content.matchAll(/['"]properties['"]\s*=>\s*\[([^\]]{0,800})/g)];
     for (const pMatch of propertiesMatches) {
       const propBlock = pMatch[1];
       const foundPii = piiKeys.filter((k) => propBlock.includes(`'${k}'`) || propBlock.includes(`"${k}"`));

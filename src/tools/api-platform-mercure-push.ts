@@ -117,7 +117,9 @@ function parseResourceMercure(filePath: string, appPath: string): MercurePushRes
   const isPrivate      = block.includes("'private' => true") || block.includes('"private" => true');
 
   const customTopics: string[] = [];
-  const topicsM = /topics\s*=>\s*\[([^\]]+)\]/.exec(block);
+  // The key is written 'topics' => [...] in a PHP array and topics: [...] as a
+  // named argument; neither has topics immediately before the arrow.
+  const topicsM = /['"]?topics['"]?\s*(?:=>|:)\s*\[([^\]]+)\]/.exec(block);
   if (topicsM) {
     for (const m of topicsM[1].matchAll(/['"]([^'"]+)['"]/g)) customTopics.push(m[1]);
   }

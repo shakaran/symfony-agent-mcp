@@ -119,15 +119,17 @@ function scanCachedEntities(appPath: string): CachedEntity[] {
   for (const file of getAllPhpFiles(srcDir)) {
     let content = '';
     try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
-    if (!content.includes('#[Cache') && !content.includes('@Cache')) continue;
+    // Doctrine's own documentation writes #[ORM\Cache]; only the bare
+    // spelling was recognised, so a mapped entity was never seen as cached.
+    if (!/#\[(?:ORM\\)?Cache/.test(content) && !content.includes('@Cache')) continue;
     if (!content.includes('Entity')) continue;
 
     const classM = /class\s+(\w+)/.exec(content);
     if (!classM) continue;
 
-    const regionM = /#\[Cache[^)]*region\s*:\s*['"]([^'"]+)['"]/.exec(content);
-    const usageM  = /#\[Cache[^)]*usage\s*:\s*['"]?([A-Z_]+)/.exec(content) ??
-                    /#\[Cache[^)]*CacheUsage::(\w+)/.exec(content);
+    const regionM = /#\[(?:ORM\\)?Cache[^)]*region\s*:\s*['"]([^'"]+)['"]/.exec(content);
+    const usageM  = /#\[(?:ORM\\)?Cache[^)]*usage\s*:\s*['"]?([A-Z_]+)/.exec(content) ??
+                    /#\[(?:ORM\\)?Cache[^)]*CacheUsage::(\w+)/.exec(content);
 
     const hasCachedAssociations =
       /#\[Cache[^)]*\)\s*#\[(?:ManyToOne|OneToMany|ManyToMany|OneToOne)/.test(content);

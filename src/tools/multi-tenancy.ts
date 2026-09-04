@@ -78,7 +78,7 @@ function scanTenantEntities(appPath: string): TenantEntity[] {
 
     const isTenantRoot = TENANT_NAMES.some((n) => className === n || className.endsWith(n));
     const hasTenantRelation = TENANT_NAMES.some((n) =>
-      new RegExp(`@ORM\\\\ManyToOne.*${n}|#\\[ORM\\\\ManyToOne[^]]*${n}|\\$tenant\\b|\\$organisation\\b|\\$organization\\b`, 'i').test(content)
+      new RegExp(`@ORM\\\\ManyToOne.*${n}|#\\[ORM\\\\ManyToOne[^\\]]*${n}|\\$tenant\\b|\\$organisation\\b|\\$organization\\b`, 'i').test(content)
     );
 
     if (isTenantRoot || hasTenantRelation) {

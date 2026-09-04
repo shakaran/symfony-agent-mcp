@@ -67,7 +67,9 @@ function buildSmsNotifierInfos(appPath: string): SmsNotifierInfo[] {
     if (smsTransportMatch.test(content)) {
       const lines = content.split('\n');
       for (const line of lines) {
-        const dsnLine = /^\s+\w[\w.]*\s*:\s*(.+)$/.exec(line.trim());
+        // The line is trimmed first, so requiring leading whitespace matched
+        // nothing and no transport was ever read.
+        const dsnLine = /^\w[\w.]*\s*:\s*(.+)$/.exec(line.trim());
         if (!dsnLine) continue;
         const dsn = dsnLine[1].trim();
         const issues: string[] = [];

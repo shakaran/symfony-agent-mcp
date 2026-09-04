@@ -60,7 +60,7 @@ function analyseFileUploadFile(content: string, relFile: string): FileUploadVali
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     // Match $_FILES['something']['type'] or $_FILES[$var]['type']
-    if (/\$_FILES\s*[['"]?[^]]*['"]]?\s*\[\s*['"]type['"]\s*]/.test(line) || /\$_FILES\[[^\]]*]\s*\[\s*['"]type['"]\s*]/.test(line)) {
+    if (/\$_FILES\s*[['"]?[^\]]*['"]]?\s*\[\s*['"]type['"]\s*]/.test(line) || /\$_FILES\[[^\]]*]\s*\[\s*['"]type['"]\s*]/.test(line)) {
       infos.push({
         file: relFile,
         line: i + 1,

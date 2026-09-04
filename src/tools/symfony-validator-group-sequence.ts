@@ -47,8 +47,12 @@ function getAllPhpFiles(dir: string): string[] {
 
 function extractSequenceGroups(content: string): string[] {
   const groups: string[] = [];
-  // Match: new GroupSequence(['GroupA', 'GroupB', ...])
-  const seqMatch = /new\s+GroupSequence\s*\(\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/.exec(content);
+  // On a class the sequence is an attribute, #[Assert\GroupSequence([...])];
+  // new GroupSequence([...]) is only how a provider returns one, so reading
+  // the second spelling alone found no sequence on a mapped class.
+  const seqMatch =
+    /(?:new\s+GroupSequence|#\[(?:Assert\\)?GroupSequence)\s*\(\s*\[([^\][]{0,500}(?:\[[^\][]{0,300}\][^\][]{0,500}){0,40})\]/
+      .exec(content);
   if (!seqMatch) return groups;
 
   const inner = seqMatch[1];

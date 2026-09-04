@@ -111,11 +111,13 @@ function scanFormChoiceValues(appPath: string): FormChoiceValueInfo[] {
       issues.push(`choice_label callback returns a hardcoded string literal — consider using $this->translator for i18n`);
     }
 
-    if (content.includes("'choice_attr'") || content.includes('"choice_attr"') && hasNonArrayChoiceAttr(content)) {
+    // && binds tighter than ||, so any file naming choice_attr was reported and
+    // hasNonArrayChoiceAttr() was never consulted.
+    if ((content.includes("'choice_attr'") || content.includes('"choice_attr"')) && hasNonArrayChoiceAttr(content)) {
       issues.push(`choice_attr callback may not return an array — will cause TypeError when rendering`);
     }
 
-    if (formType === 'EntityType' && content.includes("'choices'") || content.includes('"choices"')) {
+    if (formType === 'EntityType' && (content.includes("'choices'") || content.includes('"choices"'))) {
       const intKeyPattern = /['"]choices['"]\s*=>\s*\[\s*\d{1,10}\s*=>/.test(content);
       if (intKeyPattern) {
         issues.push(`EntityType choices with integer keys — risk of id collision between different entity sets`);

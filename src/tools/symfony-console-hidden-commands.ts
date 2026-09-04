@@ -101,7 +101,7 @@ function scanCommands(appPath: string): CommandInfo[] {
     const name = extractCommandName(content);
     const isHidden = content.includes('->setHidden(true)') ||
                      /setHidden\s*\(\s*true\s*\)/.test(content) ||
-                     /#\[AsCommand[^]]*hidden\s*:\s*true/.test(content);
+                     /#\[AsCommand[^\]]*hidden\s*:\s*true/.test(content);
     const aliases = extractAliases(content);
 
     // Description detection
