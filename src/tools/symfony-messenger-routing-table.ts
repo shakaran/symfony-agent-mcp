@@ -44,33 +44,82 @@ function getAllPhpFiles(dir: string): string[] {
   return files;
 }
 
+/**
+ * The lines under a key, and the indentation its children sit at.
+ *
+ * Anchoring a block to column zero works only for a file whose top-level key
+ * is the one being read. In a messenger.yaml everything lives under
+ * "framework:", so a block anchored that way runs to the end of the file and
+ * swallows whatever comes after it.
+ */
+function sectionUnder(content: string, key: string): { body: string; childIndent: number } | null {
+  const header = new RegExp(`^([ \\t]*)${key}\\s*:\\s*$`, 'm').exec(content);
+  if (!header) return null;
+
+  const indent = header[1].length;
+  const rest = content.slice(header.index + header[0].length).split('\n');
+  const kept: string[] = [];
+  let childIndent = -1;
+
+  for (const line of rest) {
+    if (!line.trim() || line.trim().startsWith('#')) { kept.push(line); continue; }
+    const lineIndent = line.length - line.trimStart().length;
+    if (lineIndent <= indent) break;
+    if (childIndent === -1) childIndent = lineIndent;
+    kept.push(line);
+  }
+
+  if (childIndent === -1) return null;
+
+  return { body: kept.join('\n'), childIndent };
+}
+
 function extractTransportNames(content: string): string[] {
   const names: string[] = [];
-  const transportsBlock = /^[ \t]*transports:\s*\n([\s\S]*?)(?=^[^\s#]|(?![\s\S]))/m.exec(content);
-  if (!transportsBlock) return names;
-  const block = transportsBlock[1];
-  const nameRe = /^[ \t]{4,8}(\S[^:\n]{0,120}):/gm;
+  const section = sectionUnder(content, 'transports');
+  if (!section) return names;
+
+  const nameRe = new RegExp(`^[ \\t]{${section.childIndent}}(\\S[^:\\n]{0,120}):`, 'gm');
   let m: RegExpExecArray | null;
-  while ((m = nameRe.exec(block)) !== null) {
-    const candidate = m[1].trim();
+  while ((m = nameRe.exec(section.body)) !== null) {
+    const candidate = m[1].trim().replace(/^['"]|['"]$/g, '');
     if (candidate && !candidate.startsWith('#')) names.push(candidate);
   }
+
   return names;
 }
 
 function extractRoutingEntries(content: string): Array<{ messageClass: string; transports: string[] }> {
   const entries: Array<{ messageClass: string; transports: string[] }> = [];
-  const routingBlock = /^[ \t]*routing:\s*\n([\s\S]*?)(?=^[^\s#]|(?![\s\S]))/m.exec(content);
-  if (!routingBlock) return entries;
-  const block = routingBlock[1];
+  const section = sectionUnder(content, 'routing');
+  if (!section) return entries;
 
-  // Each routing entry: "    'App\Message\Foo': async" or with array transport list
-  const entryRe = /^[ \t]{4,8}['"]([\w\\*]{1,200})['"]:\s*([^\n]{0,300})/gm;
+  // A message class is as often written unquoted as quoted, and the list of
+  // transports may follow on the next lines rather than on this one.
+  const entryRe = new RegExp(`^[ \\t]{${section.childIndent}}['"]?([\\w\\\\*.]{1,200})['"]?\\s*:\\s*([^\\n]{0,300})`, 'gm');
+  const lines = section.body.split('\n');
+
   let m: RegExpExecArray | null;
-  while ((m = entryRe.exec(block)) !== null) {
+  while ((m = entryRe.exec(section.body)) !== null) {
     const msgClass = m[1].trim();
-    const rawTransport = m[2].trim();
-    // Could be: "async", "[async, failed]", "- async"
+    let rawTransport = m[2].trim();
+
+    // "App\Message\Foo:" on its own, with a list under it.
+    if (!rawTransport) {
+      const startLine = section.body.slice(0, m.index).split('\n').length - 1;
+      const collected: string[] = [];
+      for (const line of lines.slice(startLine + 1)) {
+        if (!line.trim()) continue;
+        const indent = line.length - line.trimStart().length;
+        if (indent <= section.childIndent) break;
+        if (line.trim().startsWith('-')) collected.push(line.trim().replace(/^-\s*/, '').replace(/['"]/g, ''));
+      }
+      if (collected.length > 0) {
+        entries.push({ messageClass: msgClass, transports: collected });
+        continue;
+      }
+    }
+
     const transports: string[] = [];
     if (rawTransport.startsWith('[')) {
       const inner = rawTransport.replace(/[[\]]/g, '');
@@ -82,10 +131,12 @@ function extractRoutingEntries(content: string): Array<{ messageClass: string; t
       const clean = rawTransport.replace(/^-\s*/, '').replace(/['"]/g, '').trim();
       if (clean) transports.push(clean);
     } else if (rawTransport) {
-      transports.push(rawTransport.replace(/['"]/g, ''));
+      rawTransport = rawTransport.split('#')[0].trim();
+      if (rawTransport) transports.push(rawTransport.replace(/['"]/g, ''));
     }
     entries.push({ messageClass: msgClass, transports });
   }
+
   return entries;
 }
 

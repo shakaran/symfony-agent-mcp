@@ -61,13 +61,22 @@ function countLines(block: string): number {
 }
 
 function extractHookBlock(content: string, propName: string, hookType: 'get' | 'set'): string | null {
-  // Match: get { ... } or set { ... } after property name
+  // A hook is written either as a block or as an expression, and the setter
+  // may declare its parameter: set (float $value) { ... } is as valid as
+  // set { ... }. Only the block form was matched here.
+  const arrow = new RegExp(
+    `\\$${propName}\\s*\\{[^{}]{0,200}\\b${hookType}\\s*(?:\\([^)]{0,120}\\))?\\s*=>([^;]{0,400});`,
+    's'
+  );
+  const arrowMatch = arrow.exec(content);
+
   const pattern = new RegExp(
-    `\\$${propName}[^;{]{0,200}\\b${hookType}\\s*\\{`,
+    `\\$${propName}[^;{]{0,200}\\b${hookType}\\s*(?:\\([^)]{0,120}\\))?\\s*\\{`,
     's'
   );
   const start = pattern.exec(content);
-  if (!start) return null;
+  if (!start) return arrowMatch ? arrowMatch[0] : null;
+  if (arrowMatch && arrowMatch.index < start.index) return arrowMatch[0];
 
   let depth = 0;
   let idx = start.index + start[0].length - 1;
@@ -87,7 +96,7 @@ function parsePropertyHooks(filePath: string): PropertyHookInfo | null {
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
   // Quick filter — must contain a hook keyword next to a property
-  if (!/\b(get|set)\s*\{/.test(content)) return null;
+  if (!/\b(get|set)\s*(?:\([^)]{0,120}\))?\s*(?:\{|=>|;)/.test(content)) return null;
   if (!/\bclass\s+/.test(content)) return null;
 
   const classMatch = /(?:abstract\s+)?class\s+(\w{1,100})/.exec(content);
@@ -98,7 +107,7 @@ function parsePropertyHooks(filePath: string): PropertyHookInfo | null {
 
   // Detect property lines with hook blocks:
   // Pattern: (abstract|readonly)? (public|protected|private)? TYPE? $propName { get { } set { } }
-  const propPattern = /(?:(?:abstract|readonly|public|protected|private|static)\s+){0,5}\$(\w{1,80})\s*\{[^}]{0,50}(?:get|set)\s*\{/gs;
+  const propPattern = /(?:(?:abstract|readonly|public|protected|private|static)\s+){0,5}\$(\w{1,80})\s*\{[^{}]{0,120}(?:get|set)\s*(?:\([^)]{0,120}\))?\s*(?:\{|=>|;)/gs;
 
   const properties: PropertyHookEntry[] = [];
   const classIssues: string[] = [];
