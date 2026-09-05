@@ -416,9 +416,95 @@ class CatalogueClient
 `,
     });
 
+    const withPacts = appWith('contract-testing-pacts', {
+      'pacts/acme-catalogue.json': JSON.stringify({ consumer: { name: 'acme' }, provider: { name: 'catalogue' } }, null, 2),
+      'src/Service/CatalogueClient.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class CatalogueClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+}
+`,
+    });
+
+    const full = appWith('contract-testing-full', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'pact-foundation/pact-php': '^9.0' },
+      }, null, 2),
+      'tests/Contract/CatalogueConsumerTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use PhpPact\\Consumer\\ConsumerPactBuilder;
+use PHPUnit\\Framework\\TestCase;
+
+class CatalogueConsumerTest extends TestCase
+{
+    public function testItFetchesAProduct(): void
+    {
+        $builder = new ConsumerPactBuilder($this->config);
+        $builder->newInteraction();
+    }
+}
+`,
+      'tests/Contract/CatalogueProviderTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use PhpPact\\Standalone\\ProviderVerifier\\ProviderVerifier;
+use PHPUnit\\Framework\\TestCase;
+
+class CatalogueProviderTest extends TestCase
+{
+    public function testItHonoursTheContract(): void
+    {
+        $verifier = new ProviderVerifier($this->config);
+        $verifier->verify();
+    }
+}
+`,
+      'tests/Contract/MockServerTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use PhpPact\\Standalone\\MockService\\MockServer;
+use PHPUnit\\Framework\\TestCase;
+
+class MockServerTest extends TestCase
+{
+    public function testTheMockServerStarts(): void
+    {
+        $server = new MockServer($this->config);
+        $server->start();
+    }
+}
+`,
+      '.github/workflows/contract.yml': `name: contract
+on: [push]
+jobs:
+    verify:
+        runs-on: ubuntu-latest
+        env:
+            PACT_BROKER_URL: https://pact.example.com
+        steps:
+            - run: vendor/bin/phpunit --testsuite contract
+`,
+    });
+
     const text = await runModule('api-contract-testing.js', app);
+    const pacts = await runModule('api-contract-testing.js', withPacts);
+    const fullText = await runModule('api-contract-testing.js', full);
 
     expect(text).toContain('contract testing');
+    expect(pacts).toContain('pact');
+    expect(fullText).toContain('ProviderVerifier');
   });
 });
 
@@ -492,5 +578,366 @@ version: 0.1.0
     expect(text).toContain('acme');
     expect(text).toContain('postgresql');
     expect(text).not.toContain('too-deep');
+  });
+});
+
+describe('azure pipelines', () => {
+  test('a pipeline with stages, a plain-text secret and a job with no timeout', async () => {
+    const app = appWith('azure-stages', {
+      'azure-pipelines.yml': `trigger:
+    - main
+
+variables:
+    DB_PASSWORD: hunter2-in-the-yaml
+    BUILD_CONFIGURATION: release
+    - group: production-secrets
+
+stages:
+    - stage: build
+      jobs:
+          - job: compile
+            steps:
+                - script: composer install --no-dev
+                - script: export API_TOKEN=abcdef0123456789 && bin/deploy
+          - job: test
+            timeoutInMinutes: 30
+            steps:
+                - script: vendor/bin/phpunit
+    - stage: notify
+      displayName: Notify the team
+`,
+    });
+
+    const text = await runModule('azure-pipelines-config.js', app);
+
+    expect(text).toContain('DB_PASSWORD');
+  });
+
+  test('a flat pipeline of jobs, and one that is only steps', async () => {
+    const jobs = appWith('azure-flat', {
+      'azure-pipelines.yml': `trigger:
+    branches:
+        include:
+            - main
+
+pool:
+    vmImage: ubuntu-latest
+
+jobs:
+    - job: build
+      steps:
+          - script: composer install
+    - job: deploy
+      timeoutInMinutes: 20
+      steps:
+          - script: bin/deploy
+`,
+    });
+    const steps = appWith('azure-steps', {
+      'azure-pipelines.yaml': `trigger:
+    branches:
+        include:
+            - main
+
+steps:
+    - script: composer install
+    - script: vendor/bin/phpunit
+`,
+    });
+
+    const one = await runModule('azure-pipelines-config.js', jobs);
+    const two = await runModule('azure-pipelines-config.js', steps);
+
+    expect(one).toContain('build');
+    expect(two).toContain('timeoutInMinutes');
+  });
+});
+
+describe('cloudflare', () => {
+  test('a worker whose compatibility date is old, with secrets in vars', async () => {
+    const app = appWith('cloudflare-toml', {
+      'wrangler.toml': `name = "acme-worker"
+main = "src/index.js"
+compatibility_date = "2021-05-10"
+
+[vars]
+API_TOKEN = "abcdef0123456789"
+PUBLIC_URL = "https://example.com"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "0123456789abcdef"
+`,
+      '.dev.vars': `API_TOKEN=abcdef0123456789
+PUBLIC_URL=https://example.com
+`,
+    });
+
+    const text = await runModule('cloudflare-config.js', app);
+
+    expect(text).toContain('compatibility_date');
+    expect(text).toContain('API_TOKEN');
+  });
+
+  test('a pages project, a wrangler.json and one that does not parse', async () => {
+    const pages = appWith('cloudflare-pages', {
+      'wrangler.toml': `name = "acme-site"
+pages_build_output_dir = "public"
+compatibility_date = "2026-01-15"
+`,
+    });
+    const json = appWith('cloudflare-json', {
+      'wrangler.json': JSON.stringify({
+        name: 'acme-worker',
+        compatibility_date: '2021-06-01',
+        vars: { API_SECRET: 'shhh', PUBLIC_URL: 'https://example.com' },
+      }, null, 2),
+    });
+    const broken = appWith('cloudflare-broken', { 'wrangler.json': '{ nope\n' });
+
+    const one = await runModule('cloudflare-config.js', pages);
+    const two = await runModule('cloudflare-config.js', json);
+    const three = await runModule('cloudflare-config.js', broken);
+
+    expect(one).toContain('pages');
+    expect(two).toContain('API_SECRET');
+    expect(three).toContain('not valid JSON');
+  });
+});
+
+describe('sessions', () => {
+  test('a session configured in the least safe way', async () => {
+    const app = appWith('session-unsafe', {
+      'config/packages/framework.yaml': `framework:
+    session:
+        enabled: true
+        handler_id: session.handler.native_file
+        name: ACMESESSID
+        save_path: 'redis://app:s3cret@cache:6379'
+        cookie_secure: false
+        cookie_httponly: false
+        cookie_samesite: none
+        cookie_lifetime: 0
+        cookie_domain: .example.com
+        gc_maxlifetime: 259200
+`,
+    });
+
+    const text = await runModule('session-config.js', app);
+
+    expect(text).toContain('cookie_secure');
+    expect(text).not.toContain('s3cret');
+  });
+
+  test('each session handler the tool knows', async () => {
+    const handlers = [
+      ['memcached', 'session.handler.memcached'],
+      ['pdo', 'session.handler.pdo'],
+      ['filesystem', 'session.handler.filesystem'],
+      ['null', 'session.handler.null'],
+      ['redis', 'snc_redis.session.handler'],
+    ];
+
+    for (const [name, handlerId] of handlers) {
+      const app = appWith(`session-${name}`, {
+        'config/packages/framework.yaml': `framework:
+    session:
+        enabled: true
+        handler_id: ${handlerId}
+        cookie_secure: true
+        cookie_httponly: true
+        cookie_samesite: lax
+        gc_maxlifetime: 1440
+`,
+      });
+
+      const text = await runModule('session-config.js', app);
+
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('asset mapper', () => {
+  test('an importmap with cdn entries, css and no integrity', async () => {
+    const entries = Array.from({ length: 110 }, (_, i) => `    'pkg-${i}' => ['path' => 'vendor/pkg-${i}/index.js'],`).join('\n');
+    const app = appWith('asset-mapper', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/asset-mapper': '^7.0' },
+      }, null, 2),
+      'assets/importmap.php': `<?php
+
+return [
+    'app' => ['path' => './assets/app.js', 'entrypoint' => true],
+    'bootstrap' => ['url' => 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.min.js'],
+    'bootstrap/css' => ['url' => 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css'],
+${entries}
+];
+`,
+      'config/packages/asset_mapper.yaml': `framework:
+    asset_mapper:
+        paths:
+            - assets/
+            - vendor/acme/ui/assets/
+        missing_import_mode: strict
+`,
+    });
+
+    const text = await runModule('symfony-asset-mapper-ext.js', app);
+
+    expect(text).toContain('integrity');
+  });
+
+  test('a single asset path written as a scalar', async () => {
+    const app = appWith('asset-mapper-scalar', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/asset-mapper': '^7.0' },
+      }, null, 2),
+      'assets/importmap.php': `<?php
+
+return [
+    'app' => ['path' => './assets/app.js', 'entrypoint' => true],
+];
+`,
+      'config/packages/framework.yaml': `framework:
+    asset_mapper:
+        paths: assets/
+        missing_import_mode: warn
+`,
+    });
+
+    const text = await runModule('symfony-asset-mapper-ext.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('cache pools', () => {
+  test('pruneable pools with nothing scheduled to prune them', async () => {
+    const app = appWith('cache-prune', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        pools:
+            cache.files:
+                adapter: cache.adapter.filesystem
+                directory: '%kernel.cache_dir%/pools'
+            cache.more_files:
+                adapter: cache.adapter.filesystem
+                directory: '%kernel.cache_dir%/pools'
+            cache.database:
+                adapter: cache.adapter.pdo
+            cache.orm:
+                adapter: cache.adapter.doctrine_dbal
+            cache.local:
+                adapter: cache.adapter.apcu
+            cache.memory:
+                adapter: cache.adapter.array
+`,
+      'src/Cache/WarmablePool.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\Cache\\PruneableInterface;
+
+class WarmablePool implements PruneableInterface
+{
+    public function prune(): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+    fs.mkdirSync(path.join(app, 'etc', 'cron.d'), { recursive: true });
+    fs.writeFileSync(path.join(app, 'etc', 'cron.d', 'acme'), '# nothing scheduled here\n');
+
+    const text = await runModule('symfony-cache-pool-prune.js', app);
+
+    expect(text).toContain('cache.files');
+    expect(text).toContain('shares directory');
+  });
+
+  test('an application that does schedule the prune', async () => {
+    const app = appWith('cache-prune-scheduled', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        pools:
+            cache.files:
+                adapter: cache.adapter.filesystem
+`,
+      'crontab': `0 3 * * * php /srv/app/bin/console cache:pool:prune\n`,
+    });
+
+    const text = await runModule('symfony-cache-pool-prune.js', app);
+
+    expect(text).toContain('cache.files');
+  });
+});
+
+describe('column charsets', () => {
+  test('columns in utf8 and latin1, with and without a collation', async () => {
+    const app = appWith('column-charset', {
+      'src/Entity/Comment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'comment')]
+class Comment
+{
+    #[ORM\\Column(type: 'string', length: 255, options: ['charset' => 'utf8', 'collation' => 'utf8_general_ci'])]
+    private string $title = '';
+
+    #[ORM\\Column(type: 'text', options: ['charset' => 'latin1'])]
+    private string $body = '';
+
+    #[ORM\\Column(type: 'string', length: 64, options: ['charset' => 'utf8mb4', 'collation' => 'utf8mb4_unicode_ci'])]
+    private string $author = '';
+
+    #[ORM\\Column(type: 'string', length: 32)]
+    private string $status = '';
+}
+`,
+    });
+
+    const annotated = appWith('column-charset-annotations', {
+      'src/Entity/LegacyPost.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\Table(name="legacy_post")
+ */
+class LegacyPost
+{
+    /**
+     * @ORM\\Column(type="string", length=255, options={"charset":"utf8"})
+     */
+    private $title;
+
+    /**
+     * @ORM\\Column(type="text", options={"charset":"latin1"})
+     */
+    private $body;
+
+    /**
+     * @ORM\\Column(type="string", length=64, options={"charset":"utf8mb4","collation":"utf8mb4_unicode_ci"})
+     */
+    private $author;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-column-charset.js', app);
+    const annotatedText = await runModule('doctrine-column-charset.js', annotated);
+
+    expect(text).toContain('Comment');
+    expect(annotatedText).toContain('LegacyPost');
+    expect(text).toContain('utf8mb4');
   });
 });

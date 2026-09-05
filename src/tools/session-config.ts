@@ -149,9 +149,11 @@ export function listSessionConfig(appPath: string): McpToolResult {
 
     text += `\nHandler:           ${handlerLabel}\n`;
     if (cfg.savePath) {
-      const safeSavePath = cfg.savePath.replace(
-        /([?&](?:auth|password|token|secret|key)=)[^&\s]+/gi, '$1***'
-      );
+      // A save_path is a DSN: redis://user:pass@host. Only the query-string
+      // form was masked, so the credentials in the authority were printed.
+      const safeSavePath = cfg.savePath
+        .replace(/([?&](?:auth|password|token|secret|key)=)[^&\s]+/gi, '$1***')
+        .replace(/(:\/\/)[^@\s/]{1,200}@/g, '$1***@');
       text += `Save path:         ${safeSavePath}\n`;
     }
     if (cfg.name)     text += `Cookie name:       ${cfg.name}\n`;

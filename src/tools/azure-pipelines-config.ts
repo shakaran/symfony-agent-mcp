@@ -56,7 +56,9 @@ function parseAzurePipelinesYaml(content: string, relPath: string): AzurePipelin
   }
 
   // variables — check for secrets in plain text
-  const varsMatch = content.match(/^variables\s*:([\s\S]{0,2000}?)(?=^stages\s*:|^jobs\s*:|^steps\s*:|^pool\s*:|$)/m);
+  // $ under the m flag matches at the end of the first line, so the block
+  // came back empty and no variable was ever examined.
+  const varsMatch = content.match(/^variables\s*:([\s\S]{0,2000}?)(?=^stages\s*:|^jobs\s*:|^steps\s*:|^pool\s*:|$(?![\s\S]))/m);
   if (varsMatch) {
     const varsBlock = varsMatch[1];
     const lines = varsBlock.split('\n');
