@@ -38,7 +38,9 @@ function parseChartYaml(content: string, relPath: string): HelmChartInfo[] {
   results.push({ file: relPath, chart: chartName, version: chartVersion, setting: `appVersion: ${appVersion}`, issues: [] });
 
   // dependencies
-  const depsMatch = content.match(/^dependencies\s*:([\s\S]{0,2000}?)(?=^[a-z]|$)/m);
+  // With the m flag $ matches at the end of every line, so the lazy capture
+  // stopped on the first one and the dependency list came back empty.
+  const depsMatch = content.match(/^dependencies\s*:([\s\S]{0,2000}?)(?=^[a-z]|$(?![\s\S]))/m);
   if (depsMatch) {
     const depLines = depsMatch[1].split('\n');
     for (const line of depLines) {
@@ -73,7 +75,11 @@ function parseValuesYaml(content: string, relPath: string, chartName: string): H
   }
 
   // resources.limits
-  const hasResourceLimits = /resources\s*:[^#\n]{0,200}limits\s*:/s.test(content);
+  // resources: and limits: are on separate lines in every values.yaml, and
+  // [^#\n] could not cross the line break, so the limits were never seen.
+  const hasResourceLimits =
+    /resources\s*:[ \t]*\n(?:[ \t]+[^\n]{0,300}\n){0,10}?[ \t]+limits\s*:/.test(content) ||
+    /resources\s*:[^#\n]{0,200}limits\s*:/.test(content);
   if (!hasResourceLimits) {
     results.push({
       file: relPath,

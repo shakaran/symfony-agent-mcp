@@ -50,6 +50,7 @@ afterAll(() => {
 function buildApp(dir: string, lines: string[], own: ModuleFacts): void {
   const { paths: ownPaths, envNames, packages } = own;
   const line = lines.join('\n        ');
+  const comment = line.replace(/[\n#]/g, ' ');
   const write = (rel: string, content: string): void => {
     const full = path.join(dir, rel);
     try {
@@ -64,10 +65,15 @@ function buildApp(dir: string, lines: string[], own: ModuleFacts): void {
   // The packages this module gates on, or it returns before doing anything.
   const require_: Record<string, string> = { 'php': '>=8.2', 'symfony/framework-bundle': '^7.0' };
   for (const name of packages) require_[name] = '^1.0';
-  write('composer.json', JSON.stringify({ name: 'acme/app', require: require_ }, null, 2));
+  write('composer.json', JSON.stringify({
+    name: 'acme/app',
+    require: require_,
+    scripts: { 'post-install-cmd': comment.slice(0, 120) },
+  }, null, 2));
   write('composer.lock', JSON.stringify({
     'content-hash': '0'.repeat(32),
     packages: Object.keys(require_).map((name) => ({ name, version: 'v1.0.0' })),
+    'packages-dev': [{ name: 'phpunit/phpunit', version: '11.0.0' }],
   }, null, 2));
   // The directory a class sits in decides which module reads it at all.
   for (const [dir_, cls] of [
@@ -113,7 +119,6 @@ function buildApp(dir: string, lines: string[], own: ModuleFacts): void {
 
   // The same line again wherever else the modules read, since which file a
   // module opens is as particular as what it looks for inside it.
-  const comment = line.replace(/[\n#]/g, ' ');
   const hashed = `# ${comment}\n`;
   write('k8s/deployment.yaml', `apiVersion: apps/v1\nkind: Deployment\n${hashed}`);
   write('.github/workflows/ci.yml', `name: ci\non: [push]\njobs:\n    build:\n        runs-on: ubuntu-latest\n${hashed}`);
@@ -163,7 +168,14 @@ function buildApp(dir: string, lines: string[], own: ModuleFacts): void {
   write('src/Twig/VocabularyExtension.php', `<?php\n\nnamespace App\\Twig;\n\nclass VocabularyExtension\n{\n    public function run(): void\n    {\n        ${line}\n    }\n}\n`);
   // And wherever this module says it reads, which is the only way to feed one
   // that opens a single file nobody else does.
+  // Written above with the packages this module gates on and the variables it
+  // reads. Rewriting them here as a note took the gate away, and everything
+  // behind "package not installed" or "variable not set" stopped being
+  // reachable at all.
+  const KEEP = new Set(['composer.json', 'composer.lock', '.env', '.env.local', '.env.dist', '.env.prod']);
+
   for (const rel of ownPaths) {
+    if (KEEP.has(rel)) continue;
     const ext = /\.([a-z0-9]+)$/i.exec(rel)?.[1]?.toLowerCase() ?? '';
     if (ext === 'php') {
       write(rel, `<?php\n\n// ${comment}\n\n${line}\n`);

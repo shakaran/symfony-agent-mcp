@@ -73,7 +73,8 @@ function buildPhpspecConfigInfos(appPath: string): PhpspecConfigInfo[] {
     });
   } else {
     // Parse suites section
-    const suitesMatch = configContent.match(/^suites:([\s\S]*?)(?:^[a-z]|$)/m);
+    // $ with the m flag ends the section at the first line break.
+    const suitesMatch = configContent.match(/^suites:([\s\S]*?)(?:^[a-z]|$(?![\s\S]))/m);
     if (suitesMatch) {
       const suitesContent = suitesMatch[1];
       const suiteNames = suitesContent.match(

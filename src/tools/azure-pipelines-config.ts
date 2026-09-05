@@ -42,7 +42,8 @@ function parseAzurePipelinesYaml(content: string, relPath: string): AzurePipelin
   }
 
   // pool
-  const poolMatch = content.match(/^pool\s*:([\s\S]{0,300}?)(?=^[a-z]|$)/m);
+  // $ with the m flag ends the block at the first line break.
+  const poolMatch = content.match(/^pool\s*:([\s\S]{0,300}?)(?=^[a-z]|$(?![\s\S]))/m);
   if (poolMatch) {
     const poolBlock = poolMatch[1];
     const vmImageMatch = poolBlock.match(/vmImage\s*:\s*["']?([^"'\n]{1,80})["']?/);

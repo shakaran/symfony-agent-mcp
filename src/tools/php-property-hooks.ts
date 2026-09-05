@@ -39,7 +39,6 @@ interface PropertyHookInfo {
   file: string;
   class: string;
   properties: PropertyHookEntry[];
-  issues: string[];
 }
 
 
@@ -70,8 +69,11 @@ function extractHookBlock(content: string, propName: string, hookType: 'get' | '
   );
   const arrowMatch = arrow.exec(content);
 
+  // A hook block sits inside the braces of the property it belongs to, and
+  // set { } sits after get { }, so the walk to the keyword has to cross both
+  // the opening brace and any hook already written above it.
   const pattern = new RegExp(
-    `\\$${propName}[^;{]{0,200}\\b${hookType}\\s*(?:\\([^)]{0,120}\\))?\\s*\\{`,
+    `\\$${propName}\\s*\\{(?:[^{}]|\\{(?:[^{}]|\\{[^{}]{0,2000}\\}){0,3000}\\}){0,5000}?\\b${hookType}\\s*(?:\\([^)]{0,120}\\))?\\s*\\{`,
     's'
   );
   const start = pattern.exec(content);
@@ -110,7 +112,6 @@ function parsePropertyHooks(filePath: string): PropertyHookInfo | null {
   const propPattern = /(?:(?:abstract|readonly|public|protected|private|static)\s+){0,5}\$(\w{1,80})\s*\{[^{}]{0,120}(?:get|set)\s*(?:\([^)]{0,120}\))?\s*(?:\{|=>|;)/gs;
 
   const properties: PropertyHookEntry[] = [];
-  const classIssues: string[] = [];
   const seenProps = new Set<string>();
 
   let m: RegExpExecArray | null;
@@ -186,7 +187,6 @@ function parsePropertyHooks(filePath: string): PropertyHookInfo | null {
     file: path.relative(path.dirname(path.dirname(filePath)), filePath),
     class: className,
     properties,
-    issues: classIssues,
   };
 }
 
@@ -234,10 +234,6 @@ export function listPhpPropertyHooks(appPath: string): McpToolResult {
           totalIssues++;
         }
       }
-      for (const issue of info.issues) {
-        text += `  WARNING: ${issue}\n`;
-        totalIssues++;
-      }
     }
 
     if (totalIssues === 0) {
@@ -260,7 +256,7 @@ export function getPhpPropertyHookStats(appPath: string): McpToolResult {
     const infos = scanPropertyHooks(appPath);
 
     const allProps = infos.flatMap((i) => i.properties);
-    const totalIssues = infos.reduce((s, i) => s + i.issues.length + i.properties.reduce((ps, p) => ps + p.issues.length, 0), 0);
+    const totalIssues = infos.reduce((s, i) => s + i.properties.reduce((ps, p) => ps + p.issues.length, 0), 0);
 
     let text = `PHP 8.4 Property Hook Statistics\n${'='.repeat(40)}\n\n`;
     text += `Classes with hooks:       ${infos.length}\n`;

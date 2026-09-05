@@ -98,7 +98,8 @@ function loadPhpStanConfig(appPath: string): PHPStanConfig | null {
   if (!content) return null;
 
   // Parse the parameters section
-  const paramsMatch = /parameters\s*:([\s\S]*?)(?=^[a-zA-Z]|$)/m.exec(content);
+  // Same again: $ with the m flag stopped the parameters block at its first line.
+  const paramsMatch = /parameters\s*:([\s\S]*?)(?=^[a-zA-Z]|$(?![\s\S]))/m.exec(content);
   const params = paramsMatch ? parseNeon(paramsMatch[1]) : {};
 
   const levelM = /level\s*:\s*(\w+)/.exec(content);

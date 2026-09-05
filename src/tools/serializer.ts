@@ -139,26 +139,9 @@ function parseSerializerFile(filePath: string): SerializerClass | null {
     prop.groups.forEach((g) => allGroups.add(g));
   }
 
-  // Also scan constructor promoted properties
-  // A promoted property carries its attributes, and those have parentheses of
-  // their own, #[Groups(['read'])], so the argument list has to be read past
-  // one level of them or it ends inside the first attribute.
-  const ctorMatch = /function\s+__construct\s*\(((?:[^()]|\([^()]{0,300}\)){0,3000})\)/s.exec(content);
-  if (ctorMatch) {
-    const ctorBody = ctorMatch[1];
-    const promotedPattern =
-      new RegExp(`((?:${ATTR}\\s*)+)(?:private|protected|public|readonly)\\s+(?:readonly\\s+)?(?:[\\w\\\\?|]+\\s+)?\\$(\\w+)`, 'g');
-    while ((m = promotedPattern.exec(ctorBody)) !== null) {
-      const attrBlock = m[1];
-      const propName = m[2];
-      const alreadyAdded = properties.some((p) => p.name === propName);
-      if (!alreadyAdded) {
-        const prop = parsePropertyBlock(attrBlock, propName, '');
-        properties.push(prop);
-        prop.groups.forEach((g) => allGroups.add(g));
-      }
-    }
-  }
+  // Constructor-promoted properties need no pass of their own: the loop above
+  // reads the whole file, the constructor included, so every promoted property
+  // with a serializer attribute is already in the list.
 
   if (properties.length === 0) return null;
 
