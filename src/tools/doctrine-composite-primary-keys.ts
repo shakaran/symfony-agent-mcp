@@ -60,7 +60,7 @@ function extractIdFields(content: string): string[] {
   const fields: string[] = [];
 
   // PHP 8 attributes: #[Id] preceding a property
-  const attrIdRegex = /#\[Id[^\]]*]\s*(?:#[^\]]*]\s*)*(?:public|protected|private)\s+[^$]*\$(\w+)/g;
+  const attrIdRegex = /#\[(?:\w{1,40}\\)?Id[^\]]*]\s*(?:#[^\]]*]\s*)*(?:public|protected|private)\s+[^$]*\$(\w+)/g;
   let m: RegExpExecArray | null;
   while ((m = attrIdRegex.exec(content)) !== null) {
     fields.push(m[1]);
@@ -122,7 +122,7 @@ function scanEntityFiles(appPath: string): CompositePkEntity[] {
                                   content.includes("strategy='NONE'");
 
     // ManyToOne as part of composite PK
-    const hasManyToOneId = /#\[Id[^\]]*]\s*(?:#[^\]]*]\s*)*#\[ManyToOne|#\[ManyToOne[^\]]*]\s*(?:#[^\]]*]\s*)*#\[Id/.test(content) ||
+    const hasManyToOneId = /#\[(?:\w{1,40}\\)?Id[^\]]*]\s*(?:#[^\]]*]\s*)*#\[(?:\w{1,40}\\)?ManyToOne|#\[(?:\w{1,40}\\)?ManyToOne[^\]]*]\s*(?:#[^\]]*]\s*)*#\[(?:\w{1,40}\\)?Id/.test(content) ||
                            /@Id\s*\n[^@]*@ManyToOne|@ManyToOne[^@]*\n[^@]*@Id/.test(content);
 
     // JOINED inheritance
@@ -143,7 +143,7 @@ function scanEntityFiles(appPath: string): CompositePkEntity[] {
     }
 
     if (hasManyToOneId) {
-      const joinColMatch = /#\[JoinColumn[^\]]*]\s*(?:#[^\]]*]\s*)*#\[Id|#\[Id[^\]]*]\s*(?:#[^\]]*]\s*)*#\[JoinColumn/.test(content);
+      const joinColMatch = /#\[(?:\w{1,40}\\)?JoinColumn[^\]]*]\s*(?:#[^\]]*]\s*)*#\[(?:\w{1,40}\\)?Id|#\[(?:\w{1,40}\\)?Id[^\]]*]\s*(?:#[^\]]*]\s*)*#\[(?:\w{1,40}\\)?JoinColumn/.test(content);
       if (!joinColMatch) {
         issues.push(`Composite PK "${className}" uses ManyToOne as @Id — ensure the join column is also explicitly annotated with #[JoinColumn]`);
       }

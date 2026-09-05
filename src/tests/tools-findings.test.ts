@@ -941,3 +941,384 @@ class LegacyPost
     expect(text).toContain('utf8mb4');
   });
 });
+
+describe('container compilation', () => {
+  test('a kernel that overrides its directories, and environments set the wrong way round', async () => {
+    const app = appWith('container-compile', {
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    _instanceof:
+        App\\Handler\\HandlerInterface:
+            tags: ['app.handler']
+        App\\Voter\\VoterInterface:
+            tags: ['security.voter']
+        App\\Command\\CommandInterface:
+            tags: ['console.command']
+
+    App\\:
+        resource: '../src/'
+
+    App\\Service\\HeavyService:
+        lazy: true
+
+    App\\Service\\OtherHeavyService:
+        lazy: true
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;
+
+class Kernel extends BaseKernel
+{
+    use MicroKernelTrait;
+
+    public function getCacheDir(): string
+    {
+        return dirname(__DIR__) . '/var/cache/' . $this->environment;
+    }
+
+    public function getBuildDir(): string
+    {
+        return dirname(__DIR__) . '/var/build/' . $this->environment;
+    }
+
+    public function getLogDir(): string
+    {
+        return dirname(__DIR__) . '/var/log';
+    }
+}
+`,
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+    build_dir: '%kernel.project_dir%/var/build'
+    cache:
+        system_clearer: false
+        cache_clearer: false
+`,
+      '.env.prod': `APP_ENV=dev
+APP_DEBUG=true
+`,
+      '.env.dev': `APP_ENV=prod
+APP_DEBUG=1
+`,
+      'var/cache/prod/container.php': `<?php\n\n// compiled container\n`,
+      'var/cache/dev/container.php': `<?php\n\n// compiled container\n`,
+    });
+
+    const text = await runModule('symfony-container-compile.js', app);
+
+    expect(text).toContain('getCacheDir');
+    expect(text).toContain('APP_DEBUG');
+  });
+});
+
+describe('profiler storage', () => {
+  test('every storage backend the profiler understands', async () => {
+    const dsns = [
+      ['file', 'file://%kernel.cache_dir%/profiler'],
+      ['tmp', 'file:///tmp/profiler'],
+      ['redis', 'redis://cache:6379'],
+      ['elasticsearch', 'elasticsearch://search:9200/profiler'],
+      ['mongodb', 'mongodb://mongo:27017/profiler'],
+      ['custom', 'acme://storage'],
+    ];
+
+    for (const [name, dsn] of dsns) {
+      const app = appWith(`profiler-${name}`, {
+        'config/packages/framework.yaml': `framework:
+    profiler:
+        enabled: true
+        dsn: '${dsn}'
+        collect: true
+        only_main_requests: true
+`,
+        'config/packages/prod/web_profiler.yaml': `web_profiler:
+    toolbar: true
+
+framework:
+    profiler:
+        enabled: true
+        dsn: '${dsn}'
+`,
+      });
+
+      const text = await runModule('symfony-profiler-storage.js', app);
+
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('a profiler that is off everywhere', async () => {
+    const app = appWith('profiler-off', {
+      'config/packages/framework.yaml': `framework:
+    profiler:
+        enabled: false
+        collect: false
+`,
+    });
+
+    const text = await runModule('symfony-profiler-storage.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('algolia', () => {
+  test('an admin key in .env, an index with no faceting and a client with no search key', async () => {
+    const app = appWith('algolia', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'algolia/search-bundle': '^4.0' },
+      }, null, 2),
+      '.env': `ALGOLIA_APP_ID=ACMEAPPID
+ALGOLIA_API_KEY=0123456789abcdef0123456789abcdef
+`,
+      'config/packages/algolia_search.yaml': `algolia_search:
+    prefix: 'acme_'
+    indices:
+        - name: products
+          class: App\\Entity\\Product
+`,
+      'src/Search/ProductSearch.php': `<?php
+
+namespace App\\Search;
+
+use Algolia\\AlgoliaSearch\\SearchClient;
+
+class ProductSearch
+{
+    public function client(): SearchClient
+    {
+        return SearchClient::create($_ENV['ALGOLIA_APP_ID'], $_ENV['ALGOLIA_API_KEY']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('algolia-integration.js', app);
+
+    expect(text).toContain('ALGOLIA');
+    expect(text).not.toContain('0123456789abcdef0123456789abcdef');
+  });
+});
+
+describe('controllers', () => {
+  test('a controller asked for by name, and one with no actions', async () => {
+    const app = appWith('controllers', {
+      'src/Controller/BlogController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class BlogController extends AbstractController
+{
+    #[Route('/blog', name: 'blog_index', methods: ['GET'])]
+    public function index(): Response
+    {
+        return $this->render('blog/index.html.twig');
+    }
+
+    #[Route('/blog/{slug}', name: 'blog_show', methods: ['GET', 'HEAD'])]
+    public function show(string $slug): Response
+    {
+        return $this->render('blog/show.html.twig');
+    }
+
+    public function getTitle(): string
+    {
+        return 'blog';
+    }
+
+    public function __toString(): string
+    {
+        return 'blog';
+    }
+
+    public static function getSubscribedEvents(): array
+    {
+        return [];
+    }
+}
+`,
+      'src/Controller/EmptyController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class EmptyController extends AbstractController
+{
+    private function helper(): string
+    {
+        return 'nothing public here';
+    }
+}
+`,
+    });
+
+    const text = await runModule('controllers.js', app, ['BlogController', 'EmptyController', 'NotAController']);
+
+    expect(text).toContain('blog_index');
+    expect(text).toContain('No public action methods found');
+  });
+});
+
+describe('association fetch modes', () => {
+  test('eager collections and extra_lazy singles, in attributes, annotations and xml', async () => {
+    const app = appWith('association-fetch', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Order
+{
+    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: 'order', fetch: 'EAGER')]
+    private $lines;
+
+    #[ORM\\ManyToOne(targetEntity: Customer::class, fetch: 'EXTRA_LAZY')]
+    private $customer;
+
+    #[ORM\\ManyToMany(targetEntity: Tag::class, fetch: 'EAGER')]
+    private $tags;
+
+    #[ORM\\OneToOne(targetEntity: Invoice::class, fetch: 'LAZY')]
+    private $invoice;
+}
+`,
+      'src/Entity/LegacyOrder.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ */
+class LegacyOrder
+{
+    /**
+     * @ORM\\OneToMany(targetEntity="Line", mappedBy="order", fetch="EAGER")
+     */
+    private $lines;
+
+    /**
+     * @ORM\\ManyToOne(targetEntity="Customer", fetch="EXTRA_LAZY")
+     */
+    private $customer;
+}
+`,
+      'config/doctrine/Order.orm.xml': `<?xml version="1.0" encoding="utf-8"?>
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping">
+    <entity name="App\\Entity\\XmlOrder" table="xml_order">
+        <one-to-many field="lines" target-entity="Line" mapped-by="order" fetch="EAGER"/>
+        <many-to-one field="customer" target-entity="Customer" fetch="EXTRA_LAZY"/>
+    </entity>
+</doctrine-mapping>
+`,
+    });
+
+    const text = await runModule('doctrine-association-fetch.js', app);
+
+    expect(text).toContain('EAGER');
+    expect(text).toContain('EXTRA_LAZY');
+  });
+});
+
+describe('migrations', () => {
+  test('a destructive migration, a large one and one that cannot be rolled back', async () => {
+    const statements = Array.from({ length: 40 }, (_, i) => `        $this->addSql('CREATE INDEX idx_${i} ON product (col_${i})');`).join('\n');
+    const app = appWith('migrations', {
+      'migrations/Version20260101000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function getDescription(): string
+    {
+        return 'Drop the legacy tables';
+    }
+
+    public function up(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE legacy_order');
+        $this->addSql('ALTER TABLE product DROP COLUMN old_price');
+        $this->addSql('TRUNCATE TABLE session');
+    }
+}
+`,
+      'migrations/Version20260202000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260202000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+${statements}
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+}
+`,
+    });
+
+    const text = await runModule('migrations-analysis.js', app);
+
+    expect(text).toContain('DROP TABLE');
+    expect(text).toContain('Version20260202000000');
+  });
+
+  test('migrations that only add things', async () => {
+    const app = appWith('migrations-safe', {
+      'migrations/Version20260303000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260303000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE tag (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64) NOT NULL)');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE tag');
+    }
+}
+`,
+    });
+
+    const text = await runModule('migrations-analysis.js', app);
+
+    expect(text).toContain('No destructive operations detected');
+  });
+});

@@ -59,7 +59,9 @@ function parseFetchFromPhp(content: string, filePath: string): AssociationFetchI
   const entityClass = classM[1];
 
   // Match PHP 8 attributes: #[OneToMany(..., fetch: 'EAGER', ...)]
-  const attrPattern = /#\[(OneToMany|ManyToMany|OneToOne|ManyToOne)\s*\([^)]{0,500}\)/g;
+  // An entity writes #[ORM\OneToMany(...)]; without the alias the pattern
+  // matched nothing in a normally mapped entity.
+  const attrPattern = /#\[(?:\w{1,40}\\)?(OneToMany|ManyToMany|OneToOne|ManyToOne)\s*\([^)]{0,500}\)/g;
   let m: RegExpExecArray | null;
   while ((m = attrPattern.exec(content)) !== null) {
     const assocType = m[1];
