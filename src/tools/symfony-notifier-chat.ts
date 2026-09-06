@@ -82,10 +82,9 @@ function buildSymfonyChatNotifierInfos(appPath: string): ChatNotifierInfo[] {
 
 export function listSymfonyChatNotifiers(appPath: string): McpToolResult {
   try {
+    // Having no chat transport at all is itself one of the findings, so the
+    // list always holds something.
     const infos = buildSymfonyChatNotifierInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No chat notifiers found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `Symfony Chat Notifier Analysis\n${'='.repeat(55)}\n\nTransports: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {

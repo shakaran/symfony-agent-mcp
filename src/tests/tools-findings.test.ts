@@ -15787,3 +15787,541 @@ class InvoiceType extends AbstractType
     expect(text).toContain('POST_SET_DATA');
   });
 });
+
+describe('batch 54: forms, buses, probes, request bags, LDAP, routing, chat', () => {
+  test('passwords compared by hand, with and without hash_equals', async () => {
+    const app = appWith('symfony-form-repeated', {
+      'src/Controller/PasswordController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class PasswordController
+{
+    public function change(Request $request): Response
+    {
+        $password = (string) $request->request->get('password');
+        $confirm = (string) $request->request->get('confirm');
+
+        if ($password === $confirm) {
+            return new Response('ok');
+        }
+
+        return new Response('mismatch', 422);
+    }
+}
+`,
+      'src/Controller/ResetController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ResetController
+{
+    public function reset(Request $request): Response
+    {
+        $password = (string) $request->request->get('password');
+        $confirm = (string) $request->request->get('confirm');
+
+        if (hash_equals($password, $confirm) && $password === $confirm) {
+            return new Response('ok');
+        }
+
+        return new Response('mismatch', 422);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-repeated.js', app);
+
+    expect(text).toContain('manual-password-comparison');
+    expect(text).toContain('hash_equals');
+  });
+
+  test('a handle() that waits on an asynchronous message', async () => {
+    const app = appWith('symfony-handle-trait', {
+      'src/Service/InvoiceQuery.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Messenger\\HandleTrait;
+use Symfony\\Component\\Messenger\\MessageBusInterface;
+
+class InvoiceQuery
+{
+    use HandleTrait;
+
+    public function __construct(
+        private MessageBusInterface $messageBus,
+        private MessageBusInterface $commandBus,
+    ) {
+    }
+
+    private MessageBusInterface $messageBus;
+
+    public function total(int $id): int
+    {
+        SendInvoiceAsync $message;
+
+        return $this->handle(new SendInvoiceAsync($id));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-handle-trait.js', app);
+
+    expect(text).toContain('handle()');
+  });
+
+  test('health endpoints that are open and hit the database', async () => {
+    const app = appWith('symfony-health-probe', {
+      'src/Controller/HealthController.php': `<?php
+
+namespace App\\Controller;
+
+use Doctrine\\DBAL\\Connection;
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class HealthController
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    #[Route('/health/live', name: 'health_live')]
+    public function live(): JsonResponse
+    {
+        return new JsonResponse(['status' => 'ok']);
+    }
+
+    #[Route('/health/ready', name: 'health_ready')]
+    public function ready(): JsonResponse
+    {
+        $this->connection->executeQuery('SELECT 1');
+
+        return new JsonResponse(['status' => 'ok']);
+    }
+}
+`,
+      'docker-compose.yml': `services:
+    app:
+        image: acme/php:8.3
+        depends_on:
+            - database
+    database:
+        image: postgres:16
+`,
+    });
+
+    const text = await runModule('symfony-health-probe.js', app);
+
+    expect(text).toContain('health');
+  });
+
+  test('a healthcheck that runs every two seconds', async () => {
+    const app = appWith('symfony-health-probe-interval', {
+      'docker-compose.yml': `services:
+    app:
+        image: acme/php:8.3
+        depends_on:
+            - database
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost/health"]
+            interval: 2s
+    database:
+        image: postgres:16
+`,
+    });
+
+    const text = await runModule('symfony-health-probe.js', app);
+
+    expect(text).toContain('2s');
+  });
+
+  test('every way of reading the request the wrong way round', async () => {
+    const app = appWith('symfony-http-foundation-bag', {
+      'src/Controller/RequestController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class RequestController
+{
+    public function index(Request $request): Response
+    {
+        $payload = $request->request->all();
+        $ip = $request->server->get('REMOTE_ADDR');
+        $request->query->set('page', 1);
+        $apiKey = $request->headers->get('X-Api-Key');
+
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-foundation-bag.js', app);
+
+    expect(text).toContain('REMOTE_ADDR');
+    expect(text).toContain('X-Api-Key');
+  });
+
+  test('an LDAP provider with the bind password written into the file', async () => {
+    const app = appWith('symfony-ldap-auth', {
+      'config/packages/security.yaml': `security:
+    providers:
+        ldap_users:
+            ldap:
+                service: Symfony\\Component\\Ldap\\Ldap
+                search_dn: 'cn=admin,dc=acme,dc=com'
+                search_password: 'hunter2'
+                filter: 'uid={username}'
+
+    firewalls:
+        main:
+            provider: ldap_users
+            ldap_login:
+                check_path: /login
+`,
+    });
+
+    const text = await runModule('symfony-ldap-auth.js', app);
+
+    expect(text).toContain('search_password');
+    expect(text).toContain('base_dn');
+  });
+
+  test('a command bus that accepts messages nothing handles', async () => {
+    const app = appWith('symfony-message-buses', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        default_bus: command.bus
+        buses:
+            command.bus:
+                default_middleware:
+                    allow_no_handlers: true
+                middleware:
+                    - validation
+            query.bus:
+                default_middleware: true
+            event.bus:
+                default_middleware:
+                    enabled: true
+                    allow_no_handlers: true
+`,
+    });
+
+    const text = await runModule('symfony-message-buses.js', app);
+
+    expect(text).toContain('allows no handlers');
+  });
+
+  test('a routing table that lists its transports as a block', async () => {
+    const app = appWith('symfony-messenger-routing-table', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            audit: 'doctrine://default?queue_name=audit'
+        routing:
+            'App\\Message\\SendInvoice':
+                - async
+                - audit
+            'App\\Message\\RebuildIndex': async
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text).toContain('SendInvoice');
+  });
+
+  test('chat transports of every kind, and a bot token in the environment', async () => {
+    const app = appWith('symfony-notifier-chat', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            telegram: 'telegram://123456:ABCDEF@default?channel=%env(TELEGRAM_CHAT_ID)%'
+            discord: 'discord://webhook-token@default?webhook_id=1234'
+            teams: 'microsoftteams://acme.webhook.office.com/webhookb2/abcdef'
+            rocketchat: 'rocketchat://token@rocketchat.acme.com/?channel=alerts'
+`,
+      '.env': 'APP_ENV=prod\nSLACK_DSN=slack://xoxb\x2d123456789-abcdefghij@default?channel=alerts\n',
+    });
+
+    const text = await runModule('symfony-notifier-chat.js', app);
+
+    expect(text).toContain('xoxb');
+  });
+});
+
+describe('batch 55: processes, RoadRunner, routing, firewalls, login, sessions', () => {
+  test('a shell command built at run time, and a run() nobody checks', async () => {
+    const app = appWith('symfony-process', {
+      'src/Service/Backup.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Backup
+{
+    public function dump(string $database): void
+    {
+        $process = Process::fromShellCommandline();
+        $process->run();
+    }
+
+    public function archive(string $path): void
+    {
+        exec('tar -czf backup.tgz ' . $path);
+        shell_exec('rm -rf /tmp/backup');
+    }
+}
+`,
+      'src/Service/ProcessHelper.php': `<?php
+
+namespace App\\Service;
+
+class ProcessHelper
+{
+    public const CLASS_NAME = 'Symfony\\\\Component\\\\Process\\\\Process';
+
+    public function name(): string
+    {
+        return self::CLASS_NAME;
+    }
+}
+`,
+      'src/Vendored/Process.php': `<?php
+
+namespace Symfony\\Component\\Process;
+
+class Process
+{
+    public function run(): int
+    {
+        return 0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-process.js', app);
+
+    expect(text).toContain('Backup');
+  });
+
+  test('RoadRunner with one worker, running as root', async () => {
+    const app = appWith('symfony-roadrunner-config', {
+      '.rr.yaml': `version: '3'
+
+server:
+    command: 'php public/index.php'
+    user: root
+
+http:
+    address: 0.0.0.0:8080
+    pool:
+        num_workers: 1
+        max_jobs: 0
+`,
+    });
+
+    const text = await runModule('symfony-roadrunner-config.js', app);
+
+    expect(text).toContain('num_workers');
+    expect(text).toContain('root');
+  });
+
+  test('an .rr.yaml that cannot be read', async () => {
+    const app = appWith('symfony-roadrunner-unreadable', {
+      '.rr.yaml/placeholder.txt': 'not a file\n',
+    });
+
+    const text = await runModule('symfony-roadrunner-config.js', app);
+
+    expect(text).toContain('RoadRunner');
+  });
+
+  test('route requirements that accept anything, and a host without a scheme', async () => {
+    const app = appWith('symfony-routing-requirements', {
+      'src/Controller/PageController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class PageController
+{
+    #[Route('/page/{slug}', name: 'page_show', requirements: ['slug' => '.+'], host: 'acme.example.com')]
+    public function show(string $slug): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/invoice/{id}', name: 'invoice_show', requirements: ['id' => '[a-z0-9-]+'])]
+    public function invoice(string $id): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'config/routes.yaml': `legacy_page:
+    path: /legacy/{slug}
+    controller: App\\Controller\\PageController::show
+    host: legacy.acme.example.com
+    requirements:
+        slug: '.*'
+
+legacy_invoice:
+    path: /legacy/invoice/{id}
+    controller: App\\Controller\\PageController::invoice
+    requirements:
+        id: '[a-z]+'
+`,
+    });
+
+    const text = await runModule('symfony-routing-requirements.js', app);
+
+    expect(text).toContain('permissive');
+    expect(text).toContain('host');
+  });
+
+  test('a firewall that lets everything through', async () => {
+    const app = appWith('symfony-security-firewalls', {
+      'config/packages/security.yaml': `security:
+    access_decision_manager:
+        strategy: unanimous
+
+    firewalls:
+        internal:
+            pattern: ^/internal
+            security: false
+
+        main:
+            lazy: true
+            provider: app_user_provider
+            custom_authenticators:
+                - App\\Security\\LoginFormAuthenticator
+            access_denied_handler: App\\Security\\AccessDeniedHandler
+            logout:
+                path: app_logout
+                invalidate_session: false
+            remember_me:
+                secret: '%kernel.secret%'
+                lifetime: 31536000
+`,
+    });
+
+    const text = await runModule('symfony-security-firewalls.js', app);
+
+    expect(text).toContain('unanimous');
+    expect(text).toContain('access_denied_handler');
+  });
+
+  test('login links configured without any code behind them', async () => {
+    const app = appWith('symfony-security-login-link', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            login_link:
+                check_route: login_check
+                signature_properties: ['id']
+                lifetime: 600
+`,
+    });
+
+    const text = await runModule('symfony-security-login-link.js', app);
+
+    expect(text).toContain('login_link');
+  });
+
+  test('login throttling with a window measured in seconds', async () => {
+    const app = appWith('symfony-security-login-throttle', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            login_throttling:
+                max_attempts: 20
+                interval: 30
+                limiter: app.login_limiter
+`,
+    });
+
+    const text = await runModule('symfony-security-login-throttle.js', app);
+
+    expect(text).toContain('interval');
+    expect(text).toContain('max_attempts');
+  });
+
+  test('OIDC through the HWI bundle', async () => {
+    const app = appWith('symfony-security-oidc-hwi', {
+      'composer.json': JSON.stringify({ require: { 'hwi/oauth-bundle': '^2.0' } }, null, 4) + '\n',
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            oauth:
+                resource_owners:
+                    keycloak: /login/check-keycloak
+`,
+    });
+
+    const text = await runModule('symfony-security-oidc.js', app);
+
+    expect(text).toContain('OIDC');
+  });
+
+  test('OIDC configured in Symfony itself', async () => {
+    const app = appWith('symfony-security-oidc-native', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        api:
+            access_token:
+                token_handler:
+                    oidc:
+                        algorithm: ES256
+                        issuers: ['https://sso.acme.com']
+                        audience: acme
+`,
+    });
+
+    const text = await runModule('symfony-security-oidc.js', app);
+
+    expect(text).toContain('oidc');
+  });
+
+  test('session cookies described in full', async () => {
+    const app = appWith('symfony-security-session-strategy', {
+      'config/packages/security.yaml': `security:
+    session_fixation_strategy: none
+
+    firewalls:
+        main:
+            stateless: false
+`,
+      'config/packages/framework.yaml': `framework:
+    session:
+        handler_id: null
+        cookie_secure: auto
+        cookie_httponly: true
+        cookie_samesite: lax
+        gc_maxlifetime: 1209600
+`,
+    });
+
+    const text = await runModule('symfony-security-session-strategy.js', app);
+
+    expect(text).toContain('samesite');
+  });
+});

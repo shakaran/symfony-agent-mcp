@@ -135,7 +135,9 @@ function parseProcessUsage(filePath: string, appPath: string): ProcessUsage | nu
 
   if (!usesProcessImport && nativeFunctions.length === 0) return null;
   // Skip Symfony core
-  if (content.includes('namespace Symfony\\Component\\Process\\')) return null;
+  // The declaration ends in a semicolon, not another backslash, so the
+  // component's own copy was never skipped.
+  if (content.includes('namespace Symfony\\Component\\Process;')) return null;
 
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
