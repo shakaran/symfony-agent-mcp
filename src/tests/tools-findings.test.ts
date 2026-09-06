@@ -34116,3 +34116,1157 @@ class CheckoutTest extends PantherTestCase
     expect(text).toContain('anther');
   });
 });
+
+describe('batch 113: hashers, Pest, closures, dates, deprecations, fibers and matches', () => {
+  test('password hashers configured per user class', async () => {
+    const app = appWith('password-hashers', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        App\\Entity\\User:
+            algorithm: auto
+            cost: 12
+        Symfony\\Component\\Security\\Core\\User\\PasswordAuthenticatedUserInterface: 'auto'
+`,
+    });
+
+    const text = await runModule('password-hashers.js', app);
+
+    expect(text).toContain('auto');
+  });
+
+  test('Pest installed without its configuration', async () => {
+    const app = appWith('pest-php-config', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'pestphp/pest': '^3.0', 'pestphp/pest-plugin-laravel': '^3.0' } }, null, 4) + '\n',
+      'tests/Feature/InvoiceTest.php': `<?php
+
+it('adds up the lines', function (): void {
+    expect(1 + 1)->toBe(2);
+});
+`,
+    });
+
+    const text = await runModule('pest-php-config.js', app);
+
+    expect(text).toContain('est');
+  });
+
+  test('a file with no closures in it at all', async () => {
+    const app = appWith('php-closure-scope-none', {
+      'src/Service/Plain.php': `<?php
+
+namespace App\\Service;
+
+class Plain
+{
+    public function value(): int
+    {
+        return 42;
+    }
+}
+`,
+      'src/Service/Closures.php': `<?php
+
+namespace App\\Service;
+
+class Closures
+{
+    public function make(): callable
+    {
+        return static fn (int $a): int => $a + 1;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-closure-scope.js', app);
+
+    expect(text).toContain('losure');
+  });
+
+  test('a php-cs-fixer configuration beside the code', async () => {
+    const app = appWith('php-cs-fixer', {
+      '.php-cs-fixer.dist.php': `<?php
+
+$finder = (new PhpCsFixer\\Finder())->in(__DIR__ . '/src');
+
+return (new PhpCsFixer\\Config())
+    ->setRules([
+        '@PSR12' => true,
+        'strict_param' => true,
+        'array_syntax' => ['syntax' => 'short'],
+    ])
+    ->setFinder($finder);
+`,
+    });
+
+    const text = await runModule('php-cs-fixer.js', app);
+
+    expect(text).toContain('PSR12');
+  });
+
+  test('a timestamp taken through date()', async () => {
+    const app = appWith('php-date-time', {
+      'src/Service/Stamps.php': `<?php
+
+namespace App\\Service;
+
+class Stamps
+{
+    public function now(): string
+    {
+        return date('U');
+    }
+
+    public function today(): string
+    {
+        return date('Y-m-d');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-date-time.js', app);
+
+    expect(text).toContain('date(');
+  });
+
+  test('code using a function that needs a polyfill', async () => {
+    const app = appWith('php-deprecation-polyfills', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.1' } }, null, 4) + '\n',
+      'src/Service/Modern.php': `<?php
+
+namespace App\\Service;
+
+class Modern
+{
+    public function search(array $rows): mixed
+    {
+        return json_validate('{}') ? array_find($rows, static fn ($r): bool => $r > 0) : null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-deprecation-polyfills.js', app);
+
+    expect(text).toContain('polyfill');
+  });
+
+  test('more deprecated calls than the report prints', async () => {
+    const app = appWith('php-deprecations', {
+      'src/Legacy/Encoder.php': `<?php
+
+namespace App\\Legacy;
+
+class Encoder
+{
+    /**
+     * @deprecated since 2.0, use encodeAll0() instead
+     */
+    public function encode0(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode0() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll1() instead
+     */
+    public function encode1(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode1() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll2() instead
+     */
+    public function encode2(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode2() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll3() instead
+     */
+    public function encode3(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode3() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll4() instead
+     */
+    public function encode4(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode4() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll5() instead
+     */
+    public function encode5(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode5() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll6() instead
+     */
+    public function encode6(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode6() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll7() instead
+     */
+    public function encode7(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode7() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll8() instead
+     */
+    public function encode8(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode8() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll9() instead
+     */
+    public function encode9(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode9() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll10() instead
+     */
+    public function encode10(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode10() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll11() instead
+     */
+    public function encode11(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode11() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll12() instead
+     */
+    public function encode12(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode12() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll13() instead
+     */
+    public function encode13(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode13() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll14() instead
+     */
+    public function encode14(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode14() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll15() instead
+     */
+    public function encode15(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode15() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll16() instead
+     */
+    public function encode16(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode16() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll17() instead
+     */
+    public function encode17(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode17() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll18() instead
+     */
+    public function encode18(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode18() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll19() instead
+     */
+    public function encode19(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode19() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll20() instead
+     */
+    public function encode20(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode20() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll21() instead
+     */
+    public function encode21(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode21() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll22() instead
+     */
+    public function encode22(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode22() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll23() instead
+     */
+    public function encode23(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode23() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll24() instead
+     */
+    public function encode24(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode24() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll25() instead
+     */
+    public function encode25(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode25() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll26() instead
+     */
+    public function encode26(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode26() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll27() instead
+     */
+    public function encode27(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode27() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll28() instead
+     */
+    public function encode28(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode28() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll29() instead
+     */
+    public function encode29(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode29() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll30() instead
+     */
+    public function encode30(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode30() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll31() instead
+     */
+    public function encode31(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode31() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll32() instead
+     */
+    public function encode32(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode32() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll33() instead
+     */
+    public function encode33(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode33() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll34() instead
+     */
+    public function encode34(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode34() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll35() instead
+     */
+    public function encode35(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode35() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll36() instead
+     */
+    public function encode36(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode36() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll37() instead
+     */
+    public function encode37(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode37() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll38() instead
+     */
+    public function encode38(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode38() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll39() instead
+     */
+    public function encode39(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode39() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll40() instead
+     */
+    public function encode40(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode40() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll41() instead
+     */
+    public function encode41(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode41() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll42() instead
+     */
+    public function encode42(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode42() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll43() instead
+     */
+    public function encode43(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode43() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll44() instead
+     */
+    public function encode44(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode44() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll45() instead
+     */
+    public function encode45(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode45() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll46() instead
+     */
+    public function encode46(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode46() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll47() instead
+     */
+    public function encode47(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode47() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll48() instead
+     */
+    public function encode48(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode48() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll49() instead
+     */
+    public function encode49(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode49() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll50() instead
+     */
+    public function encode50(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode50() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll51() instead
+     */
+    public function encode51(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode51() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll52() instead
+     */
+    public function encode52(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode52() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll53() instead
+     */
+    public function encode53(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode53() is deprecated.');
+    }
+
+    /**
+     * @deprecated since 2.0, use encodeAll54() instead
+     */
+    public function encode54(): void
+    {
+        trigger_deprecation('acme/app', '2.0', 'encode54() is deprecated.');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-deprecations.js', app);
+
+    expect(text).toContain('more');
+  });
+
+  test('errors silenced across the application', async () => {
+    const app = appWith('php-error-handling', {
+      'src/Legacy/Bootstrap.php': `<?php
+
+namespace App\\Legacy;
+
+class Bootstrap
+{
+    public function boot(): void
+    {
+        error_reporting(0);
+        ini_set('display_errors', '0');
+        set_error_handler(static fn (): bool => true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-error-handling.js', app);
+
+    expect(text).toContain('error_reporting');
+  });
+
+  test('a dozen fibers created at once', async () => {
+    const app = appWith('php-fibers', {
+      'src/Concurrency/FiberRunner.php': `<?php
+
+namespace App\\Concurrency;
+
+class FiberRunner
+{
+    public function run(): void
+    {
+        $fiber0 = new \Fiber(static fn (): int => 0);
+        $fiber1 = new \Fiber(static fn (): int => 1);
+        $fiber2 = new \Fiber(static fn (): int => 2);
+        $fiber3 = new \Fiber(static fn (): int => 3);
+        $fiber4 = new \Fiber(static fn (): int => 4);
+        $fiber5 = new \Fiber(static fn (): int => 5);
+        $fiber6 = new \Fiber(static fn (): int => 6);
+        $fiber7 = new \Fiber(static fn (): int => 7);
+        $fiber8 = new \Fiber(static fn (): int => 8);
+        $fiber9 = new \Fiber(static fn (): int => 9);
+        $fiber10 = new \Fiber(static fn (): int => 10);
+        $fiber11 = new \Fiber(static fn (): int => 11);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-fibers.js', app);
+
+    expect(text).toContain('Fiber');
+  });
+
+  test('an intersection type in application code', async () => {
+    const app = appWith('php-intersection-types', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.1' } }, null, 4) + '\n',
+      'src/Service/Collector.php': `<?php
+
+namespace App\\Service;
+
+use Countable;
+use IteratorAggregate;
+
+class Collector
+{
+    public function count(Countable&IteratorAggregate $collection): int
+    {
+        return $collection->count();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-intersection-types.js', app);
+
+    expect(text).toContain('Countable');
+  });
+
+  test('more matches without a default than the report prints', async () => {
+    const app = appWith('php-match-exhaustiveness', {
+      'src/Service/Picker.php': `<?php
+
+namespace App\\Service;
+
+class Picker
+{
+    public function pick0(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick1(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick2(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick3(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick4(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick5(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick6(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick7(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick8(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick9(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick10(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick11(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick12(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick13(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick14(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick15(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick16(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick17(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick18(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick19(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick20(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick21(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick22(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick23(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick24(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick25(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick26(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick27(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick28(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick29(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick30(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick31(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick32(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick33(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick34(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick35(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick36(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick37(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick38(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick39(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick40(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick41(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick42(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick43(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick44(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick45(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick46(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick47(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick48(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick49(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick50(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick51(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick52(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick53(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+
+    public function pick54(string $v): string
+    {
+        return match ($v) {
+            'a' => 'A',
+            'b' => 'B',
+        };
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-match-exhaustiveness.js', app);
+
+    expect(text).toContain('more');
+  });
+
+  test('a class that clones a resource property', async () => {
+    const app = appWith('php-object-cloning', {
+      'src/Service/Handleholder.php': `<?php
+
+namespace App\\Service;
+
+class Handleholder
+{
+    /** @var resource */
+    private $handle;
+
+    private array $rows = [];
+
+    public function __clone(): void
+    {
+        $this->rows = $this->rows;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-object-cloning.js', app);
+
+    expect(text).toContain('clone');
+  });
+});
