@@ -37,11 +37,14 @@ function parseSecurityExpressions(filePath: string, appPath: string): SecurityEx
   const classM = /class\s+(\w{1,120})/.exec(content);
   if (!classM) return null;
   const expressions: Array<{ type: string; expr: string; operation?: string }> = [];
-  const secRe = /security\s*:\s*['"]([^'"]{1,300})['"]/g;
-  const postDenormRe = /securityPostDenormalize\s*:\s*['"]([^'"]{1,300})['"]/g;
+  // The expression is written with one kind of quote outside and the other
+  // inside, security: "is_granted('ROLE_USER')", so the closing quote is the
+  // one that opened it.
+  const secRe = /security\s*:\s*(['"])((?:(?!\1)[\s\S]){1,300})\1/g;
+  const postDenormRe = /securityPostDenormalize\s*:\s*(['"])((?:(?!\1)[\s\S]){1,300})\1/g;
   let m: RegExpExecArray | null;
-  while ((m = secRe.exec(content)) !== null) expressions.push({ type: 'security', expr: m[1] });
-  while ((m = postDenormRe.exec(content)) !== null) expressions.push({ type: 'securityPostDenormalize', expr: m[1] });
+  while ((m = secRe.exec(content)) !== null) expressions.push({ type: 'security', expr: m[2] });
+  while ((m = postDenormRe.exec(content)) !== null) expressions.push({ type: 'securityPostDenormalize', expr: m[2] });
   if (expressions.length === 0) return null;
   const exprsText = expressions.map(e => e.expr).join(' ');
   const usesIsGranted = exprsText.includes('is_granted(');

@@ -32734,3 +32734,296 @@ class InvoiceContractTest extends WebTestCase
     expect(text).toContain('ontract');
   });
 });
+
+describe('batch 109: pagination, DTO outputs, subresources, Cognito, Caddy and Cloudflare', () => {
+  test('a query that pages with OFFSET', async () => {
+    const app = appWith('api-cursor-pagination', {
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+class InvoiceRepository
+{
+    public function page(int $page, int $size): array
+    {
+        return $this->createQueryBuilder('i')
+            ->setFirstResult(($page - 1) * $size)
+            ->setMaxResults($size)
+            ->getQuery()
+            ->getResult();
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-cursor-pagination.js', app);
+
+    expect(text).toContain('OFFSET');
+  });
+
+  test('a resource with an output class and nothing to build it', async () => {
+    const app = appWith('api-platform-dto-output', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use App\\Dto\\InvoiceOutput;
+
+#[ApiResource(output: InvoiceOutput::class)]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+      'src/Dto/InvoiceOutput.php': `<?php
+
+namespace App\\Dto;
+
+class InvoiceOutput
+{
+    public int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-dto-output.js', app);
+
+    expect(text).toContain('output');
+  });
+
+  test('a custom API Platform filter class', async () => {
+    const app = appWith('api-platform-filters-custom', {
+      'src/Filter/RegexpFilter.php': `<?php
+
+namespace App\\Filter;
+
+use ApiPlatform\\Doctrine\\Orm\\Filter\\AbstractFilter;
+use ApiPlatform\\Doctrine\\Orm\\Util\\QueryNameGeneratorInterface;
+use Doctrine\\ORM\\QueryBuilder;
+
+class RegexpFilter extends AbstractFilter
+{
+    protected function filterProperty(string $property, $value, QueryBuilder $queryBuilder, QueryNameGeneratorInterface $queryNameGenerator, string $resourceClass, ?\\ApiPlatform\\Metadata\\Operation $operation = null, array $context = []): void
+    {
+    }
+
+    public function getDescription(string $resourceClass): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-platform-filters.js', app);
+
+    expect(text).toContain('ilter');
+  });
+
+  test('Mercure pushed from API Platform with a hub configured', async () => {
+    const app = appWith('api-platform-mercure-push-hub', {
+      'config/packages/mercure.yaml': `mercure:
+    hubs:
+        default:
+            url: '%env(MERCURE_URL)%'
+            public_url: '%env(MERCURE_PUBLIC_URL)%'
+            jwt:
+                secret: '%env(MERCURE_JWT_SECRET)%'
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(mercure: true)]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-mercure-push.js', app);
+
+    expect(text).toContain('ercure');
+  });
+
+  test('a page size large enough to time the request out', async () => {
+    const app = appWith('api-platform-pagination', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(
+    paginationItemsPerPage: 100,
+    paginationMaximumItemsPerPage: 5000,
+    paginationClientItemsPerPage: true,
+)]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-pagination.js', app);
+
+    expect(text).toContain('aginat');
+  });
+
+  test('a security expression that grants everyone access', async () => {
+    const app = appWith('api-platform-security-expressions', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Get;
+
+#[ApiResource(operations: [
+    new Get(security: "is_granted('PUBLIC_ACCESS')"),
+])]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-security-expressions.js', app);
+
+    expect(text).toContain('PUBLIC_ACCESS');
+  });
+
+  test('a subresource addressed by two identifiers', async () => {
+    const app = appWith('api-platform-subresources', {
+      'src/Entity/Line.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Get;
+
+#[ApiResource(operations: [
+    new Get(uriTemplate: '/invoices/{invoiceId}/lines/{id}'),
+])]
+class Line
+{
+    private int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-subresources.js', app);
+
+    expect(text).toContain('uriTemplate');
+  });
+
+  test('a Cognito token decoded without fetching the keys', async () => {
+    const app = appWith('aws-cognito-integration', {
+      'composer.json': JSON.stringify({ require: { 'firebase/php-jwt': '^6.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nCOGNITO_USER_POOL_ID=eu-west-1_abcdefghi\nCOGNITO_CLIENT_ID=abcdefghijklmnopqrstuvwxyz\n',
+      'src/Security/CognitoTokenDecoder.php': `<?php
+
+namespace App\\Security;
+
+use Firebase\\JWT\\JWT;
+
+class CognitoTokenDecoder
+{
+    public function decode(string $token): array
+    {
+        return (array) JWT::decode($token, $this->key);
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-cognito-integration.js', app);
+
+    expect(text).toContain('JWT');
+  });
+
+  test('an Azure job with no timeout on it', async () => {
+    const app = appWith('azure-pipelines-config-timeout', {
+      'azure-pipelines.yml': `trigger:
+    - main
+
+pool:
+    vmImage: ubuntu-latest
+
+jobs:
+    - job: Build
+      steps:
+          - script: composer install
+          - script: vendor/bin/phpunit
+`,
+    });
+
+    const text = await runModule('azure-pipelines-config.js', app);
+
+    expect(text).toContain('timeout');
+  });
+
+  test('bundles enabled for the application', async () => {
+    const app = appWith('bundles-list', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Doctrine\\Bundle\\DoctrineBundle\\DoctrineBundle::class => ['all' => true],
+    Symfony\\Bundle\\MakerBundle\\MakerBundle::class => ['dev' => true],
+];
+`,
+    });
+
+    const text = await runModule('bundles.js', app, ['FrameworkBundle']);
+
+    expect(text).toContain('Bundle');
+  });
+
+  test('a Caddy JSON configuration with no TLS policies', async () => {
+    const app = appWith('caddy-server-config', {
+      'caddy.json': JSON.stringify({
+        apps: {
+          http: {
+            servers: {
+              srv0: {
+                listen: [':80'],
+                routes: [{ handle: [{ handler: 'file_server', root: 'public' }] }],
+              },
+            },
+          },
+        },
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('caddy-server-config.js', app);
+
+    expect(text).toContain('TLS');
+  });
+
+  test('a Cloudflare worker with its secrets in the variables', async () => {
+    const app = appWith('cloudflare-config', {
+      'wrangler.toml': `name = "acme"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+API_TOKEN = "abcdef1234567890"
+PUBLIC_URL = "https://acme.example.com"
+
+[env.production]
+route = "acme.example.com/*"
+`,
+    });
+
+    const text = await runModule('cloudflare-config.js', app);
+
+    expect(text).toContain('API_TOKEN');
+  });
+});
