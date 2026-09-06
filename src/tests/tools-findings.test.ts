@@ -20476,3 +20476,211 @@ Feature: Home
     expect(text).toContain('smoke');
   });
 });
+
+describe('batch 68: pipelines, warmers, Cloudinary, console options, fixtures, Datadog', () => {
+  test('a Bitbucket pipeline on an unpinned image with a password in the script', async () => {
+    const app = appWith('bitbucket-pipelines-config', {
+      'bitbucket-pipelines.yml': `image: php:latest
+
+pipelines:
+    default:
+        - step:
+              name: Checks
+              script:
+                  - composer install
+                  - vendor/bin/phpunit
+        - step:
+              name: Publish
+              script:
+                  - export DB_PASSWORD=hunter2acme
+                  - ./deploy.sh
+`,
+    });
+
+    const text = await runModule('bitbucket-pipelines-config.js', app);
+
+    expect(text).toContain('php:latest');
+  });
+
+  test('a cache warmer that pulls the entity manager in with it', async () => {
+    const app = appWith('cache-warmers', {
+      'src/Cache/RouteWarmer.php': `<?php
+
+namespace App\\Cache;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+use Symfony\\Component\\HttpKernel\\CacheWarmer\\CacheWarmerInterface;
+
+class RouteWarmer implements CacheWarmerInterface
+{
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function isOptional(): bool
+    {
+        return false;
+    }
+
+    public function warmUp(string $cacheDir, ?string $buildDir = null): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('cache-warmers.js', app);
+
+    expect(text).toContain('RouteWarmer');
+  });
+
+  test('Cloudinary configured with the secret written twice', async () => {
+    const app = appWith('cloudinary-integration', {
+      'composer.json': JSON.stringify({ require: { 'cloudinary/cloudinary_php': '^2.0' } }, null, 4) + '\n',
+      'config/packages/cloudinary.yaml': `cloudinary:
+    cloud_name: acme
+    api_key: '123456789012345'
+    api_secret: abcdefghijklmnopqrstuvwx
+`,
+      'src/Media/CloudinaryUploader.php': `<?php
+
+namespace App\\Media;
+
+use Cloudinary\\Cloudinary;
+
+class CloudinaryUploader
+{
+    public function configure(): void
+    {
+        Cloudinary::config([
+            'cloud_name' => 'acme',
+            'api_key' => '123456789012345',
+            'api_secret' => 'abcdefghijklmnopqrstuvwx',
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('cloudinary-integration.js', app);
+
+    expect(text).toContain('api_secret');
+  });
+
+  test('a command with more options than the report prints, in the wrong order', async () => {
+    const app = appWith('console-command-options-order', {
+      'src/Command/ReportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputArgument;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+#[AsCommand(name: 'app:report')]
+class ReportCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this
+            ->addArgument('period', InputArgument::OPTIONAL, 'Period to report on', 'month')
+            ->addArgument('customer', InputArgument::REQUIRED, 'Customer to report on')
+            ->addOption('format', 'f', InputOption::VALUE_REQUIRED, 'Output format', 'csv')
+            ->addOption('currency', 'c', InputOption::VALUE_REQUIRED, 'Currency', 'EUR')
+            ->addOption('locale', 'l', InputOption::VALUE_REQUIRED, 'Locale', 'en')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Row limit', '100')
+            ->addOption('offset', null, InputOption::VALUE_REQUIRED, 'Row offset', '0')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Do not write anything')
+            ->addOption('verbose-output', null, InputOption::VALUE_NONE, 'Say more')
+        ;
+    }
+}
+`,
+    });
+
+    const text = await runModule('console-command-options.js', app);
+
+    expect(text).toContain('more options');
+  });
+
+  test('fixtures that depend on each other in a circle', async () => {
+    const app = appWith('database-fixture-groups', {
+      'src/DataFixtures/UserFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\DependentFixtureInterface;
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class UserFixtures extends Fixture implements DependentFixtureInterface
+{
+    public function getGroups(): array
+    {
+        return ['dev', 'test'];
+    }
+
+    public function getDependencies(): array
+    {
+        return [OrderFixtures::class];
+    }
+
+    public function load(ObjectManager $manager): void
+    {
+    }
+}
+`,
+      'src/DataFixtures/OrderFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\DependentFixtureInterface;
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class OrderFixtures extends Fixture implements DependentFixtureInterface
+{
+    public function getGroups(): array
+    {
+        return ['dev'];
+    }
+
+    public function getDependencies(): array
+    {
+        return ['App\\DataFixtures\\UserFixtures'];
+    }
+
+    public function load(ObjectManager $manager): void
+    {
+    }
+}
+`,
+      'src/DataFixtures/README.php': "<?php\n\n// The fixtures for the Fixture groups live here.\n",
+    });
+
+    const text = await runModule('database-fixture-groups.js', app);
+
+    expect(text).toContain('Fixtures');
+  });
+
+  test('Datadog traces without a service, an environment or a version', async () => {
+    const app = appWith('datadog-integration', {
+      'composer.json': JSON.stringify({ require: { 'datadog/dd-trace': '^0.99' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nDD_AGENT_HOST=datadog-agent\nDD_TRACE_ENABLED=1\nDD_API_KEY=abcdef1234567890abcdef1234567890\n',
+    });
+
+    const text = await runModule('datadog-integration.js', app);
+
+    expect(text).toContain('DD_SERVICE');
+  });
+
+  test('a project with no Datadog anywhere', async () => {
+    const app = appWith('datadog-absent', {});
+
+    const text = await runModule('datadog-integration.js', app);
+
+    expect(text).toContain('No Datadog APM integration found');
+  });
+});
