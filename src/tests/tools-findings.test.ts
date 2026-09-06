@@ -11040,3 +11040,339 @@ describe('composer security', () => {
     expect(text).toContain('minimum-stability');
   });
 });
+
+describe('cypress', () => {
+  test('a cypress config with fixtures and a spec that waits on time', async () => {
+    const app = appWith('cypress', {
+      'cypress.config.js': `const { defineConfig } = require('cypress');
+
+module.exports = defineConfig({
+    e2e: {
+        baseUrl: 'http://localhost:8000',
+        defaultCommandTimeout: 4000,
+        video: true,
+        retries: 0,
+    },
+});
+`,
+      'cypress/fixtures/user.json': JSON.stringify({ email: 'acme@example.com' }, null, 2),
+      'cypress/e2e/login.cy.js': `describe('login', () => {
+    it('signs in', () => {
+        cy.visit('/login');
+        cy.wait(5000);
+        cy.get('#email').type('acme@example.com');
+    });
+});
+`,
+    });
+
+    const text = await runModule('cypress-e2e-config.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('container parameters', () => {
+  test('nested parameters, a credential among them and one used from a service', async () => {
+    const app = appWith('di-parameters', {
+      'config/services.yaml': `parameters:
+    app.name: 'Acme'
+    app.mailer:
+        from: 'noreply@example.com'
+        password: 'hunter2'
+    app.upload_dir: '%kernel.project_dir%/var/uploads'
+
+services:
+    App\\Service\\Uploader:
+        arguments:
+            $uploadDir: '%app.upload_dir%'
+`,
+      'src/Service/Uploader.php': `<?php
+
+namespace App\\Service;
+
+class Uploader
+{
+    public function __construct(private string $uploadDir)
+    {
+    }
+
+    public function name(): string
+    {
+        return $this->parameterBag->get('app.name');
+    }
+}
+`,
+    });
+
+    const text = await runModule('di-parameters.js', app);
+
+    expect(text).toContain('app.name');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('entity factories in detail', () => {
+  test('a factory with no defaults, one returning nulls, a seeded faker and a large createMany', async () => {
+    const app = appWith('entity-factory-detail', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'zenstruck/foundry': '^2.0' },
+      }, null, 2),
+      'src/Factory/BareFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+final class BareFactory extends ModelFactory
+{
+    protected static function getClass(): string
+    {
+        return \\App\\Entity\\Bare::class;
+    }
+}
+`,
+      'src/Factory/NullFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+final class NullFactory extends ModelFactory
+{
+    protected function getDefaults(): array
+    {
+        return ['name' => null, 'email' => null];
+    }
+
+    protected static function getClass(): string
+    {
+        return \\App\\Entity\\Nulls::class;
+    }
+}
+`,
+      'src/Factory/SeededFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+final class SeededFactory extends ModelFactory
+{
+    protected function getDefaults(): array
+    {
+        self::faker()->seed(1234);
+
+        return ['name' => self::faker()->name()];
+    }
+
+    protected static function getClass(): string
+    {
+        return \\App\\Entity\\Seeded::class;
+    }
+}
+`,
+      'src/DataFixtures/BigFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use App\\Factory\\SeededFactory;
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class BigFixtures extends Fixture
+{
+    public function load(ObjectManager $manager): void
+    {
+        SeededFactory::createMany(500);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-factory.js', app);
+
+    expect(text).toContain('BareFactory');
+  });
+});
+
+describe('proxy directories', () => {
+  test('generated proxies counted through nested directories, and a colliding namespace', async () => {
+    const app = appWith('proxy-count', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: true
+        proxy_dir: '%kernel.cache_dir%/doctrine/orm/Proxies'
+        proxy_namespace: App
+`,
+      'var/cache/prod/doctrine/orm/Proxies/__CG__AppEntityInvoice.php': '<?php // proxy\n',
+      'var/cache/prod/doctrine/orm/Proxies/nested/__CG__AppEntityCustomer.php': '<?php // proxy\n',
+      'var/cache/prod/doctrine/orm/Proxies/nested/deeper/__CG__AppEntityLine.php': '<?php // proxy\n',
+      'var/cache/prod/doctrine/orm/Proxies/notes.txt': 'not a proxy\n',
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-proxy.js', app);
+
+    expect(text).toContain('proxy');
+  });
+});
+
+describe('inheritance strategies', () => {
+  test('table per class, and a joined hierarchy several levels deep', async () => {
+    const entity = (name: string, extend: string | null, extra = ''): string => `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+${extra}
+class ${name}${extend ? ` extends ${extend}` : ''}
+{
+}
+`;
+
+    const app = appWith('inheritance', {
+      'src/Entity/Vehicle.php': entity('Vehicle', null, "#[ORM\\InheritanceType('TABLE_PER_CLASS')]\n#[ORM\\DiscriminatorColumn(name: 'kind', type: 'string')]"),
+      'src/Entity/Car.php': entity('Car', 'Vehicle'),
+      'src/Entity/Document.php': entity('Document', null, "#[ORM\\InheritanceType('JOINED')]\n#[ORM\\DiscriminatorColumn(name: 'kind', type: 'string')]"),
+      'src/Entity/Invoice.php': entity('Invoice', 'Document'),
+      'src/Entity/CreditNote.php': entity('CreditNote', 'Invoice'),
+      'src/Entity/ProformaNote.php': entity('ProformaNote', 'CreditNote'),
+      'src/Entity/DraftProforma.php': entity('DraftProforma', 'ProformaNote'),
+      'src/Entity/DeepDraft.php': entity('DeepDraft', 'DraftProforma'),
+    });
+
+    const text = await runModule('doctrine-inheritance.js', app);
+
+    expect(text).toContain('TABLE_PER_CLASS');
+  });
+});
+
+describe('migration graph', () => {
+  test('versions with more than a year between them', async () => {
+    const migration = (version: string): string => `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version${version} extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+}
+`;
+    const app = appWith('migration-graph', {
+      'migrations/Version20220101000000.php': migration('20220101000000'),
+      'migrations/Version20240101000000.php': migration('20240101000000'),
+      'migrations/Version20260101000000.php': migration('20260101000000'),
+    });
+
+    const text = await runModule('doctrine-migration-graph.js', app);
+
+    expect(text).toContain('20220101000000');
+  });
+});
+
+describe('migrations configuration', () => {
+  test('the config nested under doctrine, transactional off, organised by year and a colliding table', async () => {
+    const app = appWith('migrations-config', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: false
+
+doctrine_migrations:
+    migrations_paths:
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+    transactional: false
+    organize_migrations: BY_YEAR
+    table_name: invoice
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'invoice')]
+class Invoice
+{
+}
+`,
+      'migrations/Version20260101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-migrations-config.js', app);
+
+    expect(text).toContain('transactional');
+  });
+});
+
+describe('multiple connections', () => {
+  test('several entity managers, one with no connection binding and entity dirs on the default', async () => {
+    const app = appWith('multi-connection', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                host: db.example.com
+                dbname: acme
+            reporting:
+                host: reporting.example.com
+                dbname: reporting
+            broken: ~
+    orm:
+        default_entity_manager: default
+        entity_managers:
+            default:
+                mappings:
+                    App:
+                        dir: '%kernel.project_dir%/src/Entity'
+                        prefix: 'App\\Entity'
+                    broken: ~
+            reporting:
+                mappings:
+                    Reporting:
+                        dir: '%kernel.project_dir%/src/Reporting'
+                    broken: ~
+            broken: ~
+`,
+    });
+
+    const text = await runModule('doctrine-multi-connection.js', app);
+
+    expect(text).toContain('reporting');
+  });
+});
