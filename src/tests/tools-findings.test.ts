@@ -20684,3 +20684,261 @@ class OrderFixtures extends Fixture implements DependentFixtureInterface
     expect(text).toContain('No Datadog APM integration found');
   });
 });
+
+describe('batch 69: schemas, dead code, change tracking, keys, embeddables and factories', () => {
+  test('a table with defaults and indexes of every kind', async () => {
+    const app = appWith('database-schema', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'invoice')]
+#[ORM\\Index(name: 'idx_invoice_status', columns: ['status'])]
+#[ORM\\UniqueConstraint(name: 'uniq_invoice_number', columns: ['number'])]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column(length: 32)]
+    private string $number = '';
+
+    #[ORM\\Column(options: ['default' => 'draft'])]
+    private string $status = 'draft';
+
+    #[ORM\\Column(nullable: true)]
+    private ?string $note = null;
+}
+`,
+    });
+
+    const text = await runModule('database.js', app, ['invoice']);
+
+    expect(text).toContain('invoice');
+  });
+
+  test('a controller nothing routes to, and a form type nothing builds', async () => {
+    const app = appWith('dead-code', {
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+
+    App\\Service\\Importer:
+        arguments:
+            $logger: '@monolog.logger.import'
+`,
+      'config/routes.yaml': `home:
+    path: /
+    controller: App\\Controller\\HomeController::index
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class HomeController
+{
+    public function index(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/OrphanController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class OrphanController
+{
+    public function nowhere(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/notes.php': "<?php\n\n// A Controller is described here, with no class in it.\n",
+      'src/Form/GhostType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class GhostType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+    }
+}
+`,
+      'src/Command/GhostCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(name: 'app:ghost')]
+class GhostCommand extends Command
+{
+}
+`,
+    });
+
+    const text = await runModule('dead-code.js', app);
+
+    expect(text).toContain('Orphan');
+  });
+
+  test('change tracking chosen per entity, with a default entity manager configured', async () => {
+    const app = appWith('doctrine-change-tracking-annotations', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        default_entity_manager: default
+        entity_managers:
+            default:
+                auto_mapping: true
+`,
+      'src/Entity/Ledger.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\ChangeTrackingPolicy("DEFERRED_EXPLICIT")
+ */
+class Ledger
+{
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $id;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-change-tracking.js', app);
+
+    expect(text).toContain('DEFERRED');
+  });
+
+  test('a composite key written the old way', async () => {
+    const app = appWith('doctrine-composite-primary-keys-annotations', {
+      'src/Entity/OrderLine.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ */
+class OrderLine
+{
+    /**
+     * @Id
+     * @Column(type="integer")
+     */
+    private $orderId;
+
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $lineNumber;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-composite-primary-keys.js', app);
+
+    expect(text).toContain('OrderLine');
+  });
+
+  test('an embeddable and the entity that holds it', async () => {
+    const app = appWith('doctrine-embeddable', {
+      'src/Entity/Address.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Embeddable]
+class Address
+{
+    #[ORM\\Column]
+    private string $street = '';
+
+    #[ORM\\Column]
+    private string $city = '';
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Embedded(class: Address::class)]
+    private Address $address;
+}
+`,
+      'src/Entity/notes.php': "<?php\n\n// @Embeddable and @Embedded are described here.\n",
+    });
+
+    const text = await runModule('doctrine-embeddable.js', app);
+
+    expect(text).toContain('Address');
+  });
+
+  test('a factory whose defaults are all null', async () => {
+    const app = appWith('doctrine-entity-factory', {
+      'src/Factory/InvoiceFactory.php': `<?php
+
+namespace App\\Factory;
+
+use App\\Entity\\Invoice;
+use Zenstruck\\Foundry\\ModelFactory;
+
+final class InvoiceFactory extends ModelFactory
+{
+    protected function getDefaults(): array
+    {
+        return [
+            'number' => null,
+            'status' => null,
+            'total' => null,
+        ];
+    }
+
+    protected static function getClass(): string
+    {
+        return Invoice::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-factory.js', app);
+
+    expect(text).toContain('InvoiceFactory');
+  });
+});

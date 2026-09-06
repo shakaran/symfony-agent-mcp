@@ -66,14 +66,16 @@ function extractIdFields(content: string): string[] {
     fields.push(m[1]);
   }
 
-  // Doctrine annotations: @Id preceding @Column
-  const annotationIdRegex = /\*\s+@Id\s*\n[^@]*@Column[^*]*\s+(?:public|protected|private)\s+[^$]*\$(\w+)/g;
+  // Doctrine annotations: @Id preceding @Column. The docblock closes with
+  // "*/" between the annotation and the property, which the old patterns
+  // could not cross, so no annotated key was ever found.
+  const annotationIdRegex = /\*\s+@Id\s*\n[\s\S]{0,200}?@Column[\s\S]{0,200}?(?:public|protected|private)\s+[^$\n]{0,80}\$(\w+)/g;
   while ((m = annotationIdRegex.exec(content)) !== null) {
     if (!fields.includes(m[1])) fields.push(m[1]);
   }
 
   // Class-level @ORM\Id() — older style
-  const ormIdRegex = /@ORM\\Id\b[^@]*(?:public|protected|private)\s+[^$]*\$(\w+)/g;
+  const ormIdRegex = /@ORM\\Id\b[\s\S]{0,300}?(?:public|protected|private)\s+[^$\n]{0,80}\$(\w+)/g;
   while ((m = ormIdRegex.exec(content)) !== null) {
     if (!fields.includes(m[1])) fields.push(m[1]);
   }
