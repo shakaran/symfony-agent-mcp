@@ -33740,3 +33740,379 @@ class Invoice
     expect(text).toContain('NONSTRICT_READ_WRITE');
   });
 });
+
+describe('batch 112: sharding, priorities, exceptions, mutants, locks and messenger', () => {
+  test('a sharded connection configuration', async () => {
+    const app = appWith('doctrine-sharding', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                url: '%env(resolve:DATABASE_URL)%'
+                shards:
+                    shard_1:
+                        id: 1
+                        url: '%env(SHARD_1_URL)%'
+                    shard_2:
+                        id: 2
+                        url: '%env(SHARD_2_URL)%'
+`,
+    });
+
+    const text = await runModule('doctrine-sharding.js', app);
+
+    expect(text).toContain('hard');
+  });
+
+  test('two listeners with the same priority, one of them an attribute', async () => {
+    const app = appWith('event-priority-conflicts', {
+      'src/EventListener/LocaleListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+#[AsEventListener(event: 'kernel.request', priority: 20)]
+class LocaleListener
+{
+    public function __invoke(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/RequestSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class RequestSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::REQUEST => ['onRequest', 20]];
+    }
+
+    public function onRequest(RequestEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('event-priority-conflicts.js', app);
+
+    expect(text).toContain('riority');
+  });
+
+  test('an exception subscriber that catches everything', async () => {
+    const app = appWith('exception-subscribers', {
+      'src/EventSubscriber/ExceptionSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\ExceptionEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class ExceptionSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::EXCEPTION => 'onException'];
+    }
+
+    public function onException(ExceptionEvent $event): void
+    {
+        $throwable = $event->getThrowable();
+
+        if ($throwable instanceof \\Throwable) {
+            $event->setResponse(new \\Symfony\\Component\\HttpFoundation\\Response('', 500));
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('exception-subscribers.js', app);
+
+    expect(text).toContain('Throwable');
+  });
+
+  test('Infection installed with no configuration file', async () => {
+    const app = appWith('infection-mutants', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'infection/infection': '^0.29' } }, null, 4) + '\n',
+      'tests/Unit/InvoiceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class InvoiceTest extends TestCase
+{
+    public function testTotal(): void
+    {
+        $this->assertSame(1, 1);
+    }
+}
+`,
+    });
+
+    const text = await runModule('infection-mutants.js', app);
+
+    expect(text).toContain('nfection');
+  });
+
+  test('an input DTO beside a file with no class in it', async () => {
+    const app = appWith('input-dto', {
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Dto\\CreateInvoiceInput;
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\HttpKernel\\Attribute\\MapRequestPayload;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class InvoiceController
+{
+    #[Route('/api/invoices', methods: ['POST'])]
+    public function create(#[MapRequestPayload] CreateInvoiceInput $input): JsonResponse
+    {
+        return new JsonResponse([], 201);
+    }
+}
+`,
+      'src/Dto/CreateInvoiceInput.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+final class CreateInvoiceInput
+{
+    public function __construct(
+        #[Assert\\NotBlank]
+        public readonly string $number,
+        #[Assert\\Positive]
+        public readonly int $total,
+    ) {
+    }
+}
+`,
+      'src/Dto/notes.php': "<?php\n\n// The input DTOs are described here.\n",
+    });
+
+    const text = await runModule('input-dto.js', app);
+
+    expect(text).toContain('CreateInvoiceInput');
+  });
+
+  test('a lock store over Redis with TLS', async () => {
+    const app = appWith('lock-store', {
+      'config/packages/lock.yaml': `framework:
+    lock:
+        default: 'rediss://acme:hunter2@redis.acme.internal:6380'
+        invoice: 'flock'
+`,
+      'src/Service/Locked.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Lock\\LockFactory;
+
+class Locked
+{
+    public function __construct(private LockFactory $lockFactory)
+    {
+    }
+
+    public function run(): void
+    {
+        $lock = $this->lockFactory->createLock('invoice-import', 300.0);
+        if ($lock->acquire()) {
+            $lock->release();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('lock.js', app);
+
+    expect(text).toContain('edis');
+  });
+
+  test('handlers routed through configuration', async () => {
+    const app = appWith('messenger-handlers-config', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default'
+        routing:
+            'App\\Message\\SendInvoice': async
+            'App\\Message\\Broken': ~
+`,
+      'src/MessageHandler/SendInvoiceHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use App\\Message\\SendInvoice;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+class SendInvoiceHandler
+{
+    public function __invoke(SendInvoice $message): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('messenger-handlers.js', app);
+
+    expect(text).toContain('SendInvoice');
+  });
+
+  test('a bus with middleware written out, and one that is empty', async () => {
+    const app = appWith('messenger-middleware-config', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        buses:
+            command.bus:
+                middleware:
+                    - validation
+                    - doctrine_transaction
+            query.bus: ~
+`,
+    });
+
+    const text = await runModule('messenger-middleware.js', app);
+
+    expect(text).toContain('iddleware');
+  });
+
+  test('a serializer configured for the bus', async () => {
+    const app = appWith('messenger-serializer', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        serializer:
+            default_serializer: messenger.transport.symfony_serializer
+            symfony_serializer:
+                format: json
+                context: {}
+        transports:
+            async:
+                dsn: 'doctrine://default'
+                serializer: 'App\\Messenger\\CustomSerializer'
+`,
+      'src/Messenger/CustomSerializer.php': `<?php
+
+namespace App\\Messenger;
+
+use Symfony\\Component\\Messenger\\Envelope;
+use Symfony\\Component\\Messenger\\Transport\\Serialization\\SerializerInterface;
+
+class CustomSerializer implements SerializerInterface
+{
+    public function decode(array $encodedEnvelope): Envelope
+    {
+        return new Envelope(new \\stdClass());
+    }
+
+    public function encode(Envelope $envelope): array
+    {
+        return ['body' => '', 'headers' => []];
+    }
+}
+`,
+    });
+
+    const text = await runModule('messenger-serializer.js', app);
+
+    expect(text).toContain('erializer');
+  });
+
+  test('a log channel routed to more handlers than it needs', async () => {
+    const app = appWith('monolog-channel-mapping', {
+      'config/packages/monolog.yaml': `monolog:
+    channels: ['import', 'audit']
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/app.log'
+            channels: ['import']
+        errors:
+            type: stream
+            path: '%kernel.logs_dir%/error.log'
+            channels: ['import']
+        audit_file:
+            type: stream
+            path: '%kernel.logs_dir%/audit.log'
+            channels: ['import']
+        slack:
+            type: slack
+            token: '%env(SLACK_TOKEN)%'
+            channels: ['import']
+        console:
+            type: console
+            channels: ['!audit']
+`,
+    });
+
+    const text = await runModule('monolog-channel-mapping.js', app);
+
+    expect(text).toContain('import');
+  });
+
+  test('a New Relic ini beside the application', async () => {
+    const app = appWith('new-relic-integration', {
+      'docker/newrelic.ini': `[newrelic]
+newrelic.enabled = true
+newrelic.appname = "Acme"
+newrelic.license = "0123456789abcdef0123456789abcdef01234567"
+newrelic.transaction_tracer.enabled = true
+newrelic.distributed_tracing_enabled = true
+`,
+      'composer.json': JSON.stringify({ require: { 'symfony/framework-bundle': '^7.0' } }, null, 4) + '\n',
+    });
+
+    const text = await runModule('new-relic-integration.js', app);
+
+    expect(text).toContain('newrelic');
+  });
+
+  test('a Panther test taking screenshots', async () => {
+    const app = appWith('panther-testing', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'symfony/panther': '^2.0' } }, null, 4) + '\n',
+      'tests/E2E/CheckoutTest.php': `<?php
+
+namespace App\\Tests\\E2E;
+
+use Symfony\\Component\\Panther\\PantherTestCase;
+
+class CheckoutTest extends PantherTestCase
+{
+    public function testCheckout(): void
+    {
+        $client = static::createPantherClient();
+        $crawler = $client->request('GET', '/checkout');
+
+        $client->takeScreenshot('var/screenshots/checkout.png');
+
+        $this->assertSelectorTextContains('h1', 'Checkout');
+    }
+}
+`,
+    });
+
+    const text = await runModule('panther-testing.js', app);
+
+    expect(text).toContain('anther');
+  });
+});
