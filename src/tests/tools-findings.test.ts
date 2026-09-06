@@ -21530,3 +21530,220 @@ class HashBench
     expect(text).toContain('Bench');
   });
 });
+
+describe('batch 74: promotion, FPM pools, hashes, HTML parsing, memory and sessions', () => {
+  test('a constructor that assigns what it could promote', async () => {
+    const app = appWith('php-constructor-promotion', {
+      'src/Service/Importer.php': `<?php
+
+namespace App\\Service;
+
+class Importer
+{
+    private string $source;
+
+    private int $batchSize;
+
+    public function __construct(string $source, int $batchSize)
+    {
+        $this->source = $source;
+        $this->batchSize = $batchSize;
+    }
+}
+`,
+      'src/Service/Exporter.php': `<?php
+
+namespace App\\Service;
+
+abstract class Exporter
+{
+    abstract public function __construct(
+        public readonly $format,
+        protected $target,
+    );
+}
+`,
+    });
+
+    const text = await runModule('php-constructor-promotion.js', app);
+
+    expect(text).toContain('promotion');
+  });
+
+  test('an FPM pool that starts every worker at once', async () => {
+    const app = appWith('php-fpm-config', {
+      'docker/php/www.conf': `[www]
+user = www-data
+listen = 9000
+pm = static
+pm.max_children = 120
+pm.max_requests = 500
+`,
+    });
+
+    const text = await runModule('php-fpm-config.js', app);
+
+    expect(text).toContain('static');
+  });
+
+  test('a password hashed with something that is not for passwords', async () => {
+    const app = appWith('php-hash-algorithm-security', {
+      'src/Security/LegacyHasher.php': `<?php
+
+namespace App\\Security;
+
+class LegacyHasher
+{
+    public function hash(string $password): string
+    {
+        return md5($password . 'acme-salt');
+    }
+
+    public function checksum(string $payload): string
+    {
+        return sha1($payload);
+    }
+
+    public function modern(string $password): string
+    {
+        return password_hash($password, PASSWORD_ARGON2ID);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-hash-algorithm-security.js', app);
+
+    expect(text).toContain('md5');
+  });
+
+  test('HTML parsed the old way and the new way', async () => {
+    const app = appWith('php-html5-parser', {
+      'src/Scraper/PageParser.php': `<?php
+
+namespace App\\Scraper;
+
+class PageParser
+{
+    public function legacy(string $html): \\DOMDocument
+    {
+        libxml_use_internal_errors(true);
+        $document = new DOMDocument();
+        $document->loadHTML($html);
+
+        return $document;
+    }
+}
+`,
+      'src/Scraper/ModernParser.php': `<?php
+
+namespace App\\Scraper;
+
+class ModernParser
+{
+    public function parse(string $html): object
+    {
+        return Dom\\HTMLDocument::createFromString($html);
+    }
+
+    public function parseXml(string $xml): object
+    {
+        return Dom\\XMLDocument::createFromString($xml);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-html5-parser.js', app);
+
+    expect(text).toContain('DOMDocument');
+  });
+
+  test('a memory limit raised inside the code', async () => {
+    const app = appWith('php-memory-management', {
+      'php.ini': `[PHP]
+memory_limit = 4096M
+`,
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class ImportCommand extends Command
+{
+    public function run(): int
+    {
+        ini_set('memory_limit', '-1');
+
+        foreach (range(1, 100000) as $i) {
+            $rows[] = str_repeat('x', 1024);
+        }
+
+        return 0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-memory-management.js', app);
+
+    expect(text).toContain('memory_limit');
+  });
+
+  test('namespaces that do not follow the autoload map', async () => {
+    const app = appWith('php-namespace-consistency', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        autoload: { 'psr-4': { 'App\\': 'src/', 'Acme\\': 'lib/' } },
+      }, null, 4) + '\n',
+      'src/Service/Importer.php': `<?php
+
+namespace App\\Service;
+
+class Importer
+{
+}
+`,
+      'src/Service/Wrong.php': `<?php
+
+namespace App\\Wrong\\Place;
+
+class Wrong
+{
+}
+`,
+    });
+
+    const text = await runModule('php-namespace-consistency.js', app);
+
+    expect(text).toContain('Wrong');
+  });
+
+  test('sessions started and regenerated without their options', async () => {
+    const app = appWith('php-session-security', {
+      'src/Legacy/SessionBridge.php': `<?php
+
+namespace App\\Legacy;
+
+class SessionBridge
+{
+    public function start(): void
+    {
+        session_start();
+    }
+
+    public function login(): void
+    {
+        session_regenerate_id();
+        ini_set('session.use_trans_sid', 1);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-session-security.js', app);
+
+    expect(text).toContain('session_start()');
+  });
+});
