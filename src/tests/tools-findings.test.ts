@@ -4889,3 +4889,309 @@ describe('esi', () => {
     expect(text).toContain('esi');
   });
 });
+
+describe('competing consumers', () => {
+  test('transports with concurrency and prefetch, and a single worker in supervisor', async () => {
+    const app = appWith('competing-consumers', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    concurrency: 4
+                    prefetch_count: 10
+            slow:
+                dsn: 'doctrine://default?queue_name=slow'
+                options:
+                    prefetch_count: 1
+`,
+      'docker/supervisord.conf': `[program:messenger-async]
+command=php /srv/app/bin/console messenger:consume async --time-limit=3600
+numprocs=1
+autostart=true
+
+[program:messenger-slow]
+command=php /srv/app/bin/console messenger:consume slow
+numprocs=6
+`,
+      'docker-compose.yml': `services:
+  worker:
+    image: acme
+    command: php bin/console messenger:consume async
+    deploy:
+      replicas: 2
+`,
+      'Makefile': `.PHONY: consume
+consume:
+	php bin/console messenger:consume async
+`,
+    });
+
+    const text = await runModule('symfony-messenger-competing-consumers.js', app);
+
+    expect(text).toContain('async');
+  });
+});
+
+describe('property info', () => {
+  test('extractors referenced in code with property_info turned off', async () => {
+    const app = appWith('property-info', {
+      'config/packages/framework.yaml': `framework:
+    property_info:
+        enabled: false
+`,
+      'src/Serializer/Extractor.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\PropertyInfo\\Extractor\\PhpDocExtractor;
+use Symfony\\Component\\PropertyInfo\\Extractor\\ReflectionExtractor;
+use Symfony\\Component\\PropertyInfo\\PropertyInfoExtractorInterface;
+use Symfony\\Component\\PropertyInfo\\PropertyTypeExtractorInterface;
+
+class Extractor implements PropertyTypeExtractorInterface
+{
+    public function __construct(private PropertyInfoExtractorInterface $inner)
+    {
+    }
+
+    public function getTypes(string $class, string $property, array $context = []): ?array
+    {
+        $reflection = new ReflectionExtractor();
+        $phpDoc = new PhpDocExtractor();
+
+        return $this->inner->getTypes($class, $property, $context);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-property-info.js', app);
+
+    expect(text).toContain('property_info');
+  });
+});
+
+describe('rate limiter policies', () => {
+  test('intervals written in every shape, and limits that make no sense', async () => {
+    const app = appWith('rate-limiter-policy', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        per_hour:
+            policy: 'sliding_window'
+            limit: 1000
+            interval: '1 hour'
+        per_minutes:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '15 minutes'
+        iso_seconds:
+            policy: 'fixed_window'
+            limit: 10
+            interval: 'PT30S'
+        iso_minutes:
+            policy: 'sliding_window'
+            limit: 20
+            interval: 'PT10M'
+        iso_hours:
+            policy: 'sliding_window'
+            limit: 100
+            interval: 'PT2H'
+        bare_number:
+            policy: 'fixed_window'
+            limit: 3
+            interval: '60'
+        bucket:
+            policy: 'token_bucket'
+            limit: 10000
+            rate: { interval: '1 second', amount: 500 }
+        no_limit:
+            policy: 'sliding_window'
+            interval: '1 hour'
+        broken: ~
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-policy.js', app);
+
+    expect(text).toContain('per_hour');
+  });
+});
+
+describe('ux typed', () => {
+  test('a typed controller with no strings, no speed and no loop', async () => {
+    const app = appWith('ux-typed', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'assets/controllers.json': JSON.stringify({
+        controllers: {
+          '@symfony/ux-typed': {
+            typed: { enabled: true, fetch: 'eager' },
+          },
+        },
+      }, null, 2),
+      'assets/controllers/typed_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {
+    connect() {
+    }
+}
+`,
+      'templates/home/index.html.twig': `<div {{ stimulus_controller('symfony/ux-typed/typed') }}>
+    <span></span>
+</div>
+`,
+    });
+
+    const text = await runModule('symfony-ux-typed.js', app);
+
+    expect(text).toContain('Typed');
+  });
+});
+
+describe('ux vue', () => {
+  test('vue components without defineProps and a twig call passing an object', async () => {
+    const app = appWith('ux-vue', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/ux-vue': '^2.0' },
+      }, null, 2),
+      'package.json': JSON.stringify({
+        devDependencies: { vue: '^3.4.0', '@symfony/ux-vue': '^2.0.0' },
+      }, null, 2),
+      'assets/vue/controllers/Counter.vue': `<template>
+    <button @click="count++">{{ count }}</button>
+</template>
+
+<script setup>
+let count = 0;
+</script>
+`,
+      'assets/vue/controllers/Typed.vue': `<template>
+    <span>{{ label }}</span>
+</template>
+
+<script setup>
+defineProps({ label: String });
+</script>
+`,
+      'assets/vue/controllers/notes.md': 'not a component\n',
+      'templates/home/index.html.twig': `{{ vue_component('Counter', { count: 1 }) }}
+{{ vue_component('Typed', { label: invoice }) }}
+`,
+    });
+
+    const text = await runModule('symfony-ux-vue.js', app);
+
+    expect(text).toContain('Vue');
+  });
+});
+
+describe('workflows and state machines', () => {
+  test('a state machine with several from-states, no marking store and an audit trail', async () => {
+    const app = appWith('state-machine', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        invoice:
+            type: state_machine
+            audit_trail:
+                enabled: true
+            supports:
+                - App\\Entity\\Invoice
+            places:
+                - draft
+                - review
+                - approved
+                - paid
+            transitions:
+                to_review:
+                    from: draft
+                    to: review
+                approve:
+                    from: [review, draft]
+                    to: approved
+                pay:
+                    from: approved
+                    to: paid
+`,
+      'config/workflows/article.yaml': `framework:
+    workflows:
+        article:
+            type: workflow
+            marking_store:
+                type: method
+                property: currentPlace
+            supports:
+                - App\\Entity\\Article
+            places: [draft, published]
+            transitions:
+                publish:
+                    from: draft
+                    to: published
+`,
+    });
+
+    const text = await runModule('symfony-workflow-state-machine.js', app);
+
+    expect(text).toContain('invoice');
+  });
+});
+
+describe('websockets', () => {
+  test('a ratchet server whose onOpen checks neither authentication nor origin', async () => {
+    const app = appWith('websocket', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'cboden/ratchet': '^0.4' },
+      }, null, 2),
+      'src/WebSocket/ChatServer.php': `<?php
+
+namespace App\\WebSocket;
+
+use Ratchet\\ConnectionInterface;
+use Ratchet\\MessageComponentInterface;
+
+class ChatServer implements MessageComponentInterface
+{
+    public function onOpen(ConnectionInterface $conn)
+    {
+        $this->clients->attach($conn);
+    }
+
+    public function onMessage(ConnectionInterface $from, $msg)
+    {
+    }
+
+    public function onClose(ConnectionInterface $conn)
+    {
+    }
+
+    public function onError(ConnectionInterface $conn, \\Exception $e)
+    {
+    }
+}
+`,
+      'config/packages/mercure.yaml': `mercure:
+    hubs:
+        default:
+            url: 'https://mercure.example.com/.well-known/mercure'
+            jwt:
+                secret: '%env(MERCURE_JWT_SECRET)%'
+                publish: '*'
+`,
+      'docker/nginx.conf': `server {
+    location /ws {
+        proxy_pass http://websocket:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+`,
+    });
+
+    const text = await runModule('websocket-integration.js', app);
+
+    expect(text).toContain('ChatServer');
+  });
+});
