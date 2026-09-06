@@ -25589,3 +25589,214 @@ class DynamicType extends AbstractType
     expect(text).toContain('DynamicType');
   });
 });
+
+describe('batch 86: GitLab, Cloud Run, storage, gRPC, Heroku, Intercom, logs and SSO', () => {
+  test('a GitLab pipeline with a deployment stage', async () => {
+    const app = appWith('gitlab-ci-config', {
+      '.gitlab-ci.yml': `stages:
+    - test
+    - deploy
+
+variables:
+    DATABASE_URL: 'postgresql://acme:hunter2@postgres:5432/acme'
+
+test:
+    stage: test
+    image: php:8.3
+    services:
+        - postgres:16
+    script:
+        - composer install
+        - vendor/bin/phpunit
+
+deploy:
+    stage: deploy
+    when: manual
+    script:
+        - ./deploy.sh
+`,
+    });
+
+    const text = await runModule('gitlab-ci-config.js', app);
+
+    expect(text).toContain('Deploy stage');
+  });
+
+  test('a project with no GitLab CI in it', async () => {
+    const app = appWith('gitlab-ci-absent', {});
+
+    const text = await runModule('gitlab-ci-config.js', app);
+
+    expect(text).toContain('No GitLab CI configured');
+  });
+
+  test('a Cloud Run service with memory in gigabytes', async () => {
+    const app = appWith('google-cloud-run-config', {
+      'service.yaml': `apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+    name: acme
+spec:
+    template:
+        spec:
+            containerConcurrency: 80
+            containers:
+                - image: gcr.io/acme/app
+                  resources:
+                      limits:
+                          memory: 2Gi
+                          cpu: '1'
+`,
+      'cloudbuild.yaml': `steps:
+    - name: gcr.io/cloud-builders/docker
+      args: ['build', '-t', 'gcr.io/acme/app', '.']
+`,
+    });
+
+    const text = await runModule('google-cloud-run-config.js', app);
+
+    expect(text).toContain('Cloud Run');
+  });
+
+  test('a storage bucket reached with a key file', async () => {
+    const app = appWith('google-cloud-storage', {
+      'composer.json': JSON.stringify({ require: { 'google/cloud-storage': '^1.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nGOOGLE_APPLICATION_CREDENTIALS=config/gcp/service-account.json\nGCS_BUCKET=acme-uploads\n',
+      'src/Storage/GcsUploader.php': `<?php
+
+namespace App\\Storage;
+
+use Google\\Cloud\\Storage\\StorageClient;
+
+class GcsUploader
+{
+    public function upload(string $path): void
+    {
+        $storage = new StorageClient(['keyFilePath' => 'config/gcp/service-account.json']);
+        $bucket = $storage->bucket('acme-uploads');
+        $bucket->upload(fopen($path, 'r'), ['predefinedAcl' => 'publicRead']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('google-cloud-storage.js', app);
+
+    expect(text).toContain('cloud-storage');
+  });
+
+  test('a proto file still on proto2, with camelCase fields', async () => {
+    const app = appWith('grpc-integration', {
+      'proto/invoice.proto': `syntax = "proto2";
+
+package acme;
+
+message Invoice {
+    required int32 id = 1;
+    optional string invoiceNumber = 2;
+    optional int64 totalAmount = 3;
+}
+
+service InvoiceService {
+    rpc GetInvoice (Invoice) returns (Invoice);
+}
+`,
+    });
+
+    const text = await runModule('grpc-integration.js', app);
+
+    expect(text).toContain('proto3');
+  });
+
+  test('a Heroku app with an addon and no plan', async () => {
+    const app = appWith('heroku-config', {
+      'Procfile': `web: heroku-php-apache2 public/
+worker: php bin/console messenger:consume async
+`,
+      'app.json': JSON.stringify({
+        name: 'acme',
+        addons: [{ plan: 'heroku-postgresql:standard-0' }, 'papertrail'],
+        env: { APP_ENV: { value: 'prod' } },
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('heroku-config.js', app);
+
+    expect(text).toContain('web');
+  });
+
+  test('an Intercom token referenced from the code', async () => {
+    const app = appWith('intercom-integration', {
+      'composer.json': JSON.stringify({ require: { 'intercom/intercom-php': '^4.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nINTERCOM_ACCESS_TOKEN=dG9rOmFiY2RlZmdoaWprbG1ub3A=\n',
+      'src/Crm/IntercomClient.php': `<?php
+
+namespace App\\Crm;
+
+use Intercom\\IntercomClient as Client;
+
+class IntercomClient
+{
+    public function client(): Client
+    {
+        return new Client($_ENV['INTERCOM_ACCESS_TOKEN'], null);
+    }
+}
+`,
+    });
+
+    const text = await runModule('intercom-integration.js', app);
+
+    expect(text).toContain('INTERCOM');
+  });
+
+  test('log files read from the var directory', async () => {
+    const app = appWith('logs-files', {
+      'var/log/prod.log': `[2026-01-01T09:00:00.000000+00:00] request.INFO: Matched route "home". [] []
+[2026-01-01T09:00:01.000000+00:00] php.CRITICAL: Uncaught Exception: nope {"exception":"[object] (RuntimeException)"} []
+[2026-01-01T09:00:02.000000+00:00] doctrine.DEBUG: SELECT * FROM invoice [] []
+`,
+      'var/log/dev.log': `[2026-01-01T09:00:00.000000+00:00] app.WARNING: Slow query [] []
+`,
+    });
+
+    const text = await runModule('logs.js', app, ['prod']);
+
+    expect(text).toContain('log');
+  });
+
+  test('a New Relic agent switched off in production', async () => {
+    const app = appWith('newrelic-php-agent', {
+      'docker/php/newrelic.ini': `[newrelic]
+newrelic.enabled = false
+newrelic.appname = "Acme (prod)"
+newrelic.license = "0123456789abcdef0123456789abcdef01234567"
+newrelic.distributed_tracing_enabled = false
+`,
+    });
+
+    const text = await runModule('newrelic-php-agent.js', app);
+
+    expect(text).toContain('newrelic');
+  });
+
+  test('an OAuth client redirected over plain HTTP', async () => {
+    const app = appWith('oauth-sso', {
+      'composer.json': JSON.stringify({ require: { 'knpuniversity/oauth2-client-bundle': '^2.0' } }, null, 4) + '\n',
+      'config/packages/knpu_oauth2_client.yaml': `knpu_oauth2_client:
+    clients:
+        keycloak:
+            type: keycloak
+            client_id: '%env(KEYCLOAK_ID)%'
+            client_secret: '%env(KEYCLOAK_SECRET)%'
+            redirect_uri: 'http://acme.example.com/connect/keycloak/check'
+            scope: ['openid', 'profile', 'email']
+        broken: ~
+`,
+    });
+
+    const text = await runModule('oauth-sso.js', app);
+
+    expect(text).toContain('HTTP');
+  });
+});

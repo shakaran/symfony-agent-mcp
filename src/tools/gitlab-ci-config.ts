@@ -106,10 +106,9 @@ function buildGitlabCiConfigInfos(appPath: string): GitlabCiInfo[] {
 
 export function listGitlabCiConfig(appPath: string): McpToolResult {
   try {
+    // A project without .gitlab-ci.yml is reported as one of the findings, so
+    // the list always holds something.
     const infos = buildGitlabCiConfigInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No GitLab CI configuration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `GitLab CI Configuration Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {
