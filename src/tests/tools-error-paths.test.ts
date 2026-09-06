@@ -180,9 +180,26 @@ afterEach(() => { failMode = 'none'; });
 interface ResultLike { content?: Array<{ type?: string; text?: string }> }
 
 function pathFunctions(mod: Record<string, unknown>): Array<[string, (a: string) => unknown]> {
+  // Everything that takes an application path, whatever else it takes after
+  // it: the second argument is a name the module looks up, and the handlers
+  // around those lookups are only reached when the filesystem underneath
+  // them fails.
+  const extras = ['prod.log', 'App\\Entity\\User'];
+
   return Object.entries(mod)
-    .filter(([, v]) => typeof v === 'function' && (v as (a: string) => unknown).length === 1)
-    .map(([k, v]) => [k, v as (a: string) => unknown]);
+    .filter(([, v]) => typeof v === 'function' && (v as (a: string) => unknown).length >= 1)
+    .map(([k, v]) => {
+      const fn = v as (...args: unknown[]) => unknown;
+      if (fn.length === 1) return [k, fn as (a: string) => unknown];
+
+      return [k, ((a: string) => {
+        let last: unknown;
+        for (const extra of extras) {
+          last = fn(a, extra, extra);
+        }
+        return last;
+      }) as (a: string) => unknown];
+    });
 }
 
 describe('every module survives a failing filesystem', () => {
