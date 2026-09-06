@@ -7458,3 +7458,247 @@ class Customer
     expect(text).toContain('Category');
   });
 });
+
+describe('phpstan baseline size', () => {
+  test('a baseline named in the config and counted by its messages', async () => {
+    const baseline = Array.from({ length: 210 }, (_, i) => `        -\n            message: "#^Error ${i}$#"\n            count: 1\n            path: src/Legacy.php`).join('\n');
+    const app = appWith('phpstan-baseline', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpstan/phpstan': '^1.10' },
+      }, null, 2),
+      'phpstan.dist.neon': `includes:
+    - baseline.neon
+
+parameters:
+    level: 5
+    reportUnmatchedIgnoredErrors: false
+    paths:
+        - src
+`,
+      'baseline.neon': `parameters:
+    ignoreErrors:
+${baseline}
+`,
+    });
+
+    const text = await runModule('phpstan-config.js', app);
+
+    expect(text).toContain('phpstan.dist.neon');
+  });
+});
+
+describe('process return codes', () => {
+  test('run() whose result nobody checks, and one that is checked', async () => {
+    const unchecked = appWith('process-unchecked', {
+      'src/Service/Deployer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Deployer
+{
+    public function deploy(): void
+    {
+        $process = new Process(['bin/deploy']);
+        $process->run();
+    }
+}
+`,
+    });
+    const checked = appWith('process-checked', {
+      'src/Service/Builder.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Builder
+{
+    public function build(): int
+    {
+        $process = new Process(['bin/build']);
+        $code = $process->run();
+
+        return $code;
+    }
+}
+`,
+    });
+    const quoted = appWith('process-quoted', {
+      'src/Service/Archiver.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Archiver
+{
+    public function archive(): void
+    {
+        $process = Process::fromShellCommandline("tar -czf 'archive.tgz' var/");
+        $process->mustRun();
+    }
+
+    public function plain(): void
+    {
+        $process = Process::fromShellCommandline('ls -la');
+        $process->mustRun();
+    }
+}
+`,
+    });
+
+    const one = await runModule('symfony-process.js', unchecked);
+    const two = await runModule('symfony-process.js', checked);
+    const three = await runModule('symfony-process.js', quoted);
+
+    expect(one).toContain('Deployer');
+    expect(two).toContain('Builder');
+    expect(three).toContain('Archiver');
+  });
+});
+
+describe('mysql specifics', () => {
+  test('utf8 instead of utf8mb4, a collation and json kept as a string', async () => {
+    const app = appWith('mysql-specific', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        driver: pdo_mysql
+        charset: utf8
+        default_table_options:
+            charset: utf8
+            collate: utf8_general_ci
+`,
+      'src/Entity/Payload.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(options: ['charset' => 'utf8', 'collate' => 'utf8_general_ci'])]
+class Payload
+{
+    #[ORM\\Column(type: 'string', length: 4000)]
+    private string $json = '{}';
+
+    #[ORM\\Column(type: 'json')]
+    private array $data = [];
+}
+`,
+    });
+
+    const text = await runModule('doctrine-mysql-specific.js', app);
+
+    expect(text).toContain('utf8');
+  });
+});
+
+describe('environment configuration differences', () => {
+  test('bundles enabled per environment and packages overridden only in dev', async () => {
+    const app = appWith('env-config-diff', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Symfony\\Bundle\\WebProfilerBundle\\WebProfilerBundle::class => ['dev' => true, 'test' => true],
+    Symfony\\Bundle\\MakerBundle\\MakerBundle::class => ['dev' => true],
+    Doctrine\\Bundle\\DoctrineBundle\\DoctrineBundle::class => ['all' => true],
+];
+`,
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+`,
+      'config/packages/dev/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+`,
+      'config/packages/dev/web_profiler.yaml': `web_profiler:
+    toolbar: true
+`,
+      'config/packages/prod/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: false
+`,
+      'config/packages/test/framework.yaml': `framework:
+    test: true
+`,
+    });
+
+    const text = await runModule('env-config-diff.js', app);
+
+    expect(text).toContain('dev');
+  });
+});
+
+describe('fixture dependencies', () => {
+  test('fixtures that depend on each other and one that does not', async () => {
+    const app = appWith('fixtures-graph', {
+      'src/DataFixtures/UserFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\DependentFixtureInterface;
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class UserFixtures extends Fixture implements DependentFixtureInterface
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+
+    public function getDependencies(): array
+    {
+        return [GroupFixtures::class, RoleFixtures::class];
+    }
+}
+`,
+      'src/DataFixtures/GroupFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\DependentFixtureInterface;
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class GroupFixtures extends Fixture implements DependentFixtureInterface
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+
+    public function getDependencies(): array
+    {
+        return [RoleFixtures::class];
+    }
+}
+`,
+      'src/DataFixtures/RoleFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class RoleFixtures extends Fixture
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+}
+`,
+      'src/DataFixtures/notes.md': 'not a fixture\n',
+    });
+
+    const text = await runModule('fixtures.js', app, ['UserFixtures']);
+
+    expect(text).toContain('UserFixtures');
+  });
+});
