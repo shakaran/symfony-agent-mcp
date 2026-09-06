@@ -34,7 +34,9 @@ function getAllYamlFiles(dir: string, base: string): string[] {
 }
 
 function extractYamlField(content: string, field: string): string | null {
-  const re = new RegExp(`^${field}\\s*:\\s*([^\\n]{1,200})`, 'm');
+  // Only kind and apiVersion sit at column zero in a manifest; type, name,
+  // replicas and the rest are nested, and the anchor kept them all invisible.
+  const re = new RegExp(`^[ \\t]*${field}\\s*:[ \\t]*([^\\n]{1,200})`, 'm');
   const m = re.exec(content);
   return m ? m[1].trim() : null;
 }

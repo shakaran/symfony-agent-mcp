@@ -3797,3 +3797,249 @@ deploy:
     expect(text).not.toContain('glpat-0123456789abcdef');
   });
 });
+
+describe('kubernetes manifests', () => {
+  test('a load balancer in a dev manifest, a node port, a secret with data and a budget with no bound', async () => {
+    const app = appWith('kubernetes', {
+      'k8s/dev/service.yaml': `apiVersion: v1
+kind: Service
+metadata:
+    name: acme-dev
+spec:
+    type: LoadBalancer
+    selector:
+        app: acme
+    ports:
+        - port: 80
+          targetPort: 8080
+`,
+      'k8s/service-nodeport.yaml': `apiVersion: v1
+kind: Service
+metadata:
+    name: acme-nodeport
+spec:
+    type: NodePort
+    selector:
+        app: acme
+    ports:
+        - port: 80
+          nodePort: 30080
+`,
+      'k8s/secret.yaml': `apiVersion: v1
+kind: Secret
+metadata:
+    name: acme-secrets
+type: Opaque
+data:
+    APP_SECRET: c2VjcmV0LXZhbHVl
+    DATABASE_PASSWORD: aHVudGVyMg==
+`,
+      'k8s/pdb.yaml': `apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+    name: acme
+spec:
+    selector:
+        matchLabels:
+            app: acme
+`,
+      'k8s/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: acme
+spec:
+    replicas: 3
+    template:
+        spec:
+            containers:
+                - name: app
+                  image: registry.example.com/acme:1.2.3
+                  resources:
+                      limits:
+                          cpu: 500m
+                          memory: 512Mi
+`,
+    });
+
+    const text = await runModule('kubernetes-manifests.js', app);
+
+    expect(text).toContain('NodePort');
+  });
+});
+
+describe('asymmetric visibility', () => {
+  test('private(set) on a static property, with readonly, and with a narrower getter', async () => {
+    const app = appWith('asymmetric-visibility', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.4', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Entity/Account.php': `<?php
+
+namespace App\\Entity;
+
+class Account
+{
+    public private(set) string $reference = '';
+
+    public static private(set) string $registry = '';
+
+    public private(set) readonly string $createdBy;
+
+    private protected(set) string $internal = '';
+
+    public protected(set) int $balance = 0;
+}
+`,
+    });
+
+    const text = await runModule('php-asymmetric-visibility.js', app);
+
+    expect(text).toContain('reference');
+  });
+});
+
+describe('posix functions', () => {
+  test('process and permission calls, and a named pipe', async () => {
+    const app = appWith('posix', {
+      'src/System/Process.php': `<?php
+
+namespace App\\System;
+
+class Process
+{
+    public function drop(): void
+    {
+        posix_setuid(1000);
+        posix_setgid(1000);
+        posix_seteuid(1000);
+    }
+
+    public function kill(): void
+    {
+        $pid = (int) $_GET['pid'];
+        posix_kill($pid, SIGTERM);
+    }
+
+    public function lookup(): array
+    {
+        $username = $_POST['user'];
+
+        return posix_getpwnam($username);
+    }
+
+    public function pipe(string $path): void
+    {
+        posix_mkfifo($path, 0666);
+        // posix_mkfifo($path, 0600) in a comment does not count
+    }
+
+    public function info(): array
+    {
+        return [
+            'user' => posix_getpwuid(posix_geteuid()),
+            'tty' => posix_ttyname(STDOUT),
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-posix-functions.js', app);
+
+    expect(text).toContain('posix_');
+  });
+});
+
+describe('profiler', () => {
+  test('an index with tokens and a profile with collectors', async () => {
+    const app = appWith('profiler', {
+      'var/cache/dev/profiler/index.csv': [
+        'abc123,127.0.0.1,GET,http://localhost/,1767225600,200,/,acme',
+        'def456,127.0.0.1,POST,http://localhost/checkout,1767225700,500,/checkout,acme',
+        'short,line',
+        '',
+      ].join('\n'),
+    });
+
+    const text = await runModule('profiler.js', app, ['abc123']);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('rector', () => {
+  test('a config whose php set is older than composer requires, with many rules and skips', async () => {
+    const rules = Array.from({ length: 20 }, (_, i) => `        Rector\\Php80\\Rector\\Class_\\Rule${i}::class,`).join('\n');
+    const skips = Array.from({ length: 14 }, (_, i) => `        Rector\\Php74\\Rector\\Skip${i}::class,`).join('\n');
+    const app = appWith('rector', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.3', 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'rector/rector': '^1.0' },
+      }, null, 2),
+      'rector.php': `<?php
+
+declare(strict_types=1);
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\LevelSetList;
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([__DIR__ . '/src', __DIR__ . '/tests']);
+
+    $rectorConfig->sets([
+        LevelSetList::UP_TO_PHP_81,
+    ]);
+
+    $rectorConfig->rules([
+${rules}
+    ]);
+
+    $rectorConfig->skip([
+${skips}
+    ]);
+};
+`,
+    });
+
+    const text = await runModule('rector-config.js', app);
+
+    expect(text).toContain('rector.php');
+  });
+});
+
+describe('shopify', () => {
+  test('api credentials written into .env, and a webhook without verification', async () => {
+    const app = appWith('shopify', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'shopify/shopify-api': '^5.0' },
+      }, null, 2),
+      '.env': `SHOPIFY_API_KEY=0123456789abcdef0123456789abcdef
+SHOPIFY_API_SECRET=shpss\x5f0123456789abcdef0123456789abcdef
+SHOPIFY_ACCESS_TOKEN=shpat\x5f0123456789abcdef0123456789abcdef
+SHOPIFY_SHOP_DOMAIN=acme.myshopify.com
+`,
+      '.env.local': `SHOPIFY_API_KEY=%env(SHOPIFY_API_KEY)%
+`,
+      'src/Shopify/WebhookController.php': `<?php
+
+namespace App\\Shopify;
+
+use Shopify\\Clients\\Rest;
+
+class WebhookController
+{
+    public function handle(string $payload): void
+    {
+        $client = new Rest('acme.myshopify.com', $_ENV['SHOPIFY_ACCESS_TOKEN']);
+        $client->get(['path' => 'products']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('shopify-integration.js', app);
+
+    expect(text).toContain('SHOPIFY_API_KEY');
+    expect(text).not.toContain('shpss\x5f0123456789abcdef0123456789abcdef');
+  });
+});
