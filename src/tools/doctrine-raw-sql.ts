@@ -26,11 +26,11 @@ function buildRawSqlInfos(appPath: string): RawSqlInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
           const hasRawSql = content.includes('executeQuery(') || content.includes('executeStatement(') || content.includes('createNativeQuery(') || content.includes('->query(') || content.includes('$conn->exec(');
           const hasDql = content.includes('createQuery(') || content.includes('createQueryBuilder(');
-          if (!hasRawSql && !hasDql) return;
+          if (!hasRawSql && !hasDql) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];

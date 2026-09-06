@@ -81,8 +81,8 @@ function buildPushNotifierInfos(appPath: string): PushNotifierInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('PushMessage') && !content.includes('FirebaseMessage') && !content.includes('OneSignalOptions')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('PushMessage') && !content.includes('FirebaseMessage') && !content.includes('OneSignalOptions')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

@@ -74,8 +74,8 @@ function buildHtmxIntegrationInfos(appPath: string): HtmxIntegrationInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('HX-Request') && !content.includes('hx-request') && !content.includes('htmx')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('HX-Request') && !content.includes('hx-request') && !content.includes('htmx')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

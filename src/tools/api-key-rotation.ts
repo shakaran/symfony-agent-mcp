@@ -72,8 +72,8 @@ function buildApiKeyRotationInfos(appPath: string): ApiKeyRotationInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             const content = safeRead(full, appPath);
-            if (content === null) return;
-            if (!content.includes('api_key') && !content.includes('apiKey') && !content.includes('API_KEY') && !content.includes('token') && !content.includes('accessToken')) return;
+            if (content === null) continue;
+            if (!content.includes('api_key') && !content.includes('apiKey') && !content.includes('API_KEY') && !content.includes('token') && !content.includes('accessToken')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

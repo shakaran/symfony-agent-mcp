@@ -42,12 +42,12 @@ function buildAuditLogInfos(appPath: string): AuditLogInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
           const relFile = path.relative(appPath, full);
 
           const isSecuritySensitive = content.includes('denyAccessUnlessGranted') || content.includes('IsGranted') || content.includes('deleteUser') || content.includes('changePassword') || content.includes('AdminController') || content.includes('login_check');
-          if (!isSecuritySensitive) return;
+          if (!isSecuritySensitive) continue;
 
           const issues: string[] = [];
           const hasLogging = content.includes('$this->logger') || content.includes('LoggerInterface') || content.includes('$logger->');

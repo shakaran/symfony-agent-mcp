@@ -27,9 +27,9 @@ function buildDoctrineColumnDefaultInfos(appPath: string): DoctrineColumnDefault
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
-          if (!content.includes('#[Column') && !content.includes('@Column') && !content.includes('ORM\\Column')) return;
+          if (!content.includes('#[Column') && !content.includes('@Column') && !content.includes('ORM\\Column')) continue;
 
           const relFile = path.relative(appPath, full);
           const entityNameMatch = /class\s+(\w+)/.exec(content);

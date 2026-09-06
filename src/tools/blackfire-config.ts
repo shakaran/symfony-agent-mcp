@@ -130,11 +130,11 @@ function scanPhpUsage(appPath: string): string[] {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
         if (e.isSymbolicLink()) continue;
-        if (e.isDirectory()) { gather(full); return; }
-        if (!e.name.endsWith('.php')) return;
+        if (e.isDirectory()) { gather(full); continue; }
+        if (!e.name.endsWith('.php')) continue;
         let content = '';
-        try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-        if (!content.includes('Blackfire') && !content.includes('blackfire')) return;
+        try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+        if (!content.includes('Blackfire') && !content.includes('blackfire')) continue;
         const classM = /class\s+(\w+)/.exec(content);
         if (classM && sites.length < 10) sites.push(classM[1]);
       }

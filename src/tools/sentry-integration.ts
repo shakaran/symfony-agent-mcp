@@ -116,11 +116,11 @@ function scanSentryUsage(appPath: string): { directCalls: number; captureCallSit
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
         if (e.isSymbolicLink()) continue;
-        if (e.isDirectory()) { gather(full); return; }
-        if (!e.name.endsWith('.php')) return;
+        if (e.isDirectory()) { gather(full); continue; }
+        if (!e.name.endsWith('.php')) continue;
         let content = '';
-        try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-        if (!content.includes('sentry') && !content.includes('Sentry')) return;
+        try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+        if (!content.includes('sentry') && !content.includes('Sentry')) continue;
         if (content.includes('getCurrentHub()')) directCalls++;
         if ((content.includes('captureException') || content.includes('captureMessage')) && captureCallSites.length < 10) {
           const classM = /class\s+(\w+)/.exec(content);

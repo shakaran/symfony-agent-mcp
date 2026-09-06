@@ -70,8 +70,8 @@ function buildKafkaIntegrationInfos(appPath: string): KafkaIntegrationInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('Kafka') && !content.includes('kafka') && !content.includes('KafkaProducer') && !content.includes('KafkaConsumer')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('Kafka') && !content.includes('kafka') && !content.includes('KafkaProducer') && !content.includes('KafkaConsumer')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

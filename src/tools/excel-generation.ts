@@ -44,8 +44,8 @@ function buildExcelGenerationInfos(appPath: string): ExcelGenerationInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('Spreadsheet') && !content.includes('PhpSpreadsheet') && !content.includes('PHPExcel') && !content.includes('FastExcel') && !content.includes('setCellValue') && !content.includes('.xlsx') && !content.includes('.csv')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('Spreadsheet') && !content.includes('PhpSpreadsheet') && !content.includes('PHPExcel') && !content.includes('FastExcel') && !content.includes('setCellValue') && !content.includes('.xlsx') && !content.includes('.csv')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

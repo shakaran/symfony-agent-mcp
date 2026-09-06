@@ -50,8 +50,8 @@ function buildStripeIntegrationInfos(appPath: string): StripeIntegrationInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('Stripe') && !content.includes('stripe') && !content.includes('PaymentIntent') && !content.includes('PaymentMethod')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('Stripe') && !content.includes('stripe') && !content.includes('PaymentIntent') && !content.includes('PaymentMethod')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

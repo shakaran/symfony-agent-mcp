@@ -26,11 +26,11 @@ function buildFileArchiveInfos(appPath: string): FileArchiveInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
           const hasZip = content.includes('ZipArchive') || content.includes('zip_open') || content.includes('PharData') || content.includes('Phar::');
           const hasTar = content.includes('PharData') || content.includes('.tar.gz') || content.includes('tar_open') || content.includes('.tar');
-          if (!hasZip && !hasTar) return;
+          if (!hasZip && !hasTar) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];

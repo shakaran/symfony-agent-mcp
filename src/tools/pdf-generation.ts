@@ -42,8 +42,8 @@ function buildPdfGenerationInfos(appPath: string): PdfGenerationInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('Dompdf') && !content.includes('TCPDF') && !content.includes('Mpdf') && !content.includes('Snappy') && !content.includes('pdf') && !content.includes('PDF')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('Dompdf') && !content.includes('TCPDF') && !content.includes('Mpdf') && !content.includes('Snappy') && !content.includes('pdf') && !content.includes('PDF')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

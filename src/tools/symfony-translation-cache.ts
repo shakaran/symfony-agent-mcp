@@ -68,8 +68,8 @@ function buildTranslationCacheInfos(appPath: string): TranslationCacheInfo[] {
           if (e.isDirectory()) checkPhpFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('TranslatorInterface') && !content.includes('->trans(')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('TranslatorInterface') && !content.includes('->trans(')) continue;
 
             const relFile = path.relative(appPath, full);
             const inLoop = /{%.*for.*%}[\s\S]{0,500}->trans\(/.test(content) || /foreach[\s\S]{0,200}->trans\(/.test(content);

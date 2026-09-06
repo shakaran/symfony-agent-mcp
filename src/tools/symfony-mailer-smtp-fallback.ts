@@ -146,8 +146,8 @@ function readYamlMailerConfig(appPath: string): Array<{ source: string; dsn: str
           scanDir(full);
         } else if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-          if (!content.includes('mailer') && !content.includes('MAILER')) return;
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+          if (!content.includes('mailer') && !content.includes('MAILER')) continue;
 
           const dsnRegex = /dsn:\s*['"]?(%env[^%\s]+%|[a-z][\w+.:-]{2,}:\/\/[^\s'"]+)['"]?/gi;
           let m: RegExpExecArray | null;

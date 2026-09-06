@@ -104,7 +104,7 @@ function buildApiGraphqlSecurityInfos(appPath: string): GraphqlSecurityInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             const content = safeRead(full, appPath);
-            if (content === null) return;
+            if (content === null) continue;
 
             const relFile = path.relative(appPath, full);
 

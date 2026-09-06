@@ -41,11 +41,11 @@ function buildHateoasInfos(appPath: string): HateoasInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           const content = safeRead(full, appPath);
-          if (content === null) return;
+          if (content === null) continue;
 
           const isApiResource = content.includes('#[ApiResource') || content.includes('@ApiResource') || content.includes('ApiResource(');
           const isApiController = content.includes('JsonResponse') || content.includes('Response::HTTP_') || (content.includes('#[Route') && content.includes('methods:'));
-          if (!isApiResource && !isApiController) return;
+          if (!isApiResource && !isApiController) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];

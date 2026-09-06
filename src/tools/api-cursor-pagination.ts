@@ -26,12 +26,12 @@ function buildCursorPaginationInfos(appPath: string): CursorPaginationInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
           const hasOffsetPagination = (content.includes('setFirstResult(') || content.includes('OFFSET') || content.includes('page') || content.includes('offset')) &&
             (content.includes('setMaxResults(') || content.includes('LIMIT') || content.includes('perPage') || content.includes('limit'));
           const hasCursorPagination = content.includes('cursor') || content.includes('after=') || content.includes('before=') || content.includes('createdAt >') || content.includes('id >');
-          if (!hasOffsetPagination && !hasCursorPagination) return;
+          if (!hasOffsetPagination && !hasCursorPagination) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];

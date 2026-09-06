@@ -31,8 +31,8 @@ function buildEntityManagerScopeInfos(appPath: string): EntityManagerScopeInfo[]
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           const content = safeRead(full, srcDir);
-          if (content === null) return;
-          if (!content.includes('EntityManager') && !content.includes('EntityManagerInterface') && !content.includes('ManagerRegistry')) return;
+          if (content === null) continue;
+          if (!content.includes('EntityManager') && !content.includes('EntityManagerInterface') && !content.includes('ManagerRegistry')) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];
@@ -49,7 +49,7 @@ function buildEntityManagerScopeInfos(appPath: string): EntityManagerScopeInfo[]
           if (hasStaticEm) {
             issues.push(`Static EntityManager reference in "${relFile}" — static EMs are shared across requests in non-stateless runtimes (RoadRunner, Swoole) and retain identity map state; inject via constructor instead`);
             results.push({ file: relFile, type: 'static-em', pattern: 'static EntityManager', issues });
-            return;
+            continue;
           }
 
           const hasFlushInLoop = /foreach[\s\S]{0,300}->flush\(\)|for\s*\([\s\S]{0,300}->flush\(\)/.test(content);

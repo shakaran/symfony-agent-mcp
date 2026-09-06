@@ -26,12 +26,12 @@ function buildVersionedEntityInfos(appPath: string): VersionedEntityInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-          if (!content.includes('@ORM\\') && !content.includes('#[ORM\\') && !content.includes('use Doctrine\\ORM\\Mapping')) return;
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+          if (!content.includes('@ORM\\') && !content.includes('#[ORM\\') && !content.includes('use Doctrine\\ORM\\Mapping')) continue;
 
           const relFile = path.relative(appPath, full);
           const isEntity = content.includes('@ORM\\Entity') || content.includes('#[ORM\\Entity');
-          if (!isEntity) return;
+          if (!isEntity) continue;
 
           const hasVersion = content.includes('@ORM\\Version') || content.includes('#[ORM\\Version');
           const hasCreatedAt = content.includes('createdAt') || content.includes('created_at');

@@ -30,8 +30,8 @@ function buildOpensslPatternInfos(appPath: string): OpensslPatternInfo[] {
         if (e.isSymbolicLink()) continue;
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
-          const content = safeRead(full, appPath); if (content === null) return;
-          if (!content.includes('openssl_') && !content.includes('openssl') && !content.includes('OPENSSL_')) return;
+          const content = safeRead(full, appPath); if (content === null) continue;
+          if (!content.includes('openssl_') && !content.includes('openssl') && !content.includes('OPENSSL_')) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];
@@ -45,7 +45,7 @@ function buildOpensslPatternInfos(appPath: string): OpensslPatternInfo[] {
           if (hasEcbMode) {
             issues.push(`ECB mode in "${relFile}" — ECB does not use an IV and leaks patterns; use GCM (authenticated) or CBC (with HMAC) mode instead`);
             results.push({ file: relFile, type: 'ecb-mode', pattern: 'ECB cipher mode', issues });
-            return;
+            continue;
           }
 
           const hasIv = content.includes('openssl_random_pseudo_bytes') || content.includes('random_bytes');

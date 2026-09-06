@@ -65,7 +65,7 @@ function buildDoctrineFullTextSearchInfos(appPath: string): FullTextSearchInfo[]
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
           const relFile = path.relative(appPath, full);
 

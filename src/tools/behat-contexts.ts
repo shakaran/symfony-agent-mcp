@@ -63,7 +63,7 @@ function loadFeatureFiles(appPath: string): { file: string; scenarioCount: numbe
         if (e.isDirectory()) scan(full);
         else if (e.name.endsWith('.feature')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
           const count = [...content.matchAll(/^\s*Scenario/gm)].length;
           result.push({ file: path.relative(appPath, full), scenarioCount: count });
         }

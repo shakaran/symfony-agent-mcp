@@ -26,11 +26,11 @@ function buildImageProcessingInfos(appPath: string): ImageProcessingInfo[] {
         if (e.isDirectory()) checkFiles(full);
         else if (e.name.endsWith('.php')) {
           let content = '';
-          try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+          try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
 
           const hasImageUpload = content.includes('UploadedFile') || content.includes('getClientOriginalExtension') || content.includes('getClientMimeType') || content.includes('move(');
           const hasImageProcessing = content.includes('Imagine') || content.includes('GD') || content.includes('Imagick') || content.includes('intervention/image') || content.includes('getimagesize') || content.includes('exif_');
-          if (!hasImageUpload && !hasImageProcessing) return;
+          if (!hasImageUpload && !hasImageProcessing) continue;
 
           const relFile = path.relative(appPath, full);
           const issues: string[] = [];

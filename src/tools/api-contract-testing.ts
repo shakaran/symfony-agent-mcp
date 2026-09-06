@@ -65,7 +65,7 @@ function buildApiContractTestingInfos(appPath: string): ContractTestingInfo[] {
           if (e.isDirectory()) checkForApiCalls(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
             if (
               content.includes('HttpClient') ||
               content.includes('Guzzle') ||
@@ -104,7 +104,7 @@ function buildApiContractTestingInfos(appPath: string): ContractTestingInfo[] {
           if (e.isDirectory()) checkTestFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
             const relFile = path.relative(appPath, full);
 
             if (content.includes('PactBuilder') || content.includes('ConsumerPactBuilder')) {

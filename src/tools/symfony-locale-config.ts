@@ -118,10 +118,10 @@ function scanLocaleRoutes(appPath: string): number {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
         if (e.isSymbolicLink()) continue;
-        if (e.isDirectory()) { gather(full); return; }
-        if (!e.name.endsWith('.php')) return;
+        if (e.isDirectory()) { gather(full); continue; }
+        if (!e.name.endsWith('.php')) continue;
         let content = '';
-        try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
+        try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
         const m = content.match(/\{_locale\}|requirements.*_locale/g);
         if (m) count += m.length;
       }

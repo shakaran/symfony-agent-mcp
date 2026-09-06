@@ -61,8 +61,8 @@ function buildNewRelicIntegrationInfos(appPath: string): NewRelicIntegrationInfo
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('newrelic_') && !content.includes('NewRelic') && !content.includes('new_relic')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('newrelic_') && !content.includes('NewRelic') && !content.includes('new_relic')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

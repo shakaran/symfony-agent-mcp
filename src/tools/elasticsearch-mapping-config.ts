@@ -85,8 +85,8 @@ function buildEsMappingInfos(appPath: string): EsMappingInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('Elastica') && !content.includes('Elasticsearch') && !content.includes('ElasticSearch') && !content.includes('search(')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('Elastica') && !content.includes('Elasticsearch') && !content.includes('ElasticSearch') && !content.includes('search(')) continue;
 
             const relFile = path.relative(appPath, full);
             const issues: string[] = [];

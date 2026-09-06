@@ -86,8 +86,8 @@ function buildSymfonyRoutingConflictInfos(appPath: string): RoutingConflictInfo[
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php') && (full.includes('Controller') || full.includes('controller'))) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('#[Route(')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            if (!content.includes('#[Route(')) continue;
             const relFile = path.relative(appPath, full);
             extractRouteAttributes(content, relFile);
           }
