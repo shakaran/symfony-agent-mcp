@@ -57,8 +57,10 @@ function getAllPhpFiles(dir: string): string[] {
 }
 
 function isExtensionFile(content: string): boolean {
+  // A bundle extension extends Symfony's Extension; AbstractExtension is
+  // Twig's, and requiring it meant no ordinary extension was ever recognised.
   return (
-    content.includes('extends AbstractExtension') ||
+    /\bextends\s+(?:Abstract)?Extension\b/.test(content) ||
     content.includes('implements ExtensionInterface') ||
     content.includes('PrependExtensionInterface')
   );

@@ -8373,3 +8373,244 @@ describe('log tools', () => {
     expect(text).toContain('prod.log');
   });
 });
+
+describe('behat step matching', () => {
+  test('a definition too long to compile as a regex and one that is not valid', async () => {
+    const long = 'a'.repeat(320);
+    const app = appWith('behat-long-patterns', {
+      'features/bootstrap/FeatureContext.php': `<?php
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+    /**
+     * @Given /^${long}$/
+     */
+    public function veryLong(): void
+    {
+    }
+
+    /**
+     * @When /^I click (unbalanced$/
+     */
+    public function unbalanced(): void
+    {
+    }
+}
+`,
+      'features/long.feature': `Feature: Long patterns
+
+    Scenario: A long step
+        Given ${long}
+        When I click (unbalanced
+`,
+    });
+
+    const text = await runModule('behat-step-coverage.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('phpspec suites', () => {
+  test('suites written at the indentation the parser expects', async () => {
+    const app = appWith('phpspec-suites', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpspec/phpspec': '^7.5' },
+      }, null, 2),
+      'phpspec.yml': `suites:
+  app_suite:
+    namespace: App
+    psr4_prefix: App
+    src_path: src
+  domain_suite:
+    namespace: App\\Domain
+    src_path: src/Domain
+`,
+      'spec/Service/BuilderSpec.php': `<?php
+
+namespace spec\\App\\Service;
+
+use PhpSpec\\ObjectBehavior;
+
+class BuilderSpec extends ObjectBehavior
+{
+    public function it_is_initializable(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpspec-config.js', app);
+
+    expect(text).toContain('suite');
+  });
+});
+
+describe('configuration extensions', () => {
+  test('an extension whose alias is not snake_case and one that sets a hardcoded parameter', async () => {
+    const app = appWith('config-extensions', {
+      'src/DependencyInjection/AcmeExtension.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+use Symfony\\Component\\HttpKernel\\DependencyInjection\\Extension;
+
+class AcmeExtension extends Extension
+{
+    public function getAlias(): string
+    {
+        return 'AcmeBundle';
+    }
+
+    public function load(array $configs, ContainerBuilder $container): void
+    {
+        $container->setParameter('acme.api_url', 'https://api.example.com');
+        $container->setParameter('acme.token', '%env(ACME_TOKEN)%');
+    }
+}
+`,
+      'src/DependencyInjection/OtherExtension.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+use Symfony\\Component\\HttpKernel\\DependencyInjection\\Extension;
+
+class OtherExtension extends Extension
+{
+    public function getAlias(): string
+    {
+        return 'other_thing';
+    }
+
+    public function load(array $configs, ContainerBuilder $container): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-config-extensions.js', app);
+
+    expect(text).toContain('AcmeExtension');
+  });
+});
+
+describe('html sanitizer', () => {
+  test('a sanitizer that allows everything, dangerous elements and event attributes', async () => {
+    const app = appWith('html-sanitizer', {
+      'config/packages/html_sanitizer.yaml': `framework:
+    html_sanitizer:
+        sanitizers:
+            app.sanitizer:
+                allow_all_static_elements: true
+                allow_all_attributes: true
+                allow_elements:
+                    script: ['src']
+                    iframe: ['src', 'onload']
+                    p: ['class']
+                allow_attributes:
+                    onclick: '*'
+                    onerror: '*'
+                    class: '*'
+                block_elements: ['style']
+`,
+      'src/Service/Sanitizer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HtmlSanitizer\\HtmlSanitizerInterface;
+
+class Sanitizer
+{
+    public function __construct(private HtmlSanitizerInterface $appSanitizer)
+    {
+    }
+
+    public function clean(string $html): string
+    {
+        return $this->appSanitizer->sanitize($html);
+    }
+}
+`,
+      'templates/post/show.html.twig': `<div>{{ post.body|sanitize_html('app.sanitizer') }}</div>
+`,
+    });
+
+    const text = await runModule('symfony-html-sanitizer.js', app);
+
+    expect(text).toContain('sanitizer');
+  });
+});
+
+describe('mailer failover', () => {
+  test('every transport scheme, a failover with one transport and an async one', async () => {
+    const app = appWith('mailer-fallback', {
+      '.env': `MAILER_DSN=failover(smtp://one.example.com)
+`,
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'roundrobin(sendgrid://KEY@default)'
+        transports:
+            main: 'sendmail://default'
+            amazon: 'ses+smtp://KEY:SECRET@default'
+            mailchimp: 'mandrill://KEY@default'
+            grid: 'sendgrid://KEY@default'
+            async: 'messenger://async'
+`,
+    });
+
+    const text = await runModule('symfony-mailer-smtp-fallback.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('password migration', () => {
+  test('a migrating hasher, a long migration chain and a legacy hash call', async () => {
+    const app = appWith('password-migrator', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        App\\Entity\\User:
+            algorithm: auto
+            migrate_from:
+                - md5
+                - sha256
+                - bcrypt
+                - sodium
+        legacy:
+            algorithm: md5
+            migrate_from: sha1
+`,
+      'src/Security/UserRepository.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\PasswordHasher\\Hasher\\MigratingPasswordHasher;
+use Symfony\\Component\\Security\\Core\\User\\PasswordUpgraderInterface;
+
+class UserRepository implements PasswordUpgraderInterface
+{
+    public function build(): MigratingPasswordHasher
+    {
+        return new MigratingPasswordHasher($this->best, ...$this->extra);
+    }
+
+    public function legacy(string $password): string
+    {
+        return $this->legacyHasher->hash($password);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-password-migrator.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
