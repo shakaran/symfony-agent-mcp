@@ -11862,3 +11862,263 @@ return static function (RectorConfig $rectorConfig): void {
     expect(text).toContain('PHP');
   });
 });
+
+describe('static methods', () => {
+  test('a utility class of statics and a static called through $this', async () => {
+    const statics = Array.from({ length: 9 }, (_, i) => `    public static function helper${i}(): void\n    {\n    }\n`).join('\n');
+    const app = appWith('static-methods', {
+      'src/Support/Helpers.php': `<?php
+
+namespace App\\Support;
+
+class Helpers
+{
+${statics}
+    public static function format(string $value): string
+    {
+        return trim($value);
+    }
+
+    public function call(): string
+    {
+        return $this->format('  x  ');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-static-methods.js', app);
+
+    expect(text).toContain('Helpers');
+  });
+});
+
+describe('type narrowing', () => {
+  test('is_null negated, a call on a nullable and the null-safe arrow written wrong', async () => {
+    const app = appWith('type-narrowing', {
+      'src/Service/Narrow.php': `<?php
+
+namespace App\\Service;
+
+class Narrow
+{
+    public function check(?object $value): string
+    {
+        if (!is_null($value)) {
+            return 'set';
+        }
+
+        return 'unset';
+    }
+
+    public function direct(?object $invoice): string
+    {
+        return $invoice->getReference();
+    }
+
+    public function wrongArrow(?object $invoice): string
+    {
+        return $invoice ??-> getReference();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-type-narrowing.js', app);
+
+    expect(text).toContain('Narrow');
+  });
+});
+
+describe('typed constants', () => {
+  test('constants whose declared type does not match the value, on php 8.3', async () => {
+    const app = appWith('typed-constants', {
+      'composer.json': JSON.stringify({
+        require: { php: '^8.3', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Config/Limits.php': `<?php
+
+namespace App\\Config;
+
+class Limits
+{
+    const int MAX_ITEMS = 'one hundred';
+
+    const string NAME = 42;
+
+    const bool ENABLED = 'yes';
+
+    const float RATE = 'zero point five';
+
+    const int PAGE_SIZE = 25;
+}
+`,
+    });
+
+    const text = await runModule('php-typed-constants.js', app);
+
+    expect(text).toContain('MAX_ITEMS');
+  });
+});
+
+describe('phpspec specs on disk', () => {
+  test('spec files beside the config, and one that is not a spec', async () => {
+    const app = appWith('phpspec-specs', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpspec/phpspec': '^7.5' },
+      }, null, 2),
+      'phpspec.yaml': `suites:
+  main:
+    namespace: App
+    src_path: src
+`,
+      'spec/Service/InvoiceSpec.php': `<?php
+
+namespace spec\\App\\Service;
+
+use App\\Service\\Invoice;
+use PhpSpec\\ObjectBehavior;
+
+class InvoiceSpec extends ObjectBehavior
+{
+    public function it_is_initializable(): void
+    {
+        $this->shouldHaveType(Invoice::class);
+    }
+
+    public function it_totals_the_lines(): void
+    {
+    }
+}
+`,
+      'spec/Service/Helper.php': `<?php
+
+namespace spec\\App\\Service;
+
+class Helper
+{
+}
+`,
+    });
+
+    const text = await runModule('phpspec-config.js', app);
+
+    expect(text).toContain('InvoiceSpec');
+  });
+});
+
+describe('clock in tests', () => {
+  test('assertions on time(), a bare DateTime and a SystemClock built by hand', async () => {
+    const app = appWith('clock-assertions', {
+      'tests/Service/ClockTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\TestCase;
+use Symfony\\Component\\Clock\\NativeClock;
+
+class ClockTest extends TestCase
+{
+    public function testItStampsNow(): void
+    {
+        self::assertSame(time(), $this->service->stamp());
+    }
+
+    public function testItUsesDateTime(): void
+    {
+        $now = new \\DateTimeImmutable();
+        self::assertEquals($now, $this->service->now());
+    }
+
+    public function testItBuildsAClock(): void
+    {
+        $clock = new SystemClock();
+        self::assertNotNull($clock);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-clock-assertion.js', app);
+
+    expect(text).toContain('ClockTest');
+  });
+});
+
+describe('phpunit coverage minimums', () => {
+  test('minimum percentages for lines, methods, classes and branches', async () => {
+    const app = appWith('phpunit-minimums', {
+      'phpunit.xml': `<?xml version="1.0"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <testsuites>
+        <testsuite name="all">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage>
+        <report>
+            <text outputFile="php://stdout"/>
+        </report>
+    </coverage>
+
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+
+    <php>
+        <env name="APP_ENV" value="test"/>
+    </php>
+
+    <extensions>
+        <bootstrap class="App\\Tests\\Extension\\Coverage">
+            <parameter name="minLines" value="90"/>
+            <parameter name="minMethods" value="85"/>
+            <parameter name="minClasses" value="80"/>
+            <parameter name="minBranches" value="75"/>
+        </bootstrap>
+    </extensions>
+</phpunit>
+`,
+    });
+
+    const text = await runModule('phpunit-config.js', app);
+
+    expect(text).toContain('all');
+  });
+});
+
+describe('psalm', () => {
+  test('a permissive error level, many suppressed issues and a large baseline', async () => {
+    const suppressed = Array.from({ length: 18 }, (_, i) => `        <Issue${i} errorLevel="suppress"/>`).join('\n');
+    const baseline = Array.from({ length: 210 }, () => '        <entry file="src/Legacy.php"/>').join('\n');
+    const app = appWith('psalm', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'vimeo/psalm': '^5.0' },
+      }, null, 2),
+      'psalm.xml': `<?xml version="1.0"?>
+<psalm errorLevel="7" resolveFromConfigFile="true" errorBaseline=".psalm/baseline.xml">
+    <projectFiles>
+        <directory name="src"/>
+    </projectFiles>
+    <issueHandlers>
+${suppressed}
+    </issueHandlers>
+</psalm>
+`,
+      '.psalm/baseline.xml': `<?xml version="1.0"?>
+<files psalm-version="5.0">
+${baseline}
+</files>
+`,
+    });
+
+    const text = await runModule('psalm-config.js', app);
+
+    expect(text).toContain('psalm');
+  });
+});
