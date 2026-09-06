@@ -20257,3 +20257,222 @@ class Publisher
     expect(text).toContain('spaceless');
   });
 });
+
+describe('batch 67: API Platform documentation and state, AWS deployments, Behat tags', () => {
+  test('a documented resource with a deprecated property and examples of the wrong type', async () => {
+    const app = appWith('api-platform-openapi-context', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiProperty;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class Invoice
+{
+    #[ApiProperty(description: 'The invoice number')]
+    private string $number = '';
+
+    #[ApiProperty(deprecationReason: '')]
+    #[ApiProperty(description: 'Legacy reference', deprecated: true)]
+    private string $legacyReference = '';
+
+    #[ApiProperty(openapiContext: ['type' => 'integer', 'example' => '42'])]
+    private int $total = 0;
+
+    #[ApiProperty(openapiContext: ['type' => 'boolean', 'example' => 1])]
+    private bool $paid = false;
+
+    #[ApiProperty(description: 'When it was issued')]
+    private string $issuedAt = '';
+}
+`,
+    });
+
+    const text = await runModule('api-platform-openapi-context.js', app);
+
+    expect(text).toContain('Invoice');
+  });
+
+  test('a processor that flushes unguarded and a provider with no paging', async () => {
+    const app = appWith('api-platform-state', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+      'src/State/InvoiceProcessor.php': `<?php
+
+namespace App\\State;
+
+use ApiPlatform\\Metadata\\Operation;
+use ApiPlatform\\State\\ProcessorInterface;
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class InvoiceProcessor implements ProcessorInterface
+{
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
+    {
+        $this->entityManager->persist($data);
+        $this->entityManager->flush();
+
+        return $data;
+    }
+}
+`,
+      'src/State/InvoiceProvider.php': `<?php
+
+namespace App\\State;
+
+use ApiPlatform\\Metadata\\Operation;
+use ApiPlatform\\State\\ProviderInterface;
+use App\\Repository\\InvoiceRepository;
+
+class InvoiceProvider implements ProviderInterface
+{
+    public function __construct(private InvoiceRepository $repository)
+    {
+    }
+
+    public function provide(Operation $operation, array $uriVariables = [], array $context = []): iterable
+    {
+        return $this->repository->findAll();
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-platform-state.js', app);
+
+    expect(text).toContain('flush');
+  });
+
+  test('an ECS task definition with the secret in its environment', async () => {
+    const app = appWith('aws-ecs-config', {
+      'deploy/ecs/task-definition.json': JSON.stringify({
+        family: 'acme',
+        cpu: '512',
+        memory: '1024',
+        networkMode: 'awsvpc',
+        containerDefinitions: [
+          {
+            name: 'php',
+            image: 'acme/php:latest',
+            essential: true,
+            environment: [
+              { name: 'APP_ENV', value: 'prod' },
+              { name: 'DATABASE_URL', value: 'postgresql://acme:hunter2@db:5432/acme' },
+            ],
+          },
+        ],
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('aws-ecs-config.js', app);
+
+    expect(text).toContain('task-definition');
+  });
+
+  test('a Bref deployment with a long timeout and an SQS transport', async () => {
+    const app = appWith('aws-lambda-bref', {
+      'composer.json': JSON.stringify({ require: { 'bref/bref': '^2.0' } }, null, 4) + '\n',
+      'serverless.yml': `service: acme
+
+provider:
+    name: aws
+    region: eu-west-1
+    runtime: provided.al2
+
+functions:
+    web:
+        handler: public/index.php
+        timeout: 60
+        layers:
+            - \${bref:layer.php-83-fpm}
+        events:
+            - httpApi: '*'
+`,
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'https://sqs.eu-west-1.amazonaws.com/123456789012/acme'
+`,
+    });
+
+    const text = await runModule('aws-lambda-bref.js', app);
+
+    expect(text).toContain('timeout');
+  });
+
+  test('a serverless file with no PHP runtime in it', async () => {
+    const app = appWith('aws-lambda-bref-no-runtime', {
+      'composer.json': JSON.stringify({ require: { 'bref/bref': '^2.0' } }, null, 4) + '\n',
+      'serverless.yml': `service: acme
+
+provider:
+    name: aws
+    region: eu-west-1
+
+functions:
+    worker:
+        handler: bin/worker
+`,
+    });
+
+    const text = await runModule('aws-lambda-bref.js', app);
+
+    expect(text).toContain('runtime');
+  });
+
+  test('Behat tags declared in the suite and used in the features', async () => {
+    const app = appWith('behat-tags', {
+      'behat.yaml': `default:
+    suites:
+        default:
+            paths: ['%paths.base%/features']
+            filters:
+                tags: '~@wip'
+        smoke:
+            paths: ['%paths.base%/features/smoke']
+            filters:
+                tags: '@smoke'
+`,
+      'features/checkout.feature': `@checkout @wip
+Feature: Checkout
+
+    @smoke
+    Scenario: Paying for the basket
+        Given I have a basket
+        When I pay
+        Then the order is placed
+
+    Scenario: Empty basket
+        Given I have no basket
+        Then I cannot pay
+`,
+      'features/smoke/home.feature': `@smoke
+Feature: Home
+
+    Scenario: The home page loads
+        Given I am on the home page
+        Then I see the catalogue
+`,
+    });
+
+    const text = await runModule('behat-tags.js', app, ['@smoke']);
+
+    expect(text).toContain('smoke');
+  });
+});
