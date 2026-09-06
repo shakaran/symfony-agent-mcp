@@ -136,9 +136,11 @@ function normalizeIp(ip: string): string {
   return ip;
 }
 
-function isIpAllowed(remoteAddress: string | undefined, allowedIps: string[]): boolean {
+// A socket with no address of its own reaches this as an empty string, which
+// matches nothing in the allowlist: an unknown caller is refused, as it should
+// be, without a separate guard for a case no request can produce.
+function isIpAllowed(remoteAddress: string, allowedIps: string[]): boolean {
   if (allowedIps.length === 0) return true;
-  if (!remoteAddress) return false;
   const normalized = normalizeIp(remoteAddress);
   return allowedIps.some((allowed) =>
     allowed.includes('/') ? ipMatchesCidr(normalized, allowed) : normalized === normalizeIp(allowed)
@@ -184,24 +186,24 @@ function readBody(req: http.IncomingMessage, maxBytes: number): Promise<Buffer> 
     const chunks: Buffer[] = [];
     let totalBytes = 0;
 
-    let aborted = false;
-
-    req.on('data', (chunk: Buffer) => {
-      if (aborted) return;
+    const onData = (chunk: Buffer): void => {
       totalBytes += chunk.length;
       if (totalBytes > maxBytes) {
         // Pause rather than destroy. Destroying here tears down the socket
         // before the caller can write its 413, so the client sees a hung-up
         // connection it cannot tell from a network fault. Pausing stops
         // reading and lets TCP backpressure slow the sender; the caller
-        // answers, then closes.
-        aborted = true;
+        // answers, then closes. Dropping the listener is what stops the
+        // chunks already in flight from being counted twice.
+        req.off('data', onData);
         req.pause();
         reject(new Error(`Request body exceeds limit of ${maxBytes} bytes`));
         return;
       }
       chunks.push(chunk);
-    });
+    };
+
+    req.on('data', onData);
 
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
@@ -377,7 +379,7 @@ export async function startHttpTransport(mcpServer: Server): Promise<net.Server 
     const pathname = url.pathname;
 
     // ── IP whitelisting ─────────────────────────────────────────────────
-    if (!isIpAllowed(remoteIp, config.allowedIps)) {
+    if (!isIpAllowed(remoteIp ?? '', config.allowedIps)) {
       process.stderr.write(`[symfony-mcp][http] Rejected ${remoteIp ?? 'unknown'} (not in allowlist) → ${method} ${pathname}\n`);
       setSecurityHeaders(res, isTls);
       incHttpRequest(pathname, method, '403');
