@@ -60,8 +60,7 @@ export function samplesForModule(modulePath: string): string[] {
   for (const m of source.matchAll(patternRe)) {
     if (m[1].length > 300) continue;
     for (const alternative of topLevelAlternatives(m[1])) {
-    let sample: string | null = null;
-    try { sample = sampleFor(alternative); } catch { sample = null; }
+    const sample = sampleFor(alternative);
     if (sample) {
       const cleaned = sample.replace(/[\r\n]+/g, ' ').trim();
       const usable = cleaned.length >= 4 && cleaned.length <= 200 && !CREDENTIALISH.test(cleaned);

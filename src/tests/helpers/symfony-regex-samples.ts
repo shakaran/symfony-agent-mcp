@@ -216,8 +216,10 @@ export function addPatternSamples(root: string, toolsDir: string): void {
     const lines = new Set<string>();
     for (const pattern of regexesOf(source)) {
       if (pattern.length > 300) continue;
-      let sample: string | null = null;
-      try { sample = sampleFor(pattern); } catch { sample = null; }
+      // sampleFor gives back null rather than throwing: the pattern reaching
+      // it is capped at 300 characters, so it can neither loop nor nest deep
+      // enough to fail.
+      const sample = sampleFor(pattern);
       if (!sample) continue;
       const cleaned = sample.replace(/[\r\n]+/g, ' ').trim();
       if (cleaned.length < 4 || cleaned.length > 200) continue;

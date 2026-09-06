@@ -10,6 +10,7 @@
  * when the input is wrong, which the fixtures never are.
  */
 
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -23,7 +24,8 @@ import {
 } from './helpers/symfony-vocabulary';
 import { addWalkerEntries } from './helpers/symfony-walkers';
 import { useYmlSpelling } from './helpers/symfony-insecure';
-import { addPerModuleSurface } from './helpers/symfony-areas';
+import { addComposerDependencies, addPerModuleSurface } from './helpers/symfony-areas';
+import { createSparseFixture } from './helpers/symfony-sparse';
 
 let root: string;
 
@@ -123,5 +125,83 @@ describe('the application helpers', () => {
     addPerModuleSurface(app, toolsDir);
 
     expect(fs.existsSync(app)).toBe(true);
+  });
+});
+
+describe('patterns that no engine will compile', () => {
+  // Both helpers build a sample out of a pattern and then check the sample
+  // against it. A pattern that is only valid as text, not as a regular
+  // expression, is where that check has to give up.
+  function moduleWithBadPatterns(name: string): { dir: string; file: string } {
+    const dir = path.join(root, name);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'broken-patterns.ts');
+    fs.writeFileSync(file, [
+      "const outOfOrder = /abcdef{2,1}/;",
+      "const reversedClass = /[z-a]wxyz/;",
+      "export const both = [outOfOrder, reversedClass];",
+      '',
+    ].join('\n'));
+
+    return { dir, file };
+  }
+
+  test('the vocabulary keeps only the samples its pattern accepts', () => {
+    const { file } = moduleWithBadPatterns('bad-patterns-vocabulary');
+
+    expect(samplesForModule(file)).toEqual([]);
+  });
+
+  test('and the sample writer skips them too', () => {
+    const { dir } = moduleWithBadPatterns('bad-patterns-samples');
+    const app = path.join(root, 'bad-patterns-app');
+    fs.mkdirSync(app, { recursive: true });
+
+    expect(() => addPatternSamples(app, dir)).not.toThrow();
+  });
+});
+
+describe('copying an application sparsely', () => {
+  test('JSON that is broken, JSON that is a list, and something that is neither', () => {
+    const source = path.join(root, 'sparse-source');
+    fs.mkdirSync(path.join(source, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(source, 'composer.json'), '{ "require": { "php": ">=8.2" }\n');
+    fs.writeFileSync(path.join(source, 'config', 'list.json'), '["a", "b"]\n');
+    fs.writeFileSync(path.join(source, 'config', 'services.yaml'), 'services:\n    _defaults:\n        autowire: true\n');
+    fs.writeFileSync(path.join(source, 'README.md'), '# Acme\n');
+    // A named pipe is neither a file nor a directory, and is skipped.
+    execFileSync('mkfifo', [path.join(source, 'queue.fifo')]);
+
+    const target = createSparseFixture(source, path.join(root, 'sparse-target'));
+
+    expect(fs.readFileSync(path.join(target, 'composer.json'), 'utf-8')).toContain('">=8.2"');
+    expect(fs.readFileSync(path.join(target, 'config', 'list.json'), 'utf-8')).toContain('"a"');
+    expect(fs.existsSync(path.join(target, 'queue.fifo'))).toBe(false);
+  });
+});
+
+describe('the helpers that write into an application', () => {
+  test('a directory it is not allowed to read stops the walk there', () => {
+    const app = path.join(root, 'walker-locked-app');
+    fs.mkdirSync(path.join(app, 'locked'), { recursive: true });
+    fs.chmodSync(path.join(app, 'locked'), 0o000);
+
+    try {
+      expect(() => addWalkerEntries(app, 2)).not.toThrow();
+    } finally {
+      fs.chmodSync(path.join(app, 'locked'), 0o755);
+    }
+  });
+
+  test('dependencies are not added to an application without a composer.json', () => {
+    const app = path.join(root, 'no-composer-app');
+    fs.mkdirSync(app, { recursive: true });
+    const tools = path.join(root, 'no-composer-tools');
+    fs.mkdirSync(tools, { recursive: true });
+    fs.writeFileSync(path.join(tools, 'thing.ts'), "const p = 'acme/invoices';\n");
+
+    addComposerDependencies(app, tools);
+
+    expect(fs.existsSync(path.join(app, 'composer.json'))).toBe(false);
   });
 });
