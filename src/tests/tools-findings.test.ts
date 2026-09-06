@@ -32288,3 +32288,449 @@ msgstr "Willkommen"
     expect(text).toContain('home');
   });
 });
+
+describe('batch 108: providers, Turbo streams, Twig caches, maps, macros and Vite', () => {
+  test('translation providers configured for two services', async () => {
+    const app = appWith('symfony-translation-providers', {
+      'config/packages/translation.yaml': `framework:
+    default_locale: en
+    translator:
+        providers:
+            crowdin:
+                dsn: '%env(CROWDIN_DSN)%'
+                domains: ['messages']
+                locales: ['en', 'fr']
+            loco: ~
+`,
+    });
+
+    const text = await runModule('symfony-translation-providers.js', app);
+
+    expect(text).toContain('crowdin');
+  });
+
+  test('a Turbo stream endpoint with nothing checking the token', async () => {
+    const app = appWith('symfony-turbo-streams', {
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+use Symfony\\UX\\Turbo\\TurboBundle;
+
+class InvoiceController extends AbstractController
+{
+    #[Route('/invoices/{id}/archive', methods: ['POST'])]
+    public function archive(Request $request, int $id): Response
+    {
+        $request->setRequestFormat(TurboBundle::STREAM_FORMAT);
+
+        return $this->render('invoice/archive.stream.html.twig', ['id' => $id]);
+    }
+}
+`,
+      'templates/invoice/archive.stream.html.twig': `<turbo-stream action="remove" target="invoice_{{ id }}"></turbo-stream>
+`,
+    });
+
+    const text = await runModule('symfony-turbo-streams.js', app);
+
+    expect(text).toContain('urbo');
+  });
+
+  test('Twig caching switched off for development', async () => {
+    const app = appWith('symfony-twig-cache-config', {
+      'config/packages/twig.yaml': `twig:
+    default_path: '%kernel.project_dir%/templates'
+    auto_reload: true
+    cache: false
+    debug: true
+    strict_variables: true
+`,
+    });
+
+    const text = await runModule('symfony-twig-cache-config.js', app);
+
+    expect(text).toContain('ache');
+  });
+
+  test('a map with more markers than it can draw', async () => {
+    const app = appWith('symfony-ux-map', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-map': '^2.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nGOOGLE_MAPS_API_KEY=AIzaSyD1234567890abcdefghijklmnop\n',
+      'assets/controllers/map_controller.js': `import { Controller } from '@hotwired/stimulus';
+import { Marker } from '@symfony/ux-map';
+
+export default class extends Controller {
+    connect() {
+        const map = this.element;
+    map.addMarker(new Marker({ lat: 0, lng: 0 }));
+    map.addMarker(new Marker({ lat: 1, lng: 1 }));
+    map.addMarker(new Marker({ lat: 2, lng: 2 }));
+    map.addMarker(new Marker({ lat: 3, lng: 3 }));
+    map.addMarker(new Marker({ lat: 4, lng: 4 }));
+    map.addMarker(new Marker({ lat: 5, lng: 5 }));
+    map.addMarker(new Marker({ lat: 6, lng: 6 }));
+    map.addMarker(new Marker({ lat: 7, lng: 7 }));
+    map.addMarker(new Marker({ lat: 8, lng: 8 }));
+    map.addMarker(new Marker({ lat: 9, lng: 9 }));
+    map.addMarker(new Marker({ lat: 10, lng: 10 }));
+    map.addMarker(new Marker({ lat: 11, lng: 11 }));
+    map.addMarker(new Marker({ lat: 12, lng: 12 }));
+    map.addMarker(new Marker({ lat: 13, lng: 13 }));
+    map.addMarker(new Marker({ lat: 14, lng: 14 }));
+    map.addMarker(new Marker({ lat: 15, lng: 15 }));
+    map.addMarker(new Marker({ lat: 16, lng: 16 }));
+    map.addMarker(new Marker({ lat: 17, lng: 17 }));
+    map.addMarker(new Marker({ lat: 18, lng: 18 }));
+    map.addMarker(new Marker({ lat: 19, lng: 19 }));
+    map.addMarker(new Marker({ lat: 20, lng: 20 }));
+    map.addMarker(new Marker({ lat: 21, lng: 21 }));
+    map.addMarker(new Marker({ lat: 22, lng: 22 }));
+    map.addMarker(new Marker({ lat: 23, lng: 23 }));
+    map.addMarker(new Marker({ lat: 24, lng: 24 }));
+    map.addMarker(new Marker({ lat: 25, lng: 25 }));
+    map.addMarker(new Marker({ lat: 26, lng: 26 }));
+    map.addMarker(new Marker({ lat: 27, lng: 27 }));
+    map.addMarker(new Marker({ lat: 28, lng: 28 }));
+    map.addMarker(new Marker({ lat: 29, lng: 29 }));
+    map.addMarker(new Marker({ lat: 30, lng: 30 }));
+    map.addMarker(new Marker({ lat: 31, lng: 31 }));
+    map.addMarker(new Marker({ lat: 32, lng: 32 }));
+    map.addMarker(new Marker({ lat: 33, lng: 33 }));
+    map.addMarker(new Marker({ lat: 34, lng: 34 }));
+    map.addMarker(new Marker({ lat: 35, lng: 35 }));
+    map.addMarker(new Marker({ lat: 36, lng: 36 }));
+    map.addMarker(new Marker({ lat: 37, lng: 37 }));
+    map.addMarker(new Marker({ lat: 38, lng: 38 }));
+    map.addMarker(new Marker({ lat: 39, lng: 39 }));
+    map.addMarker(new Marker({ lat: 40, lng: 40 }));
+    map.addMarker(new Marker({ lat: 41, lng: 41 }));
+    map.addMarker(new Marker({ lat: 42, lng: 42 }));
+    map.addMarker(new Marker({ lat: 43, lng: 43 }));
+    map.addMarker(new Marker({ lat: 44, lng: 44 }));
+    map.addMarker(new Marker({ lat: 45, lng: 45 }));
+    map.addMarker(new Marker({ lat: 46, lng: 46 }));
+    map.addMarker(new Marker({ lat: 47, lng: 47 }));
+    map.addMarker(new Marker({ lat: 48, lng: 48 }));
+    map.addMarker(new Marker({ lat: 49, lng: 49 }));
+    map.addMarker(new Marker({ lat: 50, lng: 50 }));
+    map.addMarker(new Marker({ lat: 51, lng: 51 }));
+    map.addMarker(new Marker({ lat: 52, lng: 52 }));
+    map.addMarker(new Marker({ lat: 53, lng: 53 }));
+    map.addMarker(new Marker({ lat: 54, lng: 54 }));
+    map.addMarker(new Marker({ lat: 55, lng: 55 }));
+    map.addMarker(new Marker({ lat: 56, lng: 56 }));
+    map.addMarker(new Marker({ lat: 57, lng: 57 }));
+    map.addMarker(new Marker({ lat: 58, lng: 58 }));
+    map.addMarker(new Marker({ lat: 59, lng: 59 }));
+    map.addMarker(new Marker({ lat: 60, lng: 60 }));
+    map.addMarker(new Marker({ lat: 61, lng: 61 }));
+    map.addMarker(new Marker({ lat: 62, lng: 62 }));
+    map.addMarker(new Marker({ lat: 63, lng: 63 }));
+    map.addMarker(new Marker({ lat: 64, lng: 64 }));
+    map.addMarker(new Marker({ lat: 65, lng: 65 }));
+    map.addMarker(new Marker({ lat: 66, lng: 66 }));
+    map.addMarker(new Marker({ lat: 67, lng: 67 }));
+    map.addMarker(new Marker({ lat: 68, lng: 68 }));
+    map.addMarker(new Marker({ lat: 69, lng: 69 }));
+    map.addMarker(new Marker({ lat: 70, lng: 70 }));
+    map.addMarker(new Marker({ lat: 71, lng: 71 }));
+    map.addMarker(new Marker({ lat: 72, lng: 72 }));
+    map.addMarker(new Marker({ lat: 73, lng: 73 }));
+    map.addMarker(new Marker({ lat: 74, lng: 74 }));
+    map.addMarker(new Marker({ lat: 75, lng: 75 }));
+    map.addMarker(new Marker({ lat: 76, lng: 76 }));
+    map.addMarker(new Marker({ lat: 77, lng: 77 }));
+    map.addMarker(new Marker({ lat: 78, lng: 78 }));
+    map.addMarker(new Marker({ lat: 79, lng: 79 }));
+    map.addMarker(new Marker({ lat: 80, lng: 80 }));
+    map.addMarker(new Marker({ lat: 81, lng: 81 }));
+    map.addMarker(new Marker({ lat: 82, lng: 82 }));
+    map.addMarker(new Marker({ lat: 83, lng: 83 }));
+    map.addMarker(new Marker({ lat: 84, lng: 84 }));
+    map.addMarker(new Marker({ lat: 85, lng: 85 }));
+    map.addMarker(new Marker({ lat: 86, lng: 86 }));
+    map.addMarker(new Marker({ lat: 87, lng: 87 }));
+    map.addMarker(new Marker({ lat: 88, lng: 88 }));
+    map.addMarker(new Marker({ lat: 89, lng: 89 }));
+    map.addMarker(new Marker({ lat: 90, lng: 90 }));
+    map.addMarker(new Marker({ lat: 91, lng: 91 }));
+    map.addMarker(new Marker({ lat: 92, lng: 92 }));
+    map.addMarker(new Marker({ lat: 93, lng: 93 }));
+    map.addMarker(new Marker({ lat: 94, lng: 94 }));
+    map.addMarker(new Marker({ lat: 95, lng: 95 }));
+    map.addMarker(new Marker({ lat: 96, lng: 96 }));
+    map.addMarker(new Marker({ lat: 97, lng: 97 }));
+    map.addMarker(new Marker({ lat: 98, lng: 98 }));
+    map.addMarker(new Marker({ lat: 99, lng: 99 }));
+    map.addMarker(new Marker({ lat: 100, lng: 100 }));
+    map.addMarker(new Marker({ lat: 101, lng: 101 }));
+    map.addMarker(new Marker({ lat: 102, lng: 102 }));
+    map.addMarker(new Marker({ lat: 103, lng: 103 }));
+    map.addMarker(new Marker({ lat: 104, lng: 104 }));
+    map.addMarker(new Marker({ lat: 105, lng: 105 }));
+    map.addMarker(new Marker({ lat: 106, lng: 106 }));
+    map.addMarker(new Marker({ lat: 107, lng: 107 }));
+    map.addMarker(new Marker({ lat: 108, lng: 108 }));
+    map.addMarker(new Marker({ lat: 109, lng: 109 }));
+    map.addMarker(new Marker({ lat: 110, lng: 110 }));
+    map.addMarker(new Marker({ lat: 111, lng: 111 }));
+    map.addMarker(new Marker({ lat: 112, lng: 112 }));
+    map.addMarker(new Marker({ lat: 113, lng: 113 }));
+    map.addMarker(new Marker({ lat: 114, lng: 114 }));
+    map.addMarker(new Marker({ lat: 115, lng: 115 }));
+    map.addMarker(new Marker({ lat: 116, lng: 116 }));
+    map.addMarker(new Marker({ lat: 117, lng: 117 }));
+    map.addMarker(new Marker({ lat: 118, lng: 118 }));
+    map.addMarker(new Marker({ lat: 119, lng: 119 }));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-map.js', app);
+
+    expect(text).toContain('ap');
+  });
+
+  test('a live component beside a plain Twig component', async () => {
+    const app = appWith('symfony-ux-components', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-live-component': '^2.0', 'symfony/ux-twig-component': '^2.0' } }, null, 4) + '\n',
+      'src/Twig/Components/InvoiceList.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\LiveComponent\\Attribute\\AsLiveComponent;
+use Symfony\\UX\\LiveComponent\\Attribute\\LiveProp;
+use Symfony\\UX\\LiveComponent\\DefaultActionTrait;
+
+#[AsLiveComponent('invoice_list')]
+class InvoiceList
+{
+    use DefaultActionTrait;
+
+    #[LiveProp(writable: true)]
+    public string $query = '';
+}
+`,
+      'src/Twig/Components/Badge.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent;
+
+#[AsTwigComponent('badge')]
+class Badge
+{
+    public string $label = '';
+}
+`,
+      'src/Twig/Components/notes.php': "<?php\n\n// The components are described here.\n",
+    });
+
+    const text = await runModule('symfony-ux.js', app);
+
+    expect(text).toContain('omponent');
+  });
+
+  test('a form declaring the validation groups it runs', async () => {
+    const app = appWith('symfony-validation-groups-form', {
+      'src/Form/RegistrationType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class RegistrationType extends AbstractType
+{
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults([
+            'validation_groups' => ['Default', 'registration', 'strict'],
+        ]);
+    }
+}
+`,
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class User
+{
+    #[Assert\\NotBlank(groups: ['registration'])]
+    private string $email = '';
+
+    #[Assert\\Length(min: 8, groups: ['strict'])]
+    private string $password = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-validation-groups.js', app);
+
+    expect(text).toContain('RegistrationType');
+  });
+
+  test('a webhook whose secret is empty', async () => {
+    const app = appWith('symfony-webhook-security', {
+      'config/packages/webhook.yaml': `framework:
+    webhook:
+        routing:
+            stripe:
+                service: 'stripe.webhook.request_parser'
+                secret: ~
+`,
+      'src/Webhook/StripeParser.php': `<?php
+
+namespace App\\Webhook;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\Webhook\\Client\\AbstractRequestParser;
+
+class StripeParser extends AbstractRequestParser
+{
+    protected function doParse(Request $request, string $secret): ?object
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-webhook-security.js', app);
+
+    expect(text).toContain('secret');
+  });
+
+  test('a template holding a dozen macros', async () => {
+    const app = appWith('twig-macros', {
+      'templates/form/macros.html.twig': `{% macro field0(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field1(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field2(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field3(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field4(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field5(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field6(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field7(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field8(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field9(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field10(name) %}<input name="{{ name }}">{% endmacro %}
+{% macro field11(name) %}<input name="{{ name }}">{% endmacro %}
+`,
+      'templates/invoice/show.html.twig': `{% import 'form/macros.html.twig' as forms %}
+
+{{ forms.field0('number') }}
+`,
+    });
+
+    const text = await runModule('twig-macros.js', app, ['field0']);
+
+    expect(text).toContain('macro');
+  });
+
+  test('templates that include and embed each other', async () => {
+    const app = appWith('twig-graph', {
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html><body>{% block body %}{% endblock %}</body></html>
+`,
+      'templates/invoice/show.html.twig': `{% extends 'base.html.twig' %}
+{% use 'form/macros.html.twig' %}
+
+{% block body %}
+    {{ include('invoice/_row.html.twig') }}
+    {% embed 'invoice/_panel.html.twig' %}
+        {% block content %}{{ invoice.number }}{% endblock %}
+    {% endembed %}
+{% endblock %}
+`,
+      'templates/invoice/_row.html.twig': '<tr><td>{{ invoice.number }}</td></tr>\n',
+      'templates/invoice/_panel.html.twig': '<div>{% block content %}{% endblock %}</div>\n',
+      'templates/form/macros.html.twig': '{% macro field(name) %}<input name="{{ name }}">{% endmacro %}\n',
+    });
+
+    const text = await runModule('twig.js', app, ['invoice/show.html.twig']);
+
+    expect(text).toContain('invoice');
+  });
+
+  test('the Vite bundle installed with no configuration beside it', async () => {
+    const app = appWith('vite-bundle', {
+      'composer.json': JSON.stringify({ require: { 'pentatrion/vite-bundle': '^6.0' } }, null, 4) + '\n',
+      'package.json': JSON.stringify({ devDependencies: { vite: '^5.0' } }, null, 4) + '\n',
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html>
+    <head>
+        {{ vite_entry_link_tags('app') }}
+        {{ vite_entry_script_tags('app') }}
+    </head>
+</html>
+`,
+    });
+
+    const text = await runModule('vite-bundle.js', app);
+
+    expect(text).toContain('vite');
+  });
+
+  test('Algolia indexing configured for an entity', async () => {
+    const app = appWith('algolia-integration', {
+      'composer.json': JSON.stringify({ require: { 'algolia/search-bundle': '^4.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nALGOLIA_APP_ID=ABCDEF1234\nALGOLIA_API_KEY=abcdef1234567890abcdef1234567890\n',
+      'config/packages/algolia_search.yaml': `algolia_search:
+    prefix: 'acme_'
+    indices:
+        - name: invoices
+          class: App\\Entity\\Invoice
+`,
+    });
+
+    const text = await runModule('algolia-integration.js', app);
+
+    expect(text).toContain('lgolia');
+  });
+
+  test('an API contract checked against a schema', async () => {
+    const app = appWith('api-contract-testing', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'league/openapi-psr7-validator': '^0.21' } }, null, 4) + '\n',
+      'openapi.yaml': `openapi: 3.0.0
+info:
+    title: Acme
+    version: '1.0'
+paths:
+    /api/invoices:
+        get:
+            responses:
+                '200':
+                    description: The invoices
+`,
+      'tests/Api/InvoiceContractTest.php': `<?php
+
+namespace App\\Tests\\Api;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class InvoiceContractTest extends WebTestCase
+{
+    public function testMatchesTheContract(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/invoices');
+
+        $this->assertResponseIsSuccessful();
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-contract-testing.js', app);
+
+    expect(text).toContain('ontract');
+  });
+});
