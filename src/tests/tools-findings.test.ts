@@ -7140,3 +7140,321 @@ describe('monolog rotation', () => {
     expect(text).toContain('max_files');
   });
 });
+
+describe('trusted proxies', () => {
+  test('a wildcard, REMOTE_ADDR, direct header access and getClientIp with no proxies', async () => {
+    const wildcard = appWith('trusted-proxies-wildcard', {
+      'config/packages/framework.yaml': `framework:
+    trusted_proxies: '*'
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-proto']
+`,
+      '.env': `TRUSTED_PROXIES=10.0.0.0/8
+`,
+      'src/Controller/IpController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class IpController
+{
+    public function index(Request $request): string
+    {
+        $forwarded = $request->headers->get('X-Forwarded-For');
+
+        return $request->getClientIp() . $forwarded;
+    }
+}
+`,
+    });
+    const remoteAddr = appWith('trusted-proxies-remote', {
+      'config/packages/framework.yaml': `framework:
+    trusted_proxies: 'REMOTE_ADDR,10.0.0.0/8'
+`,
+    });
+    const none = appWith('trusted-proxies-none', {
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+`,
+      'src/Controller/SecureController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class SecureController
+{
+    public function index(Request $request): bool
+    {
+        $request->getClientIp();
+
+        return $request->isSecure();
+    }
+}
+`,
+    });
+
+    const one = await runModule('symfony-trusted-proxies.js', wildcard);
+    const two = await runModule('symfony-trusted-proxies.js', remoteAddr);
+    const three = await runModule('symfony-trusted-proxies.js', none);
+
+    expect(one).toContain('trusted_proxies');
+    expect(two.length).toBeGreaterThan(0);
+    expect(three.length).toBeGreaterThan(0);
+  });
+});
+
+describe('twig cache configuration', () => {
+  test('cache and auto_reload and debug set the wrong way round in each environment', async () => {
+    const app = appWith('twig-cache', {
+      'config/packages/prod/twig.yaml': `twig:
+    cache: false
+    auto_reload: true
+    debug: true
+`,
+      'config/packages/dev/twig.yaml': `twig:
+    cache: '%kernel.cache_dir%/twig'
+    auto_reload: false
+    debug: false
+`,
+      'config/packages/twig.yaml': `twig:
+    cache: true
+    default_path: '%kernel.project_dir%/templates'
+`,
+      'config/packages/test/twig.yaml': `twig:
+    cache: false
+    strict_variables: true
+`,
+    });
+
+    const text = await runModule('symfony-twig-cache-config.js', app);
+
+    expect(text).toContain('cache');
+  });
+});
+
+describe('behat steps', () => {
+  test('feature steps that match a definition, one that does not and a definition nobody uses', async () => {
+    const app = appWith('behat-steps', {
+      'features/bootstrap/FeatureContext.php': `<?php
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+    /**
+     * @Given I am on the home page
+     */
+    public function iAmOnTheHomePage(): void
+    {
+    }
+
+    /**
+     * @When I click :label
+     */
+    public function iClick(string $label): void
+    {
+    }
+
+    /**
+     * @Then /^I should see .*$/
+     */
+    public function iShouldSee(): void
+    {
+    }
+
+    /**
+     * @Given I am never used anywhere
+     */
+    public function neverUsed(): void
+    {
+    }
+}
+`,
+      'features/home.feature': `Feature: The home page
+
+    Scenario: Visiting the home page
+        Given I am on the home page
+        When I click "Sign in"
+        Then I should see the login form
+
+    Scenario: A step nobody defined
+        Given I am on the moon
+`,
+    });
+
+    const text = await runModule('behat-step-coverage.js', app);
+
+    expect(text).toContain('Undefined Steps');
+  });
+});
+
+describe('bitbucket pipelines', () => {
+  test('a privileged step, a secret in a script and steps of every kind', async () => {
+    const app = appWith('bitbucket', {
+      'bitbucket-pipelines.yml': `image: php:8.3
+
+pipelines:
+    default:
+        - step:
+              name: Test
+              script:
+                  - composer install
+                  - vendor/bin/phpunit
+        - step:
+              name: Security
+              script:
+                  - vendor/bin/snyk test
+        - step:
+              name: Build
+              services:
+                  - docker
+              script:
+                  - export REGISTRY_PASSWORD=hunter2
+                  - docker build -t acme .
+        - step:
+              name: Deploy
+              deployment: production
+              script:
+                  - kubectl apply -f k8s/
+`,
+    });
+
+    const text = await runModule('bitbucket-pipelines-config.js', app);
+
+    expect(text).toContain('Deploy');
+  });
+});
+
+describe('deptrac', () => {
+  test('layers, a ruleset that lets the domain reach infrastructure, and a baseline', async () => {
+    const app = appWith('deptrac', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'qossmic/deptrac-shim': '^1.0' },
+      }, null, 2),
+      'deptrac.yaml': `deptrac:
+    paths:
+        - ./src
+    layers:
+        - name: Domain
+          collectors:
+              - type: directory
+                value: src/Domain/.*
+        - name: Application
+          collectors:
+              - type: directory
+                value: src/Application/.*
+        - name: Infrastructure
+          collectors:
+              - type: directory
+                value: src/Infrastructure/.*
+ruleset:
+    Domain:
+        - Infrastructure
+    Application:
+        - Domain
+        - Infrastructure
+skip_violations: []
+`,
+      '.deptrac.baseline.yaml': `deptrac:
+    skip_violations:
+        App\\Domain\\Invoice:
+            - App\\Infrastructure\\Doctrine\\InvoiceRepository
+`,
+    });
+
+    const text = await runModule('deptrac-config.js', app);
+
+    expect(text).toContain('Domain');
+  });
+});
+
+describe('entity graph', () => {
+  test('a self-referential entity, a deep inheritance chain and a cycle', async () => {
+    const app = appWith('entity-graph', {
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Category
+{
+    #[ORM\\ManyToOne(targetEntity: Category::class)]
+    private ?Category $parent = null;
+
+    #[ORM\\OneToMany(targetEntity: Category::class, mappedBy: 'parent')]
+    private $children;
+}
+`,
+      'src/Entity/Base.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\InheritanceType('SINGLE_TABLE')]
+class Base
+{
+}
+`,
+      'src/Entity/Middle.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Middle extends Base
+{
+}
+`,
+      'src/Entity/Leaf.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Leaf extends Middle
+{
+    #[ORM\\ManyToOne(targetEntity: Invoice::class)]
+    private ?Invoice $invoice = null;
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\ManyToOne(targetEntity: Customer::class)]
+    private ?Customer $customer = null;
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\OneToMany(targetEntity: Invoice::class, mappedBy: 'customer')]
+    private $invoices;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-graph.js', app);
+
+    expect(text).toContain('Category');
+  });
+});
