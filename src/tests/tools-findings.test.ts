@@ -33027,3 +33027,329 @@ route = "acme.example.com/*"
     expect(text).toContain('API_TOKEN');
   });
 });
+
+describe('batch 110: code quality, audits, cookies, cron, metrics and Doctrine internals', () => {
+  test('a constructor with a dozen dependencies', async () => {
+    const app = appWith('code-quality', {
+      'src/Service/Orchestrator.php': `<?php
+
+namespace App\\Service;
+
+class Orchestrator
+{
+    public function __construct(
+        private object $dep0,
+        private object $dep1,
+        private object $dep2,
+        private object $dep3,
+        private object $dep4,
+        private object $dep5,
+        private object $dep6,
+        private object $dep7,
+        private object $dep8,
+        private object $dep9,
+        private object $dep10,
+        private object $dep11,
+    ) {
+    }
+}
+`,
+    });
+
+    const text = await runModule('code-quality.js', app, ['Orchestrator']);
+
+    expect(text).toContain('rchestrator');
+  });
+
+  test('a project with no composer.lock to audit', async () => {
+    const app = appWith('composer-security-audit', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.2', 'symfony/framework-bundle': '^7.0' },
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('composer-security-audit.js', app);
+
+    expect(text).toContain('composer.lock');
+  });
+
+  test('cookies set from the application code', async () => {
+    const app = appWith('cookie-security', {
+      'src/Controller/PreferencesController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Cookie;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class PreferencesController
+{
+    public function save(): Response
+    {
+        $response = new Response();
+        $response->headers->setCookie(Cookie::create('theme', 'dark', 0, '/', null, false, false));
+        setcookie('legacy', 'value', time() + 3600);
+
+        return $response;
+    }
+}
+`,
+    });
+
+    const text = await runModule('cookie-security.js', app);
+
+    expect(text).toContain('ookie');
+  });
+
+  test('cron entries in a crontab file', async () => {
+    const app = appWith('cron-jobs', {
+      'docker/cron/Dockerfile': `FROM php:8.3-cli
+
+RUN apt-get update && apt-get install -y cron
+
+RUN echo "*/5 * * * * php /var/www/bin/console app:poll-queue" | crontab -
+
+# 0 6 * * * php /var/www/bin/console app:send-reports
+CMD ["cron", "-f"]
+`,
+      '.symfony.cloud.yaml': `name: app
+type: php:8.3
+
+crons:
+    reports:
+        spec: '0 6 * * *'
+        cmd: 'php bin/console app:send-reports'
+`,
+    });
+
+    const text = await runModule('cron-jobs.js', app);
+
+    expect(text).toContain('console');
+  });
+
+  test('a metric tagged with personal data', async () => {
+    const app = appWith('datadog-custom-metrics', {
+      'composer.json': JSON.stringify({ require: { 'datadog/php-datadogstatsd': '^1.5' } }, null, 4) + '\n',
+      'src/Metrics/InvoiceMetrics.php': `<?php
+
+namespace App\\Metrics;
+
+use DataDog\\DogStatsd;
+
+class InvoiceMetrics
+{
+    public function __construct(private DogStatsd $statsd)
+    {
+    }
+
+    public function paid(int $userId, string $email): void
+    {
+        $this->statsd->increment('invoice.paid', 1, ['user_id' => $userId, 'email' => $email]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('datadog-custom-metrics.js', app);
+
+    expect(text).toContain('metric');
+  });
+
+  test('a DBAL connection over SSL', async () => {
+    const app = appWith('dbal-config-ssl', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        driver: pdo_pgsql
+        server_version: '16'
+        options:
+            1000: true
+        ssl_mode: require
+        sslmode: verify-full
+`,
+    });
+
+    const text = await runModule('dbal-config.js', app);
+
+    expect(text).toContain('SSL');
+  });
+
+  test('a Dockerfile and compose file read together', async () => {
+    const app = appWith('docker-inspector', {
+      'Dockerfile': `FROM php:8.3-fpm AS base
+
+RUN apt-get update && apt-get install -y git
+
+COPY . /var/www
+
+USER www-data
+
+HEALTHCHECK CMD curl -f http://localhost/health || exit 1
+`,
+      'docker-compose.yml': `services:
+    php:
+        build: .
+        restart: unless-stopped
+`,
+      '.dockerignore': "vendor/\nvar/\n",
+    });
+
+    const text = await runModule('docker-inspector.js', app);
+
+    expect(text).toContain('Docker');
+  });
+
+  test('a second-level cache with a driver of its own', async () => {
+    const app = appWith('doctrine-cache-slc', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: pool
+            pool: doctrine.system_cache_pool
+        second_level_cache:
+            enabled: true
+            region_cache_driver:
+                type: pool
+                pool: doctrine.second_level_cache_pool
+            regions:
+                invoice_region:
+                    lifetime: 3600
+`,
+    });
+
+    const text = await runModule('doctrine-cache.js', app);
+
+    expect(text).toContain('ache');
+  });
+
+  test('a hydrator that only hydrates one row', async () => {
+    const app = appWith('doctrine-custom-hydrators', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        hydrators:
+            ColumnHydrator: App\\Doctrine\\Hydrator\\ColumnHydrator
+`,
+      'src/Doctrine/Hydrator/ColumnHydrator.php': `<?php
+
+namespace App\\Doctrine\\Hydrator;
+
+use Doctrine\\ORM\\Internal\\Hydration\\AbstractHydrator;
+
+class ColumnHydrator extends AbstractHydrator
+{
+    protected function hydrateAllData(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-custom-hydrators.js', app);
+
+    expect(text).toContain('ydrator');
+  });
+
+  test('a custom platform class registered for the connection', async () => {
+    const app = appWith('doctrine-custom-platform', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        platform_service: App\\Doctrine\\Platform\\AcmePlatform
+        url: '%env(resolve:DATABASE_URL)%'
+`,
+      'src/Doctrine/Platform/AcmePlatform.php': `<?php
+
+namespace App\\Doctrine\\Platform;
+
+use Doctrine\\DBAL\\Platforms\\PostgreSQLPlatform;
+
+class AcmePlatform extends PostgreSQLPlatform
+{
+    public function getName(): string
+    {
+        return 'acme';
+    }
+}
+`,
+      'src/Doctrine/Platform/notes.php': "<?php\n\n// The platform above is described here.\n",
+    });
+
+    const text = await runModule('doctrine-custom-platform.js', app);
+
+    expect(text).toContain('latform');
+  });
+
+  test('an inheritance mapped as a table per class', async () => {
+    const app = appWith('doctrine-discriminator', {
+      'src/Entity/Payment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\InheritanceType('TABLE_PER_CLASS')]
+#[ORM\\DiscriminatorColumn(name: 'kind', type: 'string', length: 16)]
+#[ORM\\DiscriminatorMap(['card' => CardPayment::class, 'cash' => CashPayment::class])]
+abstract class Payment
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+      'src/Entity/CardPayment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class CardPayment extends Payment
+{
+}
+`,
+    });
+
+    const text = await runModule('doctrine-discriminator.js', app);
+
+    expect(text).toContain('TABLE_PER_CLASS');
+  });
+
+  test('a DQL function registered and used', async () => {
+    const app = appWith('doctrine-dql-functions', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        dql:
+            string_functions:
+                UNACCENT: App\\Doctrine\\DQL\\Unaccent
+            numeric_functions:
+                DISTANCE: App\\Doctrine\\DQL\\Distance
+`,
+      'src/Doctrine/DQL/Unaccent.php': `<?php
+
+namespace App\\Doctrine\\DQL;
+
+use Doctrine\\ORM\\Query\\AST\\Functions\\FunctionNode;
+use Doctrine\\ORM\\Query\\Parser;
+use Doctrine\\ORM\\Query\\SqlWalker;
+
+class Unaccent extends FunctionNode
+{
+    public function parse(Parser $parser): void
+    {
+    }
+
+    public function getSql(SqlWalker $sqlWalker): string
+    {
+        return 'unaccent()';
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dql-functions.js', app);
+
+    expect(text).toContain('UNACCENT');
+  });
+});
