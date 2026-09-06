@@ -28447,3 +28447,284 @@ VAULT_TOKEN=hvs.abcdefghijklmnopqrstuvwx
     expect(text).toContain('VAULT_ADDR');
   });
 });
+
+describe('batch 96: websockets, Zendesk, API keys, operations, rate limits and AWS', () => {
+  test('a websocket server configured beside Mercure', async () => {
+    const app = appWith('websocket-integration', {
+      'composer.json': JSON.stringify({ require: { 'symfony/mercure-bundle': '^0.3' } }, null, 4) + '\n',
+      'config/packages/mercure.yaml': `mercure:
+    hubs:
+        default:
+            url: '%env(MERCURE_URL)%'
+            public_url: '%env(MERCURE_PUBLIC_URL)%'
+            jwt:
+                secret: '%env(MERCURE_JWT_SECRET)%'
+                publish: ['*']
+`,
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default'
+`,
+      '.env': 'APP_ENV=prod\nMERCURE_URL=http://mercure/.well-known/mercure\nWEBSOCKET_URL=ws://acme.example.com:8080\n',
+    });
+
+    const text = await runModule('websocket-integration.js', app);
+
+    expect(text).toContain('ercure');
+  });
+
+  test('a Zendesk token referenced from the code', async () => {
+    const app = appWith('zendesk-integration', {
+      'composer.json': JSON.stringify({ require: { 'zendesk/zendesk_api_client_php': '^2.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nZENDESK_SUBDOMAIN=acme\nZENDESK_API_TOKEN=abcdefghijklmnopqrstuvwx\n',
+      'src/Support/ZendeskClient.php': `<?php
+
+namespace App\\Support;
+
+use Zendesk\\API\\HttpClient;
+
+class ZendeskClient
+{
+    public function client(): HttpClient
+    {
+        $client = new HttpClient($_ENV['ZENDESK_SUBDOMAIN']);
+        $client->setAuth('basic', ['username' => 'acme@example.com', 'token' => $_ENV['ZENDESK_API_TOKEN']]);
+
+        return $client;
+    }
+}
+`,
+    });
+
+    const text = await runModule('zendesk-integration.js', app);
+
+    expect(text).toContain('ZENDESK');
+  });
+
+  test('API keys issued without a version or an expiry', async () => {
+    const app = appWith('api-key-rotation', {
+      'src/Security/ApiKeyManager.php': `<?php
+
+namespace App\\Security;
+
+class ApiKeyManager
+{
+    public function issue(string $owner): string
+    {
+        $apiKey = bin2hex(random_bytes(32));
+
+        $this->store->save([
+            'api_key' => $apiKey,
+            'owner' => $owner,
+        ]);
+
+        return $apiKey;
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-key-rotation.js', app);
+
+    expect(text).toContain('key');
+  });
+
+  test('a delete operation nothing protects', async () => {
+    const app = appWith('api-platform-operations', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Delete;
+use ApiPlatform\\Metadata\\GetCollection;
+
+#[ApiResource]
+#[GetCollection]
+#[Delete]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-operations.js', app);
+
+    expect(text).toContain('Delete');
+  });
+
+  test('a resource class whose name ends in Resource', async () => {
+    const app = appWith('api-platform-resource-metadata', {
+      'src/ApiResource/InvoiceResource.php': `<?php
+
+namespace App\\ApiResource;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class InvoiceResource
+{
+    public int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-resource-metadata.js', app);
+
+    expect(text).toContain('Resource');
+  });
+
+  test('a search filter with a strategy of its own', async () => {
+    const app = appWith('api-platform-filters', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Doctrine\\Orm\\Filter\\OrderFilter;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\SearchFilter;
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+#[ApiFilter(SearchFilter::class, properties: ['number' => 'partial', 'status' => 'exact'])]
+#[ApiFilter(OrderFilter::class, properties: ['issuedAt'], arguments: ['orderParameterName' => 'order'])]
+class Invoice
+{
+    private int $id = 0;
+
+    private string $number = '';
+}
+`,
+    });
+
+    const text = await runModule('api-platform.js', app, ['Invoice']);
+
+    expect(text).toContain('Filter');
+  });
+
+  test('rate limits declared per route with a burst', async () => {
+    const app = appWith('api-rate-limits', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        api:
+            policy: token_bucket
+            limit: 100
+            rate:
+                interval: '1 minute'
+                amount: 10
+`,
+      'docker/nginx/default.conf': `limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+
+server {
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+    }
+}
+`,
+      'src/Controller/Api/InvoiceController.php': `<?php
+
+namespace App\\Controller\\Api;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\RateLimiter\\RateLimiterFactory;
+
+class InvoiceController
+{
+    public function __construct(private RateLimiterFactory $apiLimiter)
+    {
+    }
+
+    public function index(): JsonResponse
+    {
+        $this->apiLimiter->create()->consume(1);
+
+        return new JsonResponse([]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-rate-limits.js', app);
+
+    expect(text).toContain('burst');
+  });
+
+  test('compression configured in nginx and Apache', async () => {
+    const app = appWith('api-response-compression', {
+      'docker/nginx/nginx.conf': `server {
+    gzip on;
+    gzip_types application/json text/css application/javascript;
+    gzip_min_length 1024;
+}
+`,
+      'public/.htaccess': `<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json text/html
+</IfModule>
+`,
+    });
+
+    const text = await runModule('api-response-compression.js', app);
+
+    expect(text).toContain('gzip');
+  });
+
+  test('a CloudFront distribution in the infrastructure', async () => {
+    const app = appWith('aws-cloudfront-config', {
+      'terraform/cdn.tf': `resource "aws_cloudfront_distribution" "assets" {
+  enabled = true
+
+  default_cache_behavior {
+    viewer_protocol_policy = "allow-all"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = false
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+`,
+      '.env': 'APP_ENV=prod\nCLOUDFRONT_DOMAIN=d111111abcdef8.cloudfront.net\n',
+    });
+
+    const text = await runModule('aws-cloudfront-config.js', app);
+
+    expect(text).toContain('loudFront');
+  });
+
+  test('an S3 upload made public, into a bucket named in the code', async () => {
+    const app = appWith('aws-s3-integration', {
+      'composer.json': JSON.stringify({ require: { 'aws/aws-sdk-php': '^3.0' } }, null, 4) + '\n',
+      'src/Storage/S3Uploader.php': `<?php
+
+namespace App\\Storage;
+
+use Aws\\S3\\S3Client;
+
+class S3Uploader
+{
+    public function __construct(private S3Client $client)
+    {
+    }
+
+    public function upload(string $path): void
+    {
+        $this->client->putObject([
+            'Bucket' => 'acme-production-uploads',
+            'Key' => basename($path),
+            'SourceFile' => $path,
+            'ACL' => 'public-read',
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-s3-integration.js', app);
+
+    expect(text).toContain('public-read');
+  });
+});
