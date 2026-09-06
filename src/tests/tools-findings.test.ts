@@ -10754,3 +10754,289 @@ class ErrorController
     expect(text).toContain('problem');
   });
 });
+
+describe('rate limits in the edge', () => {
+  test('rate limits declared in code with a burst, and caddy directives', async () => {
+    const app = appWith('api-rate-limits', {
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\RateLimiter\\RateLimiterFactory;
+
+class ApiController
+{
+    public function __construct(private RateLimiterFactory $apiLimiter)
+    {
+    }
+
+    public function index(): void
+    {
+        $limiter = $this->apiLimiter->create('api');
+        $limiter->consume(1);
+    }
+}
+`,
+      'Caddyfile': `acme.example.com {
+    rate_limit {
+        zone api {
+            key {remote_host}
+            events 100
+            window 1m
+        }
+    }
+    rate_limit static 1000r/s
+}
+`,
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        api:
+            policy: 'token_bucket'
+            limit: 100
+            rate: { interval: '1 minute', amount: 10 }
+`,
+    });
+
+    const text = await runModule('api-rate-limits.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('asset mapper entry points', () => {
+  test('an importmap with css entries, stimulus controllers and a webpack config', async () => {
+    const app = appWith('asset-mapper-entries', {
+      'importmap.php': `<?php
+
+return [
+    'app' => ['path' => './assets/app.js', 'entrypoint' => true],
+    'app.css' => ['path' => './assets/styles/app.css', 'type' => 'css'],
+    'bootstrap' => ['url' => 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/+esm'],
+];
+`,
+      'assets/controllers.json': JSON.stringify({
+        controllers: {
+          '@symfony/ux-turbo': { turbo_core: { enabled: true, fetch: 'eager' } },
+        },
+        entrypoints: [],
+      }, null, 2),
+      'assets/controllers/hello_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {}
+`,
+      'webpack.config.js': `const Encore = require('@symfony/webpack-encore');
+
+Encore
+    .addEntry('app', './assets/app.js')
+    .addStyleEntry('styles', './assets/styles/app.css');
+
+module.exports = Encore.getWebpackConfig();
+`,
+      'package.json': JSON.stringify({
+        devDependencies: { '@symfony/webpack-encore': '^4.0.0' },
+      }, null, 2),
+    });
+
+    const text = await runModule('asset-mapper.js', app);
+
+    expect(text).toContain('app');
+  });
+});
+
+describe('cloudfront', () => {
+  test('a distribution configured in code and in a config directory', async () => {
+    const app = appWith('cloudfront', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'aws/aws-sdk-php': '^3.0' },
+      }, null, 2),
+      'src/Aws/Cdn.php': `<?php
+
+namespace App\\Aws;
+
+use Aws\\CloudFront\\CloudFrontClient;
+
+class Cdn
+{
+    public function invalidate(CloudFrontClient $client): void
+    {
+        $client->createInvalidation([
+            'DistributionId' => 'E123456789',
+            'InvalidationBatch' => [
+                'CallerReference' => uniqid(),
+                'Paths' => ['Quantity' => 1, 'Items' => ['/*']],
+            ],
+        ]);
+    }
+}
+`,
+      'config/aws/cloudfront.yaml': `cloudfront:
+    distribution_id: '%env(CLOUDFRONT_DISTRIBUTION_ID)%'
+    default_ttl: 86400
+`,
+      'config/packages/aws.yaml': `aws:
+    version: latest
+    region: eu-west-1
+`,
+    });
+
+    const text = await runModule('aws-cloudfront-config.js', app);
+
+    expect(text).toContain('CloudFront');
+  });
+});
+
+describe('cache inspector', () => {
+  test('pools with a directory and a lifetime, and a cache directory with entries', async () => {
+    const app = appWith('cache-inspector', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        directory: '%kernel.cache_dir%/pools'
+        default_redis_provider: 'redis://cache:6379'
+        pools:
+            cache.invoices:
+                adapter: cache.adapter.filesystem
+                default_lifetime: 3600
+            cache.reports:
+                adapter: cache.adapter.redis
+                default_lifetime: 600
+`,
+      'config/packages/prod/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.redis
+`,
+      'var/cache/prod/pools/app/00/entry-one': 'cached\n',
+      'var/cache/prod/pools/app/01/entry-two': 'cached\n',
+      'var/cache/prod/pools/system/02/entry-three': 'cached\n',
+    });
+
+    const text = await runModule('cache-inspector.js', app, ['cache.invoices']);
+
+    expect(text).toContain('cache.invoices');
+  });
+});
+
+describe('cloudwatch without the sdk', () => {
+  test('alarms and retention in code with the sdk absent from composer', async () => {
+    const app = appWith('cloudwatch-nosdk', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Aws/Alarms.php': `<?php
+
+namespace App\\Aws;
+
+class Alarms
+{
+    public function alarm($client): void
+    {
+        $client->putMetricAlarm(['AlarmName' => 'acme-5xx']);
+    }
+
+    public function retention($logs): void
+    {
+        $logs->putRetentionPolicy(['logGroupName' => '/acme/app', 'retentionInDays' => 14]);
+    }
+}
+`,
+      'config/packages/prod/monolog.yaml': `monolog:
+    handlers:
+        cloudwatch:
+            type: service
+            id: Maxbanton\\Cwh\\Handler\\CloudWatch
+`,
+    });
+
+    const text = await runModule('cloudwatch-integration.js', app);
+
+    expect(text).toContain('CloudWatch');
+  });
+});
+
+describe('codeception cests', () => {
+  test('cest files, a bootstrap and a suite with cleanup turned off', async () => {
+    const app = appWith('codeception-cests', {
+      'codeception.yml': `namespace: App\\Tests
+paths:
+    tests: tests
+    output: var/codeception
+settings:
+    shuffle: true
+`,
+      'tests/acceptance.suite.yml': `actor: AcceptanceTester
+modules:
+    enabled:
+        - WebDriver:
+              url: http://localhost
+        - Db:
+              cleanup: false
+`,
+      'tests/functional.suite.yml': `actor: FunctionalTester
+modules:
+    enabled:
+        - Symfony:
+              app_path: src
+        - Doctrine2:
+              cleanup: true
+`,
+      'tests/acceptance/LoginCest.php': `<?php
+
+namespace App\\Tests\\Acceptance;
+
+class LoginCest
+{
+    public function _before(\\AcceptanceTester $I): void
+    {
+    }
+
+    public function logsIn(\\AcceptanceTester $I): void
+    {
+        $I->amOnPage('/login');
+    }
+}
+`,
+      'tests/_bootstrap.php': `<?php
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+`,
+    });
+
+    const text = await runModule('codeception-config.js', app);
+
+    expect(text).toContain('acceptance');
+  });
+});
+
+describe('composer security', () => {
+  test('a lock file, allowed plugins and a loose minimum stability', async () => {
+    const app = appWith('composer-audit', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'minimum-stability': 'dev',
+        'prefer-stable': false,
+        config: {
+          'allow-plugins': {
+            'symfony/flex': true,
+            'php-http/discovery': true,
+            'composer/package-versions-deprecated': false,
+          },
+        },
+        scripts: {
+          'post-install-cmd': ['@auto-scripts'],
+        },
+      }, null, 2),
+      'composer.lock': JSON.stringify({
+        'content-hash': 'a1b2c3d4',
+        packages: [
+          { name: 'symfony/framework-bundle', version: 'v7.0.3' },
+          { name: 'symfony/http-kernel', version: 'v7.0.3' },
+        ],
+        'packages-dev': [],
+      }, null, 2),
+    });
+
+    const text = await runModule('composer-security-audit.js', app);
+
+    expect(text).toContain('minimum-stability');
+  });
+});
