@@ -13290,3 +13290,333 @@ class EmailHandler
     expect(text).toContain('app.handler');
   });
 });
+
+describe('cors', () => {
+  test('paths with expose headers, a max age and an origin regex, and one clean policy', async () => {
+    const app = appWith('cors', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        origin_regex: true
+        allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
+        allow_methods: ['GET', 'POST']
+        allow_headers: ['Content-Type', 'Authorization']
+        expose_headers: ['Link', 'X-Total-Count']
+        max_age: 3600
+    paths:
+        '^/api':
+            allow_origin: ['*']
+            allow_credentials: true
+            expose_headers: ['Link']
+            max_age: 7200
+        '^/public':
+            allow_origin: ['https://acme.example.com']
+        broken: ~
+`,
+    });
+    const clean = appWith('cors-clean', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        allow_origin: ['https://acme.example.com']
+        allow_methods: ['GET']
+        allow_headers: ['Content-Type']
+`,
+    });
+
+    const text = await runModule('cors.js', app);
+    const cleanText = await runModule('cors.js', clean);
+
+    expect(text).toContain('api');
+    expect(cleanText.length).toBeGreaterThan(0);
+  });
+});
+
+describe('swarm published ports', () => {
+  test('replicas publishing a port in ingress mode and booleans written as strings', async () => {
+    const app = appWith('swarm-ports', {
+      'docker-compose.swarm.yml': `version: "3.8"
+
+services:
+  web:
+    image: acme:1.0
+    deploy:
+      replicas: 4
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+      update_config:
+        order: start-first
+      restart_policy:
+        condition: any
+      rollback_config:
+        parallelism: 1
+      placement:
+        constraints: []
+      labels:
+        traefik.enable: "true"
+        traefik.docker.lbswarm: "false"
+    ports:
+      - "80:80"
+`,
+    });
+
+    const text = await runModule('docker-swarm-config.js', app);
+
+    expect(text).toContain('web');
+  });
+});
+
+describe('driver options in detail', () => {
+  test('emulate prepares on, stringify fetches on, utf8 charset and a strange errmode', async () => {
+    const app = appWith('driveroptions-detail', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                driver: pdo_mysql
+                charset: utf8
+                driverOptions:
+                    20: true
+                    17: true
+                    3: 0
+                    connectTimeout: 5
+            healthy:
+                driver: pdo_mysql
+                charset: utf8mb4
+                driverOptions:
+                    3: 2
+                    connectTimeout: 5
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-driveroptions.js', app);
+
+    expect(text).toContain('EMULATE_PREPARES');
+  });
+});
+
+describe('entity locking', () => {
+  test('a version column of the wrong type, an annotation version and two lock calls', async () => {
+    const app = appWith('entity-lock', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Version]
+    #[ORM\\Column(type: 'string')]
+    private string $version = '';
+}
+`,
+      'src/Entity/LegacyInvoice.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ */
+class LegacyInvoice
+{
+    /**
+     * @ORM\\Version
+     * @ORM\\Column(type="string")
+     */
+    private $version;
+}
+`,
+      'src/Controller/LockController.php': `<?php
+
+namespace App\\Controller;
+
+use Doctrine\\DBAL\\LockMode;
+
+class LockController
+{
+    public function index(): void
+    {
+        $this->em->lock($this->invoice, LockMode::PESSIMISTIC_WRITE);
+        $this->em->lock($this->customer, LockMode::OPTIMISTIC, 1);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-lock.js', app);
+
+    expect(text).toContain('Version');
+  });
+});
+
+describe('sequence platform detection', () => {
+  test('the platform read from platform_service, from the driver and from a mysql url', async () => {
+    const fromPlatform = appWith('sequence-platform-service', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        platform_service: App\\Doctrine\\PostgreSQLPlatform
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'IDENTITY')]
+    private ?int $id = null;
+}
+`,
+    });
+    const fromUrl = appWith('sequence-url-mysql', {
+      '.env': `DATABASE_URL=mysql://app:pass@db:3306/acme
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    private ?int $id = null;
+}
+`,
+    });
+    const sqlite = appWith('sequence-url-sqlite', {
+      '.env': `DATABASE_URL=sqlite:///%kernel.project_dir%/var/data.db
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const one = await runModule('doctrine-sequence-generator.js', fromPlatform);
+    const two = await runModule('doctrine-sequence-generator.js', fromUrl);
+    const three = await runModule('doctrine-sequence-generator.js', sqlite);
+
+    expect(one.length).toBeGreaterThan(0);
+    expect(two.length).toBeGreaterThan(0);
+    expect(three.length).toBeGreaterThan(0);
+  });
+});
+
+describe('environment differences', () => {
+  test('values with trailing comments, a long value and a secret committed in .env', async () => {
+    const app = appWith('env-diff', {
+      '.env': `APP_ENV=prod   # the environment
+APP_SECRET=0123456789abcdef0123456789abcdef
+DATABASE_URL=postgresql://app:hunter2@db.example.com:5432/acme?serverVersion=16&charset=utf8
+MAILER_DSN=null://null
+`,
+      '.env.local': `APP_ENV=dev
+DATABASE_URL=postgresql://app:local@localhost:5432/acme
+`,
+      '.env.test': `APP_ENV=test
+`,
+      '.env.local.php': `<?php
+
+return [
+    'APP_ENV' => 'prod',
+    'APP_SECRET' => 'from-the-cache',
+];
+`,
+    });
+
+    const text = await runModule('env-diff.js', app);
+
+    expect(text).toContain('APP_ENV');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('fly.io', () => {
+  test('services with no health checks and machines that never stop', async () => {
+    const app = appWith('fly-io', {
+      'fly.toml': `app = "acme"
+primary_region = "cdg"
+
+[build]
+    dockerfile = "Dockerfile"
+
+[env]
+    APP_ENV = "prod"
+
+[http_service]
+    internal_port = 8080
+    force_https = true
+
+[[services]]
+    internal_port = 8080
+    protocol = "tcp"
+
+    [[services.ports]]
+        port = 443
+        handlers = ["tls", "http"]
+`,
+    });
+
+    const text = await runModule('fly-io-config.js', app);
+
+    expect(text).toContain('fly.toml');
+  });
+});
+
+describe('grafana', () => {
+  test('dashboards, a datasource, provisioned alerting and the agent in compose', async () => {
+    const app = appWith('grafana', {
+      'grafana/dashboards/acme.json': JSON.stringify({
+        title: 'Acme',
+        panels: [
+          { title: 'Requests', type: 'timeseries', targets: [{ expr: 'rate(http_requests_total[5m])' }] },
+          { title: 'Errors', type: 'stat', targets: [{ expr: 'rate(http_errors_total[5m])' }] },
+        ],
+        refresh: '10s',
+      }, null, 2),
+      'grafana/provisioning/datasources/prometheus.yaml': `apiVersion: 1
+datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://prometheus:9090
+      isDefault: true
+      basicAuthPassword: hunter2
+`,
+      'grafana/provisioning/alerting/rules.yaml': `apiVersion: 1
+groups:
+    - name: acme
+      rules:
+          - title: High error rate
+            condition: A
+`,
+      'docker-compose.yml': `services:
+  grafana:
+    image: grafana/grafana:11.0.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: hunter2
+`,
+    });
+
+    const text = await runModule('grafana-dashboard.js', app);
+
+    expect(text).toContain('Grafana');
+  });
+});
