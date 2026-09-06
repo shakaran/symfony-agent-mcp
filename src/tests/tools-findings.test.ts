@@ -35941,3 +35941,453 @@ class LegacyController extends Controller
     expect(text).toContain('Controller');
   });
 });
+
+describe('batch 116: domain events, uploads, forms, health endpoints and kernels', () => {
+  test('a domain event recorded from the constructor', async () => {
+    const app = appWith('symfony-domain-events', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use App\\Event\\InvoiceCreated;
+
+class Invoice
+{
+    private array $domainEvents = [];
+
+    public function __construct(private string $number)
+    {
+        $this->recordDomainEvent(new InvoiceCreated($number));
+    }
+
+    public function recordDomainEvent(object $event): void
+    {
+        $this->domainEvents[] = $event;
+    }
+
+    public function releaseEvents(): array
+    {
+        $events = $this->domainEvents;
+        $this->domainEvents = [];
+
+        return $events;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-domain-events.js', app);
+
+    expect(text).toContain('vent');
+  });
+
+  test('a custom env var processor', async () => {
+    const app = appWith('symfony-env-processors', {
+      'src/Env/Base64Processor.php': `<?php
+
+namespace App\\Env;
+
+use Symfony\\Component\\DependencyInjection\\EnvVarProcessorInterface;
+
+class Base64Processor implements EnvVarProcessorInterface
+{
+    public function getEnv(string $prefix, string $name, \\Closure $getEnv): mixed
+    {
+        return base64_decode($getEnv($name));
+    }
+
+    public static function getProvidedTypes(): array
+    {
+        return ['acme_base64' => 'string'];
+    }
+}
+`,
+      'src/Env/notes.php': "<?php\n\n// EnvVarProcessorInterface is described here.\n",
+      'config/services.yaml': `services:
+    App\\Env\\Base64Processor:
+        tags: ['container.env_var_processor']
+`,
+    });
+
+    const text = await runModule('symfony-env-processors.js', app);
+
+    expect(text).toContain('rocessor');
+  });
+
+  test('an event with properties anything can change', async () => {
+    const app = appWith('symfony-event-sourcing', {
+      'src/Event/InvoicePaid.php': `<?php
+
+namespace App\\Event;
+
+class InvoicePaid
+{
+    public string $invoiceId = '';
+
+    public int $amount = 0;
+}
+`,
+      'src/EventStore/EventStore.php': `<?php
+
+namespace App\\EventStore;
+
+class EventStore
+{
+    public function append(string $streamId, array $events): void
+    {
+    }
+
+    public function load(string $streamId): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-event-sourcing.js', app);
+
+    expect(text).toContain('vent');
+  });
+
+  test('an upload whose extension is guessed and never checked', async () => {
+    const app = appWith('symfony-file-uploads', {
+      'src/Controller/UploadController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\File\\UploadedFile;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class UploadController
+{
+    public function upload(UploadedFile $file): Response
+    {
+        $name = uniqid() . '.' . $file->guessExtension();
+        $file->move('/var/uploads', $name);
+
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-file-uploads.js', app);
+
+    expect(text).toContain('guessExtension');
+  });
+
+  test('the Finder used from the application', async () => {
+    const app = appWith('symfony-finder', {
+      'src/Service/FileScanner.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Finder\\Finder;
+
+class FileScanner
+{
+    public function scan(string $dir): array
+    {
+        $finder = new Finder();
+        $finder->files()->in($dir)->name('*.csv')->depth('< 3');
+
+        return iterator_to_array($finder);
+    }
+}
+`,
+      'src/Service/notes.php': "<?php\n\n// The Finder component is described here.\n",
+    });
+
+    const text = await runModule('symfony-finder.js', app);
+
+    expect(text).toContain('inder');
+  });
+
+  test('flash messages read with a wildcard', async () => {
+    const app = appWith('symfony-flash-messages', {
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceController extends AbstractController
+{
+    public function save(): Response
+    {
+        $this->addFlash('success', 'Saved');
+        $this->addFlash('warning', 'Check the total');
+
+        return new Response('');
+    }
+}
+`,
+      'templates/base.html.twig': `{% for label, messages in app.flashes %}
+    {% for message in messages %}
+        <div class="flash flash-{{ label }}">{{ message }}</div>
+    {% endfor %}
+{% endfor %}
+`,
+    });
+
+    const text = await runModule('symfony-flash-messages.js', app);
+
+    expect(text).toContain('flash');
+  });
+
+  test('a Turbo Stream form with no token in it', async () => {
+    const app = appWith('symfony-form-ajax', {
+      'templates/invoice/form.stream.html.twig': `<turbo-stream action="replace" target="invoice_form">
+    <template>
+        <form method="post" action="/invoices">
+            <input name="number">
+            <button type="submit">Save</button>
+        </form>
+    </template>
+</turbo-stream>
+`,
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceController extends AbstractController
+{
+    public function form(): Response
+    {
+        return $this->render('invoice/form.stream.html.twig');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-ajax.js', app);
+
+    expect(text).toContain('csrf');
+  });
+
+  test('a form bound to a data class', async () => {
+    const app = appWith('symfony-form-data-class', {
+      'src/Form/InvoiceType.php': `<?php
+
+namespace App\\Form;
+
+use App\\Entity\\Invoice;
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class InvoiceType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('number', TextType::class);
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults(['data_class' => Invoice::class]);
+    }
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+class Invoice
+{
+    private string $number = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-data-class.js', app);
+
+    expect(text).toContain('data_class');
+  });
+
+  test('a type guesser that returns nothing at all', async () => {
+    const app = appWith('symfony-form-guess', {
+      'src/Form/TypeGuesser/NullGuesser.php': `<?php
+
+namespace App\\Form\\TypeGuesser;
+
+use Symfony\\Component\\Form\\FormTypeGuesserInterface;
+use Symfony\\Component\\Form\\Guess\\Guess;
+use Symfony\\Component\\Form\\Guess\\TypeGuess;
+
+class NullGuesser implements FormTypeGuesserInterface
+{
+    public function guessType(string $class, string $property): ?TypeGuess
+    {
+        return null;
+    }
+
+    public function guessRequired(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+
+    public function guessMaxLength(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+
+    public function guessPattern(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-guess.js', app);
+
+    expect(text).toContain('uess');
+  });
+
+  test('a health endpoint restricted by address', async () => {
+    const app = appWith('symfony-health-endpoint-security', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/health, ips: [10.0.0.0/8, 127.0.0.1], roles: PUBLIC_ACCESS }
+        - { path: ^/, roles: PUBLIC_ACCESS }
+`,
+      'src/Controller/HealthController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class HealthController
+{
+    #[Route('/health', name: 'health')]
+    public function health(): JsonResponse
+    {
+        return new JsonResponse(['status' => 'ok']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-health-endpoint-security.js', app);
+
+    expect(text).toContain('IP');
+  });
+
+  test('an HTTP client with a mock response factory', async () => {
+    const app = appWith('symfony-http-client-events', {
+      'config/packages/test/framework.yaml': `framework:
+    http_client:
+        mock_response_factory: 'App\\Tests\\Http\\MockResponseFactory'
+`,
+      'src/Http/TracedClient.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class TracedClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(string $url): string
+    {
+        return $this->client->request('GET', $url, [
+            'on_progress' => static function (int $dlNow, int $dlSize, array $info): void {
+            },
+        ])->getContent();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-events.js', app);
+
+    expect(text).toContain('mock_response_factory');
+  });
+
+  test('a mocked response with no status code', async () => {
+    const app = appWith('symfony-http-client-mock', {
+      'tests/Http/AcmeClientTest.php': `<?php
+
+namespace App\\Tests\\Http;
+
+use PHPUnit\\Framework\\TestCase;
+use Symfony\\Component\\HttpClient\\MockHttpClient;
+use Symfony\\Component\\HttpClient\\Response\\MockResponse;
+
+class AcmeClientTest extends TestCase
+{
+    public function testItFetches(): void
+    {
+        $client = new MockHttpClient([
+            new MockResponse('{"invoices":[]}'),
+        ]);
+
+        $this->assertNotNull($client);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-mock.js', app);
+
+    expect(text).toContain('MockResponse');
+  });
+
+  test('a kernel that boots the framework bundle late', async () => {
+    const app = appWith('symfony-kernel-boot', {
+      'config/bundles.php': `<?php
+
+return [
+    Doctrine\\Bundle\\DoctrineBundle\\DoctrineBundle::class => ['all' => true],
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Symfony\\Bundle\\TwigBundle\\TwigBundle::class => ['all' => true],
+];
+`,
+    });
+
+    const text = await runModule('symfony-kernel-boot.js', app);
+
+    expect(text).toContain('FrameworkBundle');
+  });
+
+  test('a terminate listener with nothing catching its errors', async () => {
+    const app = appWith('symfony-kernel-terminate', {
+      'src/EventSubscriber/TerminateSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\TerminateEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class TerminateSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::TERMINATE => 'onTerminate'];
+    }
+
+    public function onTerminate(TerminateEvent $event): void
+    {
+        $this->mailer->send($this->buildReport());
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-kernel-terminate.js', app);
+
+    expect(text).toContain('terminate');
+  });
+});
