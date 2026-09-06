@@ -2802,3 +2802,285 @@ class Kernel
     expect(text).toContain('local');
   });
 });
+
+describe('nginx unit', () => {
+  test('applications with threads and disabled functions, routes and http settings', async () => {
+    const app = appWith('nginx-unit', {
+      'docker/unit.json': JSON.stringify({
+        listeners: { '*:80': { pass: 'routes/main' } },
+        routes: {
+          main: [
+            { match: { uri: '/assets/*' }, action: { share: '/srv/app/public$uri' } },
+            { action: { pass: 'applications/symfony' } },
+          ],
+        },
+        applications: {
+          symfony: {
+            type: 'php',
+            root: '/srv/app/public',
+            script: 'index.php',
+            processes: 4,
+            threads: 32,
+            options: {
+              admin: {
+                disable_functions: 'exec,passthru',
+                memory_limit: '256M',
+              },
+            },
+          },
+        },
+        settings: {
+          http: {
+            header_read_timeout: 30,
+            body_read_timeout: 30,
+          },
+        },
+      }, null, 2),
+      'config/unit.json': '{ not json\n',
+    });
+
+    const text = await runModule('nginx-unit-config.js', app);
+
+    expect(text).toContain('symfony');
+  });
+});
+
+describe('oauth2 server', () => {
+  test('token lifetimes given in hours, in seconds, and the grants a server enables', async () => {
+    const composer = JSON.stringify({
+      require: {
+        'symfony/framework-bundle': '^7.0',
+        'league/oauth2-server': '^8.5',
+        'trikoder/oauth2-bundle': '^5.0',
+      },
+    }, null, 2);
+
+    const app = appWith('oauth2-server', {
+      'composer.json': composer,
+      'src/Security/ServerFactory.php': `<?php
+
+namespace App\\Security;
+
+use DateInterval;
+use League\\OAuth2\\Server\\AuthorizationServer;
+use League\\OAuth2\\Server\\CryptKey;
+use League\\OAuth2\\Server\\Grant\\AuthCodeGrant;
+use League\\OAuth2\\Server\\Grant\\ClientCredentialsGrant;
+use League\\OAuth2\\Server\\Grant\\ImplicitGrant;
+use League\\OAuth2\\Server\\Grant\\PasswordGrant;
+use League\\OAuth2\\Server\\Grant\\RefreshTokenGrant;
+
+class ServerFactory
+{
+    public function build(): AuthorizationServer
+    {
+        $key = new CryptKey('/var/oauth/private.key');
+        $server = new AuthorizationServer($this->clients, $this->tokens, $this->scopes, $key, 'encryption-key');
+
+        $server->enableGrantType(new AuthCodeGrant($this->codes, $this->refresh, new DateInterval('PT10M')), new DateInterval('PT2H'));
+        $server->enableGrantType(new ClientCredentialsGrant(), new DateInterval('PT1H'));
+        $server->enableGrantType(new ImplicitGrant(new DateInterval('PT1H')));
+        $server->enableGrantType(new PasswordGrant($this->users, $this->refresh));
+        $server->enableGrantType(new RefreshTokenGrant($this->refresh));
+
+        $server->setAccessTokenTTL(new DateInterval('PT2H'));
+        $server->setRefreshTokenTTL(new DateInterval('P30D'));
+
+        return $server;
+    }
+}
+`,
+      'src/Security/ShortLivedFactory.php': `<?php
+
+namespace App\\Security;
+
+use DateInterval;
+use League\\OAuth2\\Server\\ResourceServer;
+
+class ShortLivedFactory
+{
+    public function build(): ResourceServer
+    {
+        $server = new ResourceServer($this->tokens, $this->publicKey);
+        $server->setAccessTokenTTL(new DateInterval('PT30S'));
+        $server->setAccessTokenTTL(new DateInterval('PT15M'));
+
+        return $server;
+    }
+}
+`,
+    });
+
+    const text = await runModule('oauth2-server-config.js', app);
+
+    expect(text).toContain('ImplicitGrant');
+    expect(text).toContain('Access token TTL');
+  });
+});
+
+describe('array find functions', () => {
+  test('the php 8.4 array functions on a project that does not require 8.4', async () => {
+    const app = appWith('array-find-old', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.2', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Service/Finder.php': `<?php
+
+namespace App\\Service;
+
+class Finder
+{
+    public function first(array $rows): mixed
+    {
+        return array_find($rows, static fn (array $row): bool => $row['active']);
+    }
+
+    public function firstKey(array $rows): mixed
+    {
+        return array_find_key($rows, static fn (array $row): bool => $row['active']);
+    }
+
+    public function any(array $rows): bool
+    {
+        return array_any($rows, static fn (array $row): bool => $row['active']);
+    }
+
+    public function all(array $rows): bool
+    {
+        return array_all($rows, static fn (array $row): bool => $row['active']);
+    }
+
+    public function byHand(array $rows): mixed
+    {
+        foreach ($rows as $row) {
+            if ($row['active']) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+}
+`,
+    });
+    const modern = appWith('array-find-new', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.4', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Service/Finder.php': `<?php
+
+namespace App\\Service;
+
+class Finder
+{
+    public function first(array $rows): mixed
+    {
+        return array_find($rows, static fn (array $row): bool => $row['active']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-array-find-functions.js', app);
+    const modernText = await runModule('php-array-find-functions.js', modern);
+
+    expect(text).toContain('array_find');
+    expect(modernText).toContain('array_find');
+  });
+});
+
+describe('phpunit configuration', () => {
+  test('suites with excludes, coverage include and exclude, and minimum percentages', async () => {
+    const app = appWith('phpunit-config', {
+      'phpunit.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+            <exclude>tests/Unit/Legacy</exclude>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+        <exclude>
+            <directory suffix=".php">src/Kernel.php</directory>
+            <directory suffix=".php">src/DataFixtures</directory>
+        </exclude>
+        <report>
+            <text outputFile="php://stdout"/>
+        </report>
+    </coverage>
+
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <server name="KERNEL_CLASS" value="App\\Kernel"/>
+    </php>
+
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>
+`,
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <testsuites>
+        <testsuite name="all">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+    });
+
+    const text = await runModule('phpunit-config.js', app);
+
+    expect(text).toContain('unit');
+  });
+});
+
+describe('services', () => {
+  test('a service with tags, an alias, a factory, arguments and calls', async () => {
+    const app = appWith('services', {
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\\Service\\InvoiceBuilder:
+        arguments:
+            - '@doctrine.orm.entity_manager'
+            - '%kernel.project_dir%/var/invoices'
+        calls:
+            - [setLogger, ['@logger']]
+        tags:
+            - { name: app.builder, priority: 10 }
+            - 'app.invoice'
+
+    app.invoice_builder:
+        alias: App\\Service\\InvoiceBuilder
+        public: true
+
+    App\\Service\\PdfRenderer:
+        factory: ['@App\\Factory\\RendererFactory', 'create']
+
+    App\\Service\\Plain: ~
+`,
+    });
+
+    const text = await runModule('services.js', app, ['App\\Service\\InvoiceBuilder', 'app.invoice_builder', 'App\\Service\\PdfRenderer', 'app.builder']);
+
+    expect(text).toContain('InvoiceBuilder');
+  });
+});

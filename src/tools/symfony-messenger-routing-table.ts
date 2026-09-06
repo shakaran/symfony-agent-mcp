@@ -96,7 +96,9 @@ function extractRoutingEntries(content: string): Array<{ messageClass: string; t
 
   // A message class is as often written unquoted as quoted, and the list of
   // transports may follow on the next lines rather than on this one.
-  const entryRe = new RegExp(`^[ \\t]{${section.childIndent}}['"]?([\\w\\\\*.]{1,200})['"]?\\s*:\\s*([^\\n]{0,300})`, 'gm');
+  // \s crosses the line break, so an entry whose transports are listed on the
+  // following lines took "- async" as its only transport and lost the rest.
+  const entryRe = new RegExp(`^[ \\t]{${section.childIndent}}['"]?([\\w\\\\*.]{1,200})['"]?[ \\t]*:[ \\t]*([^\\n]{0,300})`, 'gm');
   const lines = section.body.split('\n');
 
   let m: RegExpExecArray | null;
