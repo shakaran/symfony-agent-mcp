@@ -83,7 +83,10 @@ function parseTwigComponent(filePath: string, appPath: string): TwigComponent | 
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
 
-  const nameM     = /#\[AsTwigComponent[^)]*name\s*:\s*['"]([^'"]+)['"]/.exec(content);
+  // The name is usually given positionally, #[AsTwigComponent('Alert')], which
+  // is how the documentation writes it.
+  const nameM     = /#\[AsTwigComponent[^)]*name\s*:\s*['"]([^'"]+)['"]/.exec(content) ??
+    /#\[AsTwigComponent\s*\(\s*['"]([^'"]+)['"]/.exec(content);
   const templateM = /#\[AsTwigComponent[^)]*template\s*:\s*['"]([^'"]+)['"]/.exec(content);
 
   const name     = nameM?.[1] ?? classM[1];

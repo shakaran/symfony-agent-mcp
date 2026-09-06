@@ -28152,3 +28152,298 @@ class ExporterRegistry
     expect(text).toContain('include');
   });
 });
+
+describe('batch 95: React and Typed bridges, expressions, tests, Turbo, Twig and Vault', () => {
+  test('a React component handed a PHP object', async () => {
+    const app = appWith('symfony-ux-react', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-react': '^2.0' } }, null, 4) + '\n',
+      'package.json': JSON.stringify({ dependencies: { react: '^18.0' } }, null, 4) + '\n',
+      'templates/invoice/show.html.twig': `{{ react_component('InvoiceCard', { invoice: new Invoice(), total: 100 }) }}
+`,
+      'assets/app.js': `import { registerReactControllerComponents } from '@symfony/ux-react';
+
+registerReactControllerComponents(require.context('./react/controllers', true, /\\.jsx$/));
+`,
+      'assets/react/controllers/InvoiceCard.jsx': `export default function InvoiceCard({ invoice }) {
+    return <div>{invoice.number}</div>;
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-react.js', app);
+
+    expect(text).toContain('react_component');
+  });
+
+  test('a typed animation that stops after one pass', async () => {
+    const app = appWith('symfony-ux-typed', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-typed': '^2.0' } }, null, 4) + '\n',
+      'assets/controllers/typed_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {
+    connect() {
+        this.typed = new Typed(this.element, {
+            strings: ['Invoices', 'Payments'],
+            typeSpeed: 40,
+        });
+    }
+}
+`,
+      'templates/home/index.html.twig': `<span {{ stimulus_controller('symfony/ux-typed/typed', { strings: ['Invoices'] }) }}></span>
+`,
+    });
+
+    const text = await runModule('symfony-ux-typed.js', app);
+
+    expect(text).toContain('yped');
+  });
+
+  test('an expression constraint reaching into the object', async () => {
+    const app = appWith('symfony-validator-expression', {
+      'src/Entity/Booking.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Booking
+{
+    #[Assert\\Expression('this.start < this.end', message: 'The end must come after the start.')]
+    private \\DateTimeImmutable $start;
+
+    private \\DateTimeImmutable $end;
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-expression.js', app);
+
+    expect(text).toContain('this.');
+  });
+
+  test('tests of every kind in the suite', async () => {
+    const app = appWith('tests-inspector', {
+      'tests/Unit/InvoiceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class InvoiceTest extends TestCase
+{
+    public function testTotal(): void
+    {
+        $this->assertSame(1, 1);
+    }
+}
+`,
+      'tests/Integration/RepositoryTest.php': `<?php
+
+namespace App\\Tests\\Integration;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+class RepositoryTest extends KernelTestCase
+{
+    public function testItBoots(): void
+    {
+        self::bootKernel();
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/Functional/HomeControllerTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class HomeControllerTest extends WebTestCase
+{
+    public function testHome(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/');
+        $this->assertResponseIsSuccessful();
+    }
+}
+`,
+      'tests/notes.php': "<?php\n\n// The suites are described here.\n",
+    });
+
+    const text = await runModule('tests-inspector.js', app);
+
+    expect(text).toContain('Functional');
+  });
+
+  test('a broadcast entity with no Mercure hub behind it', async () => {
+    const app = appWith('turbo-bundle', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-turbo': '^2.0' } }, null, 4) + '\n',
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\UX\\Turbo\\Attribute\\Broadcast;
+
+#[ORM\\Entity]
+#[Broadcast]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+      'templates/invoice/list.html.twig': `<turbo-frame id="invoices">
+    <turbo-stream action="append" target="invoices"></turbo-stream>
+</turbo-frame>
+`,
+    });
+
+    const text = await runModule('turbo-bundle.js', app);
+
+    expect(text).toContain('Mercure');
+  });
+
+  test('a Twig component with props, used in the templates', async () => {
+    const app = appWith('twig-components', {
+      'src/Twig/Components/InvoiceCard.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent;
+
+#[AsTwigComponent('invoice_card')]
+class InvoiceCard
+{
+    public string $number = '';
+
+    public int $total = 0;
+}
+`,
+      'templates/components/invoice_card.html.twig': `<div class="card">{{ number }} — {{ total }}</div>
+`,
+      'templates/invoice/list.html.twig': `{% for invoice in invoices %}
+    <twig:invoice_card number="{{ invoice.number }}" total="{{ invoice.total }}" />
+{% endfor %}
+`,
+    });
+
+    const text = await runModule('twig-components.js', app);
+
+    expect(text).toContain('invoice_card');
+  });
+
+  test('a Twig extension declaring filters and functions', async () => {
+    const app = appWith('twig-extensions', {
+      'src/Twig/AppExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Twig\\Extension\\AbstractExtension;
+use Twig\\TwigFilter;
+use Twig\\TwigFunction;
+
+class AppExtension extends AbstractExtension
+{
+    public function getFilters(): array
+    {
+        return [
+            new TwigFilter('money', [$this, 'money']),
+            new TwigFilter('invoice_status', [$this, 'status']),
+        ];
+    }
+
+    public function getFunctions(): array
+    {
+        return [
+            new TwigFunction('acme_asset', [$this, 'asset'], ['is_safe' => ['html']]),
+        ];
+    }
+
+    public function money(int $cents): string
+    {
+        return number_format($cents / 100, 2, '.', ',');
+    }
+
+    public function status(string $status): string
+    {
+        return ucfirst($status);
+    }
+
+    public function asset(string $path): string
+    {
+        return '/build/' . $path;
+    }
+}
+`,
+    });
+
+    const text = await runModule('twig-extensions.js', app);
+
+    expect(text).toContain('money');
+  });
+
+  test('templates inherited five deep, one of them full of blocks', async () => {
+    const app = appWith('twig-template-inheritance', {
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html><body>{% block body %}{% endblock %}</body></html>
+`,
+      'templates/layout/one.html.twig': "{% extends 'base.html.twig' %}\n",
+      'templates/layout/two.html.twig': "{% extends 'layout/one.html.twig' %}\n",
+      'templates/layout/three.html.twig': "{% extends 'layout/two.html.twig' %}\n",
+      'templates/layout/four.html.twig': "{% extends 'layout/three.html.twig' %}\n",
+      'templates/invoice/show.html.twig': `{% extends 'layout/four.html.twig' %}
+
+{% block section0 %}{% endblock %}
+{% block section1 %}{% endblock %}
+{% block section2 %}{% endblock %}
+{% block section3 %}{% endblock %}
+{% block section4 %}{% endblock %}
+{% block section5 %}{% endblock %}
+{% block section6 %}{% endblock %}
+{% block section7 %}{% endblock %}
+{% block section8 %}{% endblock %}
+{% block section9 %}{% endblock %}
+{% block section10 %}{% endblock %}
+{% block section11 %}{% endblock %}
+{% block section12 %}{% endblock %}
+{% block section13 %}{% endblock %}
+{% block section14 %}{% endblock %}
+{% block section15 %}{% endblock %}
+{% block section16 %}{% endblock %}
+{% block section17 %}{% endblock %}
+{% block section18 %}{% endblock %}
+{% block section19 %}{% endblock %}
+{% block section20 %}{% endblock %}
+{% block section21 %}{% endblock %}
+`,
+    });
+
+    const text = await runModule('twig-template-inheritance.js', app);
+
+    expect(text).toContain('blocks');
+  });
+
+  test('Vault reached at a hardcoded address, beside static credentials', async () => {
+    const app = appWith('vault-dynamic-secrets', {
+      '.env': `APP_ENV=prod
+VAULT_ADDR=http://10.0.0.5:8200
+VAULT_TOKEN=hvs.abcdefghijklmnopqrstuvwx
+`,
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        driver: pdo_pgsql
+        host: db.acme.internal
+        user: acme
+        password: hunter2
+        dbname: acme
+`,
+    });
+
+    const text = await runModule('vault-dynamic-secrets.js', app);
+
+    expect(text).toContain('VAULT_ADDR');
+  });
+});
