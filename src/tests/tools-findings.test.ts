@@ -35565,3 +35565,379 @@ class ServiceTest extends TestCase
     expect(text).toContain('getMockBuilder');
   });
 });
+
+describe('batch 115: RabbitMQ, SAML, sessions, assets, caches and debugging', () => {
+  test('RabbitMQ still on the guest account', async () => {
+    const app = appWith('rabbitmq-config', {
+      '.env': 'APP_ENV=prod\nRABBITMQ_DSN=amqp://guest:guest@rabbit:5672/%2f\n',
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'amqp://guest:guest@rabbit:5672/%2f/messages'
+`,
+    });
+
+    const text = await runModule('rabbitmq-config.js', app);
+
+    expect(text).toContain('guest');
+  });
+
+  test('a SAML configuration file', async () => {
+    const app = appWith('saml-auth', {
+      'composer.json': JSON.stringify({ require: { 'nbgrp/onelogin-saml-bundle': '^2.0' } }, null, 4) + '\n',
+      'config/packages/nbgrp_onelogin_saml.yaml': `nbgrp_onelogin_saml:
+    idp:
+        entityId: 'https://sso.acme.com/metadata'
+        singleSignOnService:
+            url: 'https://sso.acme.com/sso'
+            binding: 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect'
+        x509cert: 'MIIC...'
+    sp:
+        entityId: 'https://acme.example.com/saml/metadata'
+        assertionConsumerService:
+            url: 'https://acme.example.com/saml/acs'
+    security:
+        wantAssertionsSigned: false
+        wantNameIdEncrypted: false
+`,
+    });
+
+    const text = await runModule('saml-auth.js', app);
+
+    expect(text).toContain('SAML');
+  });
+
+  test('Sentry tracing every request', async () => {
+    const app = appWith('sentry-performance-tracing', {
+      'composer.json': JSON.stringify({ require: { 'sentry/sentry-symfony': '^4.0' } }, null, 4) + '\n',
+      'config/packages/sentry.yaml': `sentry:
+    dsn: '%env(SENTRY_DSN)%'
+    tracing:
+        enabled: true
+    options:
+        traces_sample_rate: 1.0
+        profiles_sample_rate: 1.0
+`,
+    });
+
+    const text = await runModule('sentry-performance-tracing.js', app);
+
+    expect(text).toContain('rac');
+  });
+
+  test('a session configured with nothing to report', async () => {
+    const app = appWith('session-config-clean', {
+      'config/packages/framework.yaml': `framework:
+    session:
+        handler_id: null
+        cookie_secure: true
+        cookie_httponly: true
+        cookie_samesite: strict
+        gc_maxlifetime: 1800
+        cookie_lifetime: 0
+        use_cookies: true
+`,
+    });
+
+    const text = await runModule('session-config.js', app);
+
+    expect(text).toContain('ession');
+  });
+
+  test('SQS credentials written into the environment file', async () => {
+    const app = appWith('sqs-messenger-config', {
+      '.env': `APP_ENV=prod
+MESSENGER_TRANSPORT_DSN=https://sqs.eu-west-1.amazonaws.com/123456789012/acme
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY
+`,
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    wait_time: 20
+`,
+    });
+
+    const text = await runModule('sqs-messenger-config.js', app);
+
+    expect(text).toContain('AWS_ACCESS_KEY_ID');
+  });
+
+  test('an asset package with a version strategy of its own', async () => {
+    const app = appWith('symfony-assets-versioning', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version: 'v2'
+        version_format: '%%s?v=%%s'
+        packages:
+            images:
+                version_strategy: 'App\\Asset\\ImageVersionStrategy'
+                base_urls: ['https://cdn.acme.example.com']
+`,
+      'src/Asset/ImageVersionStrategy.php': `<?php
+
+namespace App\\Asset;
+
+use Symfony\\Component\\Asset\\VersionStrategy\\VersionStrategyInterface;
+
+class ImageVersionStrategy implements VersionStrategyInterface
+{
+    public function getVersion(string $path): string
+    {
+        return 'v2';
+    }
+
+    public function applyVersion(string $path): string
+    {
+        return $path . '?v=2';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-assets-versioning.js', app);
+
+    expect(text).toContain('version');
+  });
+
+  test('a cache item that is always recomputed', async () => {
+    const app = appWith('symfony-cache-early-expiry', {
+      'src/Service/Rates.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Cache\\CacheInterface;
+use Symfony\\Contracts\\Cache\\ItemInterface;
+
+class Rates
+{
+    public function __construct(private CacheInterface $cache)
+    {
+    }
+
+    public function rate(string $currency): float
+    {
+        return $this->cache->get('rate_' . $currency, function (ItemInterface $item): float {
+            $item->expiresAfter(3600);
+
+            return 1.0;
+        }, INF);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-cache-early-expiry.js', app);
+
+    expect(text).toContain('beta');
+  });
+
+  test('a Redis URL carrying its password', async () => {
+    const app = appWith('symfony-cache-redis-cluster', {
+      '.env': 'APP_ENV=prod\nREDIS_URL=redis://acme:hunter2@redis-1.acme.internal:6379,redis-2.acme.internal:6379\n',
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.redis
+        default_redis_provider: '%env(REDIS_URL)%'
+`,
+    });
+
+    const text = await runModule('symfony-cache-redis-cluster.js', app);
+
+    expect(text).toContain('edis');
+  });
+
+  test('a bundle extension with a configuration tree', async () => {
+    const app = appWith('symfony-config-extensions-tree', {
+      'src/DependencyInjection/AcmeExtension.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+use Symfony\\Component\\DependencyInjection\\Extension\\Extension;
+
+class AcmeExtension extends Extension
+{
+    public function load(array $configs, ContainerBuilder $container): void
+    {
+        $configuration = new Configuration();
+        $config = $this->processConfiguration($configuration, $configs);
+    }
+}
+`,
+      'src/DependencyInjection/Configuration.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\Config\\Definition\\Builder\\TreeBuilder;
+use Symfony\\Component\\Config\\Definition\\ConfigurationInterface;
+
+class Configuration implements ConfigurationInterface
+{
+    public function getConfigTreeBuilder(): TreeBuilder
+    {
+        $treeBuilder = new TreeBuilder('acme');
+
+        return $treeBuilder;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-config-extensions.js', app);
+
+    expect(text).toContain('cme');
+  });
+
+  test('a command that asks a question', async () => {
+    const app = appWith('symfony-console-question', {
+      'src/Command/AskCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Helper\\QuestionHelper;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+use Symfony\\Component\\Console\\Question\\ConfirmationQuestion;
+use Symfony\\Component\\Console\\Question\\Question;
+
+class AskCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $helper = $this->getHelper('question');
+        $name = $helper->ask($input, $output, new Question('Name? '));
+        $sure = $helper->ask($input, $output, new ConfirmationQuestion('Sure? ', false));
+
+        return Command::SUCCESS;
+    }
+}
+`,
+      'src/Command/PlainCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class PlainCommand extends Command
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-question.js', app);
+
+    expect(text).toContain('uestion');
+  });
+
+  test('a query handler that writes', async () => {
+    const app = appWith('symfony-cqrs-patterns', {
+      'src/Query/GetInvoiceHandler.php': `<?php
+
+namespace App\\Query;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+class GetInvoiceHandler
+{
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function __invoke(GetInvoice $query): ?object
+    {
+        $invoice = $this->entityManager->getRepository(\\App\\Entity\\Invoice::class)->find($query->id);
+        $this->entityManager->persist($invoice);
+        $this->entityManager->flush();
+
+        return $invoice;
+    }
+}
+`,
+      'src/Query/GetInvoice.php': `<?php
+
+namespace App\\Query;
+
+class GetInvoice
+{
+    public function __construct(public readonly int $id)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-cqrs-patterns.js', app);
+
+    expect(text).toContain('uery');
+  });
+
+  test('a dd() left in a controller', async () => {
+    const app = appWith('symfony-debug-dump', {
+      'src/Controller/DebugController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class DebugController
+{
+    public function show(): Response
+    {
+        dd($this->data);
+
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-debug-dump.js', app);
+
+    expect(text).toContain('dd()');
+  });
+
+  test('the profiler toolbar left on in production', async () => {
+    const app = appWith('symfony-debug-prod', {
+      'config/packages/prod/web_profiler.yaml': `web_profiler:
+    toolbar: true
+    intercept_redirects: false
+`,
+      '.env': 'APP_ENV=prod\nAPP_DEBUG=1\n',
+    });
+
+    const text = await runModule('symfony-debug.js', app);
+
+    expect(text).toContain('toolbar');
+  });
+
+  test('a controller extending the class Symfony renamed', async () => {
+    const app = appWith('symfony-deprecation-detector', {
+      'src/Controller/LegacyController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\Controller;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class LegacyController extends Controller
+{
+    public function index(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-deprecation-detector.js', app);
+
+    expect(text).toContain('Controller');
+  });
+});
