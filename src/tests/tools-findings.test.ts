@@ -11620,3 +11620,245 @@ describe('password hashers', () => {
     expect(text).toContain('bcrypt');
   });
 });
+
+describe('composer autoload', () => {
+  test('psr-0 namespaces, a classmap and files loaded on every request', async () => {
+    const app = appWith('autoload-optimize', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        autoload: {
+          'psr-4': { 'App\\': 'src/' },
+          'psr-0': { 'Legacy_': 'lib/' },
+          classmap: ['lib/legacy', 'database/seeds'],
+          files: ['src/helpers.php', 'src/constants.php'],
+        },
+        'autoload-dev': {
+          'psr-4': { 'App\\Tests\\': 'tests/' },
+        },
+        config: { optimize_autoloader: false },
+      }, null, 2),
+    });
+
+    const text = await runModule('php-composer-autoload-optimize.js', app);
+
+    expect(text).toContain('psr-0');
+  });
+});
+
+describe('cs fixer rules', () => {
+  test('rules turned off explicitly, and a rector config beside them', async () => {
+    const disabled = Array.from({ length: 12 }, (_, i) => `        'rule_${i}' => false,`).join('\n');
+    const app = appWith('cs-fixer-rules', {
+      '.php-cs-fixer.dist.php': `<?php
+
+return (new PhpCsFixer\\Config())
+    ->setRules([
+        '@PSR12' => true,
+        'strict_types' => true,
+${disabled}
+    ])
+    ->setFinder(PhpCsFixer\\Finder::create()->in(__DIR__ . '/src'));
+`,
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([__DIR__ . '/src']);
+};
+`,
+    });
+
+    const text = await runModule('php-cs-fixer.js', app);
+
+    expect(text).toContain('PSR12');
+  });
+});
+
+describe('ffi', () => {
+  test('cdef with shell functions, load with a relative and a variable path, and ffi enabled in the ini', async () => {
+    const app = appWith('php-ffi', {
+      'src/Ffi/Bridge.php': `<?php
+
+namespace App\\Ffi;
+
+class Bridge
+{
+    public function define(): \\FFI
+    {
+        return \\FFI::cdef('
+            int system(const char *command);
+            int execve(const char *path, char *const argv[], char *const envp[]);
+        ', 'libc.so.6');
+    }
+
+    public function relative(): \\FFI
+    {
+        return \\FFI::load('./headers/acme.h');
+    }
+
+    public function fromVariable(string $path): \\FFI
+    {
+        return \\FFI::load($path);
+    }
+}
+`,
+      'src/Ffi/Scoped.php': `<?php
+
+namespace App\\Ffi;
+
+#[\\FFI\\Scope('acme')]
+class Scoped
+{
+}
+`,
+      'php.ini': `ffi.enable = true
+`,
+      'docker/php/conf.d/ffi.ini': `ffi.enable = preload
+ffi.preload = /srv/app/headers/acme.h
+`,
+    });
+
+    const text = await runModule('php-ffi.js', app);
+
+    expect(text).toContain('FFI');
+  });
+});
+
+describe('integer overflow', () => {
+  test('a shift past the word size, a literal over the 32-bit limit and bcmath beside them', async () => {
+    const app = appWith('integer-overflow', {
+      'src/Math/Big.php': `<?php
+
+namespace App\\Math;
+
+class Big
+{
+    public function shifted(int $value): int
+    {
+        return $value << 70;
+    }
+
+    public function literal(): int
+    {
+        return 9223372036854775807;
+    }
+
+    public function guarded(string $input): int
+    {
+        if (!is_numeric($input)) {
+            throw new \\InvalidArgumentException('not a number');
+        }
+
+        return (int) $input;
+    }
+
+    public function precise(string $a, string $b): string
+    {
+        return bcadd($a, $b, 2);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-integer-overflow.js', app);
+
+    expect(text).toContain('Big');
+  });
+});
+
+describe('opcache settings', () => {
+  test('memory in gigabytes and kilobytes, and a revalidation frequency', async () => {
+    const app = appWith('opcache-settings', {
+      'docker/php/php.ini': `opcache.enable = 1
+opcache.memory_consumption = 1G
+opcache.interned_strings_buffer = 8192K
+opcache.max_accelerated_files = 4000
+opcache.revalidate_freq = 60
+opcache.validate_timestamps = 1
+opcache.preload = /srv/app/config/preload.php
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+class Kernel
+{
+}
+`,
+    });
+
+    const text = await runModule('php-opcache-settings.js', app);
+
+    expect(text).toContain('opcache');
+  });
+});
+
+describe('pdo connections', () => {
+  test('a connection with no exception mode, one silenced and one persistent', async () => {
+    const app = appWith('pdo-patterns', {
+      'src/Db/Connections.php': `<?php
+
+namespace App\\Db;
+
+class Connections
+{
+    public function bare(): \\PDO
+    {
+        return new PDO('mysql:host=db;dbname=acme', 'app', 'secret');
+    }
+
+    public function silent(): \\PDO
+    {
+        return new PDO('mysql:host=db;dbname=acme', 'app', 'secret', [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT,
+        ]);
+    }
+
+    public function persistent(): \\PDO
+    {
+        return new PDO('mysql:host=db;dbname=acme', 'app', 'secret', [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_PERSISTENT => true,
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-pdo-patterns.js', app);
+
+    expect(text).toContain('PDO');
+  });
+});
+
+describe('rector upgrade sets', () => {
+  test('php level sets, a symfony set and a set that is not a version', async () => {
+    const app = appWith('rector-sets', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.3', 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'rector/rector': '^1.0' },
+      }, null, 2),
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\LevelSetList;
+use Rector\\Set\\ValueObject\\SetList;
+use Rector\\Symfony\\Set\\SymfonySetList;
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->sets([
+        LevelSetList::UP_TO_PHP_82,
+        SetList::CODE_QUALITY,
+        SetList::DEAD_CODE,
+        SymfonySetList::SYMFONY_64,
+    ]);
+};
+`,
+    });
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('PHP');
+  });
+});
