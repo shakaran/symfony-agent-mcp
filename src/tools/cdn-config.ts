@@ -20,7 +20,9 @@ function buildCdnConfigInfos(appPath: string): CdnConfigInfo[] {
     let content = '';
     try { content = fs.readFileSync(frameworkYaml, 'utf-8'); } catch { /* skip */ }
 
-    const cdnMatch = /base_url\s*:\s*([^\n]+)/.exec(content);
+    // The configuration key is base_urls, holding a list, and it is usually
+    // written as a block: reading base_url alone found nothing at all.
+    const cdnMatch = /base_urls?\s*:[ \t]*(?:\r?\n)?[ \t]*(?:-[ \t]*)?\[?[ \t]*['"]?([^\n'"\][,]+)/.exec(content);
     if (cdnMatch) {
       const cdnUrl = cdnMatch[1].trim();
       const issues: string[] = [];

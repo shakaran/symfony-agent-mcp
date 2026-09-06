@@ -95,7 +95,11 @@ function buildDockerComposeHealthInfos(appPath: string): DockerHealthInfo[] {
       const issues: string[] = [];
 
       if (!svc['healthcheck']) {
-        const isDbOrCache = svcName.includes('db') || svcName.includes('mysql') || svcName.includes('postgres') || svcName.includes('redis') || svcName.includes('rabbit') || svcName.includes('mongo');
+        // "database" is the usual name and holds no "db", so the image is
+        // the surer signal of what the service runs.
+        const image = String(svc['image'] ?? '');
+        const isDbOrCache = /db|database|mysql|mariadb|postgres|redis|rabbit|mongo|memcached|elastic/i.test(svcName) ||
+          /postgres|mysql|mariadb|redis|rabbitmq|mongo|memcached|elasticsearch/i.test(image);
         if (isDbOrCache) {
           issues.push(`Service "${svcName}" in ${relFile} has no healthcheck — dependent services may start before db/cache is ready; add healthcheck with appropriate test command`);
         }

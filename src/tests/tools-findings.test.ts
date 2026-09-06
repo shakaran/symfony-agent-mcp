@@ -25006,3 +25006,277 @@ class BraintreeGateway
     expect(text).toContain('Prefix seed');
   });
 });
+
+describe('batch 84: CDN, controllers, CORS, Docker health and Doctrine operations', () => {
+  test('a CDN served over plain HTTP, with CORS open to everyone', async () => {
+    const app = appWith('cdn-config', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        base_urls:
+            - 'http://cdn.acme.example.com'
+`,
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        allow_origin: ['*']
+        allow_methods: ['GET', 'POST']
+        allow_headers: ['*']
+`,
+    });
+
+    const text = await runModule('cdn-config.js', app);
+
+    expect(text).toContain('HTTP');
+  });
+
+  test('a controller with a class-level grant and unguarded actions', async () => {
+    const app = appWith('controller-security', {
+      'src/Controller/AdminController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+#[IsGranted('ROLE_ADMIN')]
+class AdminController extends AbstractController
+{
+    public function __construct(private object $repository)
+    {
+    }
+
+    #[Route('/admin/invoices', name: 'admin_invoices')]
+    public function invoices(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/admin/settings', name: 'admin_settings')]
+    #[IsGranted('ROLE_SUPER_ADMIN')]
+    public function settings(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/admin, roles: ROLE_ADMIN }
+        - ~
+`,
+    });
+
+    const text = await runModule('controller-security.js', app);
+
+    expect(text).toContain('ROLE_ADMIN');
+  });
+
+  test('CORS configured tightly enough to have nothing to report', async () => {
+    const app = appWith('cors-clean', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        allow_credentials: false
+        allow_origin: ['https://acme.example.com']
+        allow_methods: ['GET', 'POST']
+        allow_headers: ['Content-Type']
+        max_age: 3600
+    paths:
+        '^/api/':
+            origin_regex: true
+            allow_origin: ['^https://.*\\.acme\\.example\\.com$']
+            allow_methods: ['GET']
+            allow_headers: ['Content-Type']
+`,
+    });
+
+    const text = await runModule('cors.js', app);
+
+    expect(text).toContain('origin_regex');
+  });
+
+  test('a DigitalOcean worker beside the web service', async () => {
+    const app = appWith('digitalocean-app-platform', {
+      '.do/app.yaml': `name: acme
+region: fra
+
+services:
+    - name: web
+      environment_slug: php
+      http_port: 8080
+      instance_count: 1
+      instance_size_slug: basic-xxs
+
+workers:
+    - name: messenger
+      environment_slug: php
+      run_command: php bin/console messenger:consume async
+`,
+    });
+
+    const text = await runModule('digitalocean-app-platform.js', app);
+
+    expect(text).toContain('worker');
+  });
+
+  test('compose services that start before the database is ready', async () => {
+    const app = appWith('docker-compose-health-depends', {
+      'docker-compose.yml': `services:
+    php:
+        image: acme/php:8.3
+        depends_on:
+            - database
+    database:
+        image: postgres:16
+        environment:
+            POSTGRES_PASSWORD: hunter2
+`,
+    });
+
+    const text = await runModule('docker-compose-health.js', app);
+
+    expect(text).toContain('healthcheck');
+  });
+
+  test('inserts in a loop with nothing wrapping them', async () => {
+    const app = appWith('doctrine-bulk-operations', {
+      'src/Import/Importer.php': `<?php
+
+namespace App\\Import;
+
+use Doctrine\\DBAL\\Connection;
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class Importer
+{
+    public function __construct(
+        private EntityManagerInterface $entityManager,
+        private Connection $connection,
+    ) {
+    }
+
+    public function importEntities(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->entityManager->persist($row);
+            $this->entityManager->flush();
+            $this->entityManager->clear();
+        }
+    }
+
+    public function importRows(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->connection->insert('invoice', $row);
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-bulk-operations.js', app);
+
+    expect(text).toContain('loop');
+  });
+
+  test('a Criteria filter that scans the table', async () => {
+    const app = appWith('doctrine-criteria-api', {
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Common\\Collections\\Criteria;
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+
+class InvoiceRepository extends ServiceEntityRepository
+{
+    public function search(string $term): array
+    {
+        $criteria = Criteria::create()
+            ->where(Criteria::expr()->contains('number', $term))
+            ->orderBy(['issuedAt' => Criteria::DESC]);
+
+        return $this->matching($criteria)->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-criteria-api.js', app);
+
+    expect(text).toContain('Criteria');
+  });
+
+  test('an encryption key in .env and an index on the encrypted column', async () => {
+    const app = appWith('doctrine-encryption', {
+      '.env': 'APP_ENV=prod\nDATABASE_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef\n',
+      'src/Entity/Patient.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Index(name: 'idx_patient_ssn', columns: ['ssn'])]
+class Patient
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column(type: 'encrypted_string')]
+    private string $ssn = '';
+}
+`,
+    });
+
+    const text = await runModule('doctrine-encryption.js', app);
+
+    expect(text).toContain('ncryption');
+  });
+
+  test('a sluggable entity whose slug is not unique', async () => {
+    const app = appWith('doctrine-gedmo-sluggable', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+class Article
+{
+    #[ORM\\Column]
+    private string $title = '';
+
+    #[Gedmo\\Slug(fields: ['title'], unique: false)]
+    #[ORM\\Column(length: 128)]
+    private string $slug = '';
+}
+`,
+      'src/Entity/Page.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ */
+class Page
+{
+    /**
+     * @Gedmo\\Slug(fields={"title"}, unique=false)
+     * @ORM\\Column(length=128)
+     */
+    private $slug;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-sluggable.js', app);
+
+    expect(text).toContain('slug');
+  });
+});
