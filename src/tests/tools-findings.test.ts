@@ -7470,6 +7470,8 @@ describe('phpstan baseline size', () => {
       'phpstan.dist.neon': `includes:
     - baseline.neon
 
+includeBaseline: baseline.neon
+
 parameters:
     level: 5
     reportUnmatchedIgnoredErrors: false
