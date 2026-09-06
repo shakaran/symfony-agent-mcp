@@ -21,7 +21,7 @@
  */
 
 /** Flipped per test; the mocks below read it on every call. */
-let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' | 'escape' = 'none';
+let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' | 'escape' | 'symlink' | 'huge' = 'none';
 
 // The test's own path calls must keep working while the modules' fail.
 const path = jest.requireActual<typeof import('path')>('path');
@@ -64,19 +64,60 @@ jest.mock('fs', () => {
   };
   return {
     ...real,
-    readFileSync: (...args: Parameters<typeof real.readFileSync>) =>
-      (failMode === 'read' ? raise('EIO', 'read') : real.readFileSync(...args)),
-    readdirSync: (...args: Parameters<typeof real.readdirSync>) =>
-      (failMode === 'read' ? raise('EIO', 'scandir') : real.readdirSync(...args)),
+    readFileSync: (...args: Parameters<typeof real.readFileSync>) => {
+      if (failMode === 'read') return raise('EIO', 'read');
+      // A file above the size every module refuses to read.
+      if (failMode === 'huge') return 'x'.repeat(600_000);
+      return real.readFileSync(...args);
+    },
+    readdirSync: (...args: Parameters<typeof real.readdirSync>) => {
+      if (failMode === 'read') return raise('EIO', 'scandir');
+      const entries = real.readdirSync(...args);
+      // Everything the walk finds is a symlink: the branch every walker has
+      // for them, and never takes against an ordinary directory.
+      if (failMode === 'symlink') {
+        return (entries as unknown[]).map((e) => (
+          typeof e === 'string'
+            ? e
+            : Object.assign(Object.create(Object.getPrototypeOf(e)), e, {
+                isSymbolicLink: () => true,
+                isDirectory: () => false,
+                isFile: () => false,
+                name: (e as { name: string }).name,
+              })
+        ));
+      }
+      return entries;
+    },
     // existsSync is the one call that sits in the entry point itself rather
     // than behind a guarded helper, so it is the failure that actually reaches
     // the outermost handler.
     existsSync: (...args: Parameters<typeof real.existsSync>) =>
       (failMode === 'exists' ? raise('EIO', 'stat') : real.existsSync(...args)),
-    statSync: (...args: Parameters<typeof real.statSync>) =>
-      (failMode === 'stat' ? raise('EACCES', 'stat') : real.statSync(...args)),
-    lstatSync: (...args: Parameters<typeof real.lstatSync>) =>
-      (failMode === 'stat' ? raise('EACCES', 'lstat') : real.lstatSync(...args)),
+    statSync: (...args: Parameters<typeof real.statSync>) => {
+      if (failMode === 'stat') return raise('EACCES', 'stat');
+      const st = real.statSync(...args);
+      if (failMode === 'symlink') {
+        return Object.assign(Object.create(Object.getPrototypeOf(st)), st, {
+          isSymbolicLink: () => true,
+          isDirectory: () => false,
+          isFile: () => false,
+        });
+      }
+      return st;
+    },
+    lstatSync: (...args: Parameters<typeof real.lstatSync>) => {
+      if (failMode === 'stat') return raise('EACCES', 'lstat');
+      const st = real.lstatSync(...args);
+      if (failMode === 'symlink') {
+        return Object.assign(Object.create(Object.getPrototypeOf(st)), st, {
+          isSymbolicLink: () => true,
+          isDirectory: () => false,
+          isFile: () => false,
+        });
+      }
+      return st;
+    },
   };
 });
 
@@ -208,6 +249,34 @@ describe('every module survives a failing filesystem', () => {
 
       for (const [, fn] of pathFunctions(mod)) {
         await expect(Promise.resolve(fn(appPath))).resolves.toBeDefined();
+      }
+    });
+
+    test('everything on disk looks like a symlink', async () => {
+      failMode = 'symlink';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
+        }
+      }
+    });
+
+    test('every file is larger than the module will read', async () => {
+      failMode = 'huge';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
+        }
       }
     });
 
