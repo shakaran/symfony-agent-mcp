@@ -19288,3 +19288,289 @@ class Customer
     expect(text).toContain('Customer');
   });
 });
+
+describe('batch 63: static analysis, Stripe, Swoole, autowiring, console and tests', () => {
+  test('Psalm at its strictest, and PHPStan with no baseline', async () => {
+    const app = appWith('static-analysis-psalm', {
+      'phpstan.neon': `parameters:
+    level: 9
+    paths:
+        - src
+`,
+      'psalm.xml': `<?xml version="1.0"?>
+<psalm errorLevel="1" strictBinaryOperands="true" findUnusedPsalmSuppress="true">
+    <projectFiles>
+        <directory name="src"/>
+    </projectFiles>
+    <plugins>
+        <pluginClass class="Psalm\\SymfonyPsalmPlugin\\Plugin"/>
+    </plugins>
+    <issueHandlers>
+        <MissingReturnType errorLevel="suppress"/>
+        <PossiblyNullReference errorLevel="suppress"/>
+    </issueHandlers>
+</psalm>
+`,
+    });
+
+    const text = await runModule('static-analysis.js', app);
+
+    expect(text).toContain('Baseline: none');
+    expect(text).toContain('Strict mode');
+  });
+
+  test('Stripe with a hardcoded key and a webhook nobody verifies', async () => {
+    const app = appWith('stripe-billing-subscriptions', {
+      'composer.json': JSON.stringify({ require: { 'stripe/stripe-php': '^13.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nSTRIPE_SECRET_KEY=sk\x5flive_abcdefghijklmnopqrstuvwx\nSTRIPE_PUBLISHABLE_KEY=pk_live_abcdefghij\n',
+      'src/Billing/StripeClient.php': `<?php
+
+namespace App\\Billing;
+
+class StripeClient
+{
+    public function configure(): void
+    {
+        \\Stripe\\Stripe::setApiKey('sk\x5flive_abcdefghijklmnopqrstuvwx');
+    }
+
+    public function portal(string $customerId): object
+    {
+        \\Stripe\\Customer::retrieve($customerId);
+
+        return \\Stripe\\BillingPortal\\Session::create(['customer' => $customerId]);
+    }
+
+    public function webhook(array $payload): string
+    {
+        return (string) $payload['type'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('stripe-billing-subscriptions.js', app);
+
+    expect(text).toContain('hardcoded');
+    expect(text).toContain('WEBHOOK_SECRET');
+  });
+
+  test('a Stripe test key, which is only worth noting', async () => {
+    const app = appWith('stripe-integration-test-key', {
+      '.env': 'APP_ENV=dev\nSTRIPE_SECRET_KEY=sk\x5ftest_abcdefghijklmnopqrstuvwx\n',
+    });
+
+    const text = await runModule('stripe-integration.js', app);
+
+    expect(text).toContain('test key');
+  });
+
+  test('a Swoole server with its worker count set', async () => {
+    const app = appWith('swoole-openswoole', {
+      'composer.json': JSON.stringify({ require: { 'symfony/runtime': '^7.0' } }, null, 4) + '\n',
+      'src/Server/SwooleServer.php': `<?php
+
+namespace App\\Server;
+
+class SwooleServer
+{
+    public function run(): void
+    {
+        $server = new Swoole\\Http\\Server('0.0.0.0', 8080);
+        $server->set([
+            'worker_num' => 4,
+            'max_request' => 1000,
+        ]);
+        $server->start();
+    }
+}
+`,
+    });
+
+    const text = await runModule('swoole-openswoole.js', app);
+
+    expect(text).toContain('worker_num');
+  });
+
+  test('autowired parameters and iterators', async () => {
+    const app = appWith('symfony-autowire-attributes', {
+      'src/Service/Reporting.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\Autowire;
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireIterator;
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireLocator;
+
+class Reporting
+{
+    public function __construct(
+        #[Autowire('%kernel project_dir%')]
+        private string $projectDir,
+        #[Autowire('%app.reports_dir%')]
+        private string $reportsDir,
+        #[AutowireIterator('app.report')]
+        private object $reports,
+        #[AutowireLocator('app.exporter')]
+        private object $exporters,
+    ) {
+    }
+}
+`,
+      'src/Service/Plain.php': `<?php
+
+namespace App\\Service;
+
+class Plain
+{
+    public function nothing(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-autowire-attributes.js', app);
+
+    expect(text).toContain('Autowire');
+  });
+
+  test('a crawler used without checking what it found', async () => {
+    const app = appWith('symfony-browser-kit', {
+      'tests/Functional/CrawlerTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class CrawlerTest extends WebTestCase
+{
+    public function testFollowsTheFirstLink(): void
+    {
+        $client = static::createClient();
+        $crawler = $client->request('GET', '/');
+
+        $client->click($crawler->filter('.invoice-list > tbody > tr:first-child, .empty + .cta ~ a')->first()->link());
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-browser-kit.js', app);
+
+    expect(text).toContain('CrawlerTest');
+  });
+
+  test('a progress bar that never starts and never finishes', async () => {
+    const app = appWith('symfony-console-progress-bar', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Helper\\ProgressBar;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+
+class ImportCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        ProgressBar::setFormatDefinition('minimal', ' %current%/%max%');
+        $bar = $this->makeBar($output);
+        foreach (range(1, 10) as $i) {
+            $bar->advance();
+        }
+
+        return Command::SUCCESS;
+    }
+
+    private function makeBar(OutputInterface $output): ProgressBar
+    {
+        return ProgressBar::create($output);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-progress-bar.js', app);
+
+    expect(text).toContain('advance()');
+  });
+
+  test('a command that handles signals but never stops', async () => {
+    const app = appWith('symfony-console-signals', {
+      'src/Command/WorkerCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Command\\SignalableCommandInterface;
+
+class WorkerCommand extends Command implements SignalableCommandInterface
+{
+    public function getSubscribedSignals(): array
+    {
+        return [SIGTERM, SIGINT, 30];
+    }
+
+    public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
+    {
+        return 0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-signals.js', app);
+
+    expect(text).toContain('handleSignal()');
+  });
+
+  test('a controller test that requests without asserting', async () => {
+    const app = appWith('symfony-controller-test', {
+      'tests/Controller/HomeControllerTest.php': `<?php
+
+namespace App\\Tests\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class HomeControllerTest extends WebTestCase
+{
+    public function testHomeLoads(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/');
+    }
+
+    public function testAboutLoads(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/about');
+        $this->assertResponseIsSuccessful();
+    }
+}
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class HomeController
+{
+    #[Route('/', name: 'home')]
+    public function index(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-controller-test.js', app);
+
+    expect(text).toContain('HomeController');
+  });
+});
