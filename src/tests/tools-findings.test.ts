@@ -28728,3 +28728,270 @@ class S3Uploader
     expect(text).toContain('public-read');
   });
 });
+
+describe('batch 97: Azure, Bugsnag, CircleCI, compiler passes, CSP and Docker security', () => {
+  test('an Azure connection string written into the code and the configuration', async () => {
+    const app = appWith('azure-blob-storage', {
+      'composer.json': JSON.stringify({ require: { 'microsoft/azure-storage-blob': '^1.5' } }, null, 4) + '\n',
+      'src/Storage/AzureUploader.php': `<?php
+
+namespace App\\Storage;
+
+use MicrosoftAzure\\Storage\\Blob\\BlobRestProxy;
+
+class AzureUploader
+{
+    public function client(): BlobRestProxy
+    {
+        return BlobRestProxy::createBlobService('DefaultEndpointsProtocol=https;AccountName=acmestorage;AccountKey=abcdefghijklmnopqrstuvwxyz0123456789==');
+    }
+}
+`,
+      'config/packages/azure.yaml': `azure_storage:
+    connection_string: 'DefaultEndpointsProtocol=https;AccountName=acmestorage;AccountKey=abcdefghijklmnopqrstuvwxyz0123456789=='
+    container: uploads
+`,
+    });
+
+    const text = await runModule('azure-blob-storage.js', app);
+
+    expect(text).toContain('AccountKey');
+  });
+
+  test('Bugsnag with its key written into the code', async () => {
+    const app = appWith('bugsnag-integration', {
+      'composer.json': JSON.stringify({ require: { 'bugsnag/bugsnag': '^3.0' } }, null, 4) + '\n',
+      'src/Error/BugsnagFactory.php': `<?php
+
+namespace App\\Error;
+
+use Bugsnag\\Client;
+
+class BugsnagFactory
+{
+    public function create(): Client
+    {
+        return Client::make('api_key: abcdef1234567890abcdef1234567890');
+    }
+}
+`,
+      'config/packages/bugsnag.yaml': `bugsnag:
+    api_key: abcdef1234567890abcdef1234567890
+    app_version: '1.0.0'
+`,
+    });
+
+    const text = await runModule('bugsnag-integration.js', app);
+
+    expect(text).toContain('ugsnag');
+  });
+
+  test('a CircleCI job with a secret in the command and no parallelism', async () => {
+    const app = appWith('circleci-config-secret', {
+      '.circleci/config.yml': `version: 2.1
+
+jobs:
+    test:
+        docker:
+            - image: cimg/php:8.3
+        steps:
+            - checkout
+            - run:
+                  name: Tests
+                  command: vendor/bin/phpunit
+            - run:
+                  name: Deploy
+                  command: ./deploy.sh --token=abcdef1234567890
+
+workflows:
+    main:
+        jobs:
+            - test
+`,
+    });
+
+    const text = await runModule('circleci-config.js', app);
+
+    expect(text).toContain('parallelism');
+  });
+
+  test('a compiler pass registered with a priority', async () => {
+    const app = appWith('compiler-passes', {
+      'src/DependencyInjection/Compiler/ExporterPass.php': `<?php
+
+namespace App\\DependencyInjection\\Compiler;
+
+use Symfony\\Component\\DependencyInjection\\Compiler\\CompilerPassInterface;
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+
+class ExporterPass implements CompilerPassInterface
+{
+    public function process(ContainerBuilder $container): void
+    {
+        $container->findTaggedServiceIds('app.exporter');
+    }
+}
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use App\\DependencyInjection\\Compiler\\ExporterPass;
+use Symfony\\Component\\DependencyInjection\\Compiler\\PassConfig;
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;
+
+class Kernel extends BaseKernel
+{
+    use MicroKernelTrait;
+
+    protected function build(ContainerBuilder $container): void
+    {
+        $container->addCompilerPass(new ExporterPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 10);
+    }
+}
+`,
+    });
+
+    const text = await runModule('compiler-passes.js', app);
+
+    expect(text).toContain('ExporterPass');
+  });
+
+  test('a lock file that is not there', async () => {
+    const app = appWith('composer-no-lock', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.2', 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpunit/phpunit': '^11.0' },
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('composer.js', app, ['symfony/framework-bundle']);
+
+    expect(text).toContain('symfony/framework-bundle');
+  });
+
+  test('a policy that allows inline scripts with no nonce', async () => {
+    const app = appWith('content-security-policy', {
+      'config/packages/nelmio_security.yaml': `nelmio_security:
+    csp:
+        enabled: true
+        report_uri: /csp/report
+        enforce:
+            default-src: ['self']
+            script-src: ['self', 'unsafe-inline']
+            style-src: ['self', 'unsafe-inline']
+`,
+    });
+
+    const text = await runModule('content-security-policy.js', app);
+
+    expect(text).toContain('unsafe-inline');
+  });
+
+  test('a custom authenticator on a firewall with no throttling', async () => {
+    const app = appWith('custom-authenticators', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            lazy: true
+            custom_authenticators:
+                - App\\Security\\LoginFormAuthenticator
+`,
+      'src/Security/LoginFormAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractLoginFormAuthenticator;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Passport;
+
+class LoginFormAuthenticator extends AbstractLoginFormAuthenticator
+{
+    public function authenticate(Request $request): Passport
+    {
+        throw new \\LogicException('not implemented');
+    }
+
+    protected function getLoginUrl(Request $request): string
+    {
+        return '/login';
+    }
+}
+`,
+    });
+
+    const text = await runModule('custom-authenticators.js', app);
+
+    expect(text).toContain('throttling');
+  });
+
+  test('an exception mapped to a status code outside the range', async () => {
+    const app = appWith('custom-exception-hierarchy', {
+      'src/Exception/AppException.php': `<?php
+
+namespace App\\Exception;
+
+class AppException extends \\RuntimeException
+{
+}
+`,
+      'src/Exception/OddStatusException.php': `<?php
+
+namespace App\\Exception;
+
+class OddStatusException extends AppException
+{
+    public function getStatusCode(): int
+    {
+        return 200;
+    }
+}
+`,
+    });
+
+    const text = await runModule('custom-exception-hierarchy.js', app);
+
+    expect(text).toContain('Exception');
+  });
+
+  test('a deployment that lets the machines stop entirely', async () => {
+    const app = appWith('deployment-config', {
+      'fly.toml': `app = "acme"
+
+[http_service]
+    internal_port = 8080
+    auto_stop_machines = true
+    auto_start_machines = true
+    min_machines_running = 0
+`,
+      'Dockerfile': `FROM php:8.3-fpm
+
+USER www-data
+`,
+    });
+
+    const text = await runModule('deployment-config.js', app);
+
+    expect(text).toContain('machines');
+  });
+
+  test('a container mounting the docker socket', async () => {
+    const app = appWith('docker-security-config', {
+      'docker-compose.yml': `services:
+    php:
+        image: acme/php:8.3
+        privileged: true
+        volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock"
+        security_opt:
+            - no-new-privileges:true
+`,
+    });
+
+    const text = await runModule('docker-security-config.js', app);
+
+    expect(text).toContain('privileged');
+  });
+});
