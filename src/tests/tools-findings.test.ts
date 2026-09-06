@@ -31953,3 +31953,338 @@ class TenantProcessor
     expect(text).toContain('lang');
   });
 });
+
+describe('batch 107: push notifications, normalizers, PSR bridges, two-factor and strings', () => {
+  test('a push notification built from request data', async () => {
+    const app = appWith('symfony-notifier-push', {
+      'src/Notification/PushSender.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\Notifier\\Message\\PushMessage;
+use Symfony\\Component\\Notifier\\TexterInterface;
+
+class PushSender
+{
+    public function __construct(private TexterInterface $texter)
+    {
+    }
+
+    public function send(Request $request): void
+    {
+        $message = new PushMessage(
+            $request->request->get('title'),
+            $request->request->get('body'),
+        );
+
+        $this->texter->send($message);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-notifier-push.js', app);
+
+    expect(text).toContain('ush');
+  });
+
+  test('a normalizer with a depth limit nothing enables', async () => {
+    const app = appWith('symfony-object-normalizer', {
+      'src/Serializer/InvoiceNormalizer.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Normalizer\\AbstractObjectNormalizer;
+use Symfony\\Component\\Serializer\\Normalizer\\NormalizerInterface;
+
+class InvoiceNormalizer implements NormalizerInterface
+{
+    public function normalize(mixed $object, ?string $format = null, array $context = []): array
+    {
+        $context[AbstractObjectNormalizer::MAX_DEPTH_HANDLER] = null;
+        $context['max_depth'] = 2;
+
+        return [];
+    }
+
+    public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-object-normalizer.js', app);
+
+    expect(text).toContain('ormalizer');
+  });
+
+  test('the profiler switched on in the configuration', async () => {
+    const app = appWith('symfony-profiler-storage', {
+      'config/packages/dev/web_profiler.yaml': `web_profiler:
+    toolbar: true
+    intercept_redirects: false
+
+framework:
+    profiler:
+        enabled: true
+        collect: true
+        dsn: 'file:%kernel.cache_dir%/profiler'
+`,
+    });
+
+    const text = await runModule('symfony-profiler-storage.js', app);
+
+    expect(text).toContain('rofiler');
+  });
+
+  test('a PSR-15 middleware with a PSR-7 bridge behind it', async () => {
+    const app = appWith('symfony-psr-bridge', {
+      'composer.json': JSON.stringify({ require: { 'symfony/psr-http-message-bridge': '^7.0', 'guzzlehttp/psr7': '^2.0' } }, null, 4) + '\n',
+      'src/Middleware/RequestIdMiddleware.php': `<?php
+
+namespace App\\Middleware;
+
+use Psr\\Http\\Message\\ResponseInterface;
+use Psr\\Http\\Message\\ServerRequestInterface;
+use Psr\\Http\\Server\\MiddlewareInterface;
+use Psr\\Http\\Server\\RequestHandlerInterface;
+
+class RequestIdMiddleware implements MiddlewareInterface
+{
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    {
+        return $handler->handle($request);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-psr-bridge.js', app);
+
+    expect(text).toContain('PSR');
+  });
+
+  test('a rate limiter storing its state in a named pool', async () => {
+    const app = appWith('symfony-rate-limiter-storage', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app.limiter_pool:
+                adapter: cache.adapter.redis
+`,
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        login:
+            policy: sliding_window
+            limit: 5
+            interval: '15 minutes'
+            cache_pool: app.limiter_pool
+        api:
+            policy: token_bucket
+            limit: 100
+            rate: { interval: '1 minute', amount: 10 }
+            cache_pool: cache.app
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-storage.js', app);
+
+    expect(text).toContain('pool');
+  });
+
+  test('a remote event payload that can be changed after the fact', async () => {
+    const app = appWith('symfony-remote-event', {
+      'src/RemoteEvent/ShopifyOrderPayload.php': `<?php
+
+namespace App\\RemoteEvent;
+
+use Symfony\\Component\\RemoteEvent\\RemoteEvent;
+
+class ShopifyOrderPayload extends RemoteEvent
+{
+    public string $orderId = '';
+
+    public int $total = 0;
+}
+`,
+      'src/RemoteEvent/ShopifyConsumer.php': `<?php
+
+namespace App\\RemoteEvent;
+
+use Symfony\\Component\\RemoteEvent\\Attribute\\AsRemoteEventConsumer;
+use Symfony\\Component\\RemoteEvent\\Consumer\\ConsumerInterface;
+use Symfony\\Component\\RemoteEvent\\RemoteEvent;
+
+#[AsRemoteEventConsumer('shopify')]
+class ShopifyConsumer implements ConsumerInterface
+{
+    public function consume(RemoteEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-remote-event.js', app);
+
+    expect(text).toContain('hopify');
+  });
+
+  test('login throttling that allows a great many attempts', async () => {
+    const app = appWith('symfony-security-bruteforce', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            login_throttling:
+                max_attempts: 50
+                interval: '15 minutes'
+`,
+    });
+
+    const text = await runModule('symfony-security-bruteforce.js', app);
+
+    expect(text).toContain('max_attempts');
+  });
+
+  test('two-factor interfaces with no firewall behind them', async () => {
+    const app = appWith('symfony-security-two-factor', {
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Scheb\\TwoFactorBundle\\Model\\Totp\\TwoFactorInterface;
+
+class User implements TwoFactorInterface
+{
+    public function isTotpAuthenticationEnabled(): bool
+    {
+        return true;
+    }
+}
+`,
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            lazy: true
+`,
+    });
+
+    const text = await runModule('symfony-security-two-factor.js', app);
+
+    expect(text).toContain('TwoFactorInterface');
+  });
+
+  test('a class carrying a dozen serialization groups', async () => {
+    const app = appWith('symfony-serializer-groups', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Serializer\\Annotation\\Groups;
+
+class Invoice
+{
+    #[Groups(['group0', 'group1', 'group2', 'group3', 'group4', 'group5', 'group6', 'group7', 'group8', 'group9', 'group10', 'group11'])]
+    private int $id = 0;
+
+    #[Groups(['group0', 'group1'])]
+    private string $number = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-groups.js', app);
+
+    expect(text).toContain('group');
+  });
+
+  test('the stopwatch used from the application, with profiling on', async () => {
+    const app = appWith('symfony-stopwatch', {
+      'config/packages/framework.yaml': `framework:
+    profiler:
+        enabled: true
+    stopwatch: true
+`,
+      'src/Service/Timed.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Stopwatch\\Stopwatch;
+
+class Timed
+{
+    public function __construct(private Stopwatch $stopwatch)
+    {
+    }
+
+    public function run(): void
+    {
+        $this->stopwatch->start('import');
+        $this->stopwatch->stop('import');
+    }
+}
+`,
+      'src/Service/notes.php': "<?php\n\n// The Stopwatch service is described here.\n",
+    });
+
+    const text = await runModule('symfony-stopwatch.js', app);
+
+    expect(text).toContain('topwatch');
+  });
+
+  test('strlen used where the text is multibyte', async () => {
+    const app = appWith('symfony-string-encoding', {
+      'src/Text/Truncator.php': `<?php
+
+namespace App\\Text;
+
+class Truncator
+{
+    public function truncate(string $value, int $length): string
+    {
+        if (strlen($value) <= $length) {
+            return $value;
+        }
+
+        return mb_substr($value, 0, $length) . '…';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-string-encoding.js', app);
+
+    expect(text).toContain('strlen');
+  });
+
+  test('translation catalogues in xliff and gettext', async () => {
+    const app = appWith('symfony-translation-gaps', {
+      'translations/messages.en.yaml': "home.title: 'Welcome'\nhome.body: 'Hello'\n",
+      'translations/messages.fr.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+    <file source-language="en" target-language="fr" datatype="plaintext" original="file.ext">
+        <body>
+            <trans-unit id="1" resname="home.title">
+                <source>home.title</source>
+                <target>Bienvenue</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
+`,
+      'translations/messages.de.po': `msgid ""
+msgstr ""
+
+msgid "home.title"
+msgstr "Willkommen"
+`,
+    });
+
+    const text = await runModule('symfony-translation-gaps.js', app);
+
+    expect(text).toContain('home');
+  });
+});
