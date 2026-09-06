@@ -8193,3 +8193,183 @@ class Patterns
     expect(text.length).toBeGreaterThan(0);
   });
 });
+
+describe('render.com', () => {
+  test('services of every type, a free web plan and a plain-text env var', async () => {
+    const app = appWith('render', {
+      'render.yaml': `services:
+  - type: web
+    name: acme
+    env: php
+    plan: free
+    buildCommand: composer install
+    startCommand: heroku-php-apache2 public/
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_PASSWORD
+        value: hunter2
+      - key: APP_SECRET
+        sync: false
+
+  - type: worker
+    name: acme-worker
+    env: php
+    plan: starter
+    startCommand: php bin/console messenger:consume async
+
+  - type: pserv
+    name: acme-private
+    env: php
+
+  - type: cron
+    name: acme-cron
+    schedule: "0 3 * * *"
+    command: php bin/console app:cleanup
+
+  - type: static
+    name: acme-site
+    buildCommand: npm run build
+    staticPublishPath: ./public
+`,
+    });
+
+    const text = await runModule('render-deploy-config.js', app);
+
+    expect(text).toContain('acme');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('sockets bound to sensitive ports', () => {
+  test('a server bound to every interface on a database port, and a tls one', async () => {
+    const app = appWith('socket-ports', {
+      'src/Net/Server.php': `<?php
+
+namespace App\\Net;
+
+class Server
+{
+    public function exposed(): void
+    {
+        $server = stream_socket_server('tcp://0.0.0.0:3306');
+        socket_bind($this->socket, '0.0.0.0', 6379);
+    }
+
+    public function local(): void
+    {
+        $server = stream_socket_server('tcp://127.0.0.1:3306');
+    }
+
+    public function secure(): void
+    {
+        $client = stream_socket_client('tls://0.0.0.0:5432');
+        // socket_bind($this->socket, '0.0.0.0', 27017);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-socket-programming.js', app);
+
+    expect(text).toContain('Server');
+  });
+});
+
+describe('phpunit test naming', () => {
+  test('tests named with the annotation, the attribute and the test prefix', async () => {
+    const app = appWith('test-naming', {
+      'tests/Service/InvoiceTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\Attributes\\Test;
+use PHPUnit\\Framework\\TestCase;
+
+class InvoiceTest extends TestCase
+{
+    /**
+     * @test
+     */
+    public function it_builds_an_invoice(): void
+    {
+        self::assertTrue(true);
+    }
+
+    #[Test]
+    public function itSendsTheInvoice(): void
+    {
+        self::assertTrue(true);
+    }
+
+    public function testTotalsAreRounded(): void
+    {
+        self::assertTrue(true);
+    }
+
+    public function test_totals_are_rounded_again(): void
+    {
+        self::assertTrue(true);
+    }
+
+    public function helper(): void
+    {
+    }
+}
+`,
+      'tests/Service/notes.md': 'not a test\n',
+    });
+
+    const text = await runModule('phpunit-test-naming.js', app);
+
+    expect(text).toContain('InvoiceTest');
+  });
+});
+
+describe('prometheus records', () => {
+  test('a recording rule with and without labels, and an alert using topk', async () => {
+    const app = appWith('prometheus-records', {
+      'monitoring/records.rules.yaml': `groups:
+    - name: acme-records
+      rules:
+          - record: job:http_requests:rate5m
+            expr: rate(http_requests_total[5m])
+            labels:
+                job: acme
+
+          - record: job:http_errors:rate5m
+            expr: rate(http_errors_total[5m])
+
+          - alert: TopKNoLimit
+            expr: topk(http_request_duration_seconds) > 2
+            for: 5m
+            labels:
+                severity: warning
+            annotations:
+                summary: Slow
+                description: Slow responses
+`,
+    });
+
+    const text = await runModule('prometheus-alerting-rules.js', app);
+
+    expect(text).toContain('job:http_requests:rate5m');
+  });
+});
+
+describe('log tools', () => {
+  test('a log searched, tailed, summarised and asked for by environment', async () => {
+    const entries = Array.from({ length: 30 }, (_, i) =>
+      `[2026-09-01T10:${String(i).padStart(2, '0')}:00+00:00] app.${i % 3 === 0 ? 'ERROR' : 'INFO'}: Entry ${i} {"ctx":1} []`,
+    ).join('\n');
+    const app = appWith('log-tools', {
+      'var/log/prod.log': entries + '\n',
+      'var/log/dev.log': entries + '\n',
+      'var/log/test.log': `[2026-09-01T10:00:00+00:00] app.WARNING: Careful {} []\n`,
+    });
+
+    const text = await runModule('logs.js', app, ['prod.log', 'ERROR', 'prod']);
+
+    expect(text).toContain('prod.log');
+  });
+});

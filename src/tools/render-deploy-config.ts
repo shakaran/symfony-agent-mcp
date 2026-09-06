@@ -40,13 +40,35 @@ function buildRenderDeployInfos(appPath: string): RenderDeployInfo[] {
     if (!content) continue;
     if (content.length > 500_000) continue;
 
-    // Parse service blocks by splitting on "- name:"
-    const serviceBlockPattern = /- name\s*:\s*(\S+)([\s\S]*?)(?=\n\s*- name\s*:|\n\s*databases\s*:|\s*$)/g;
-    let m: RegExpExecArray | null;
+    // A service is a list item under services:, and render.yaml writes
+    // "- type: web" first as often as "- name:". Anchoring on the name
+    // skipped every service that does not start with it, so the items are
+    // cut at the dash that sits at the services' own indentation.
+    const contentLines = content.split('\n');
+    const servicesAt = contentLines.findIndex((l) => /^\s*services\s*:/.test(l));
+    const blocks: string[] = [];
+    if (servicesAt !== -1) {
+      let itemIndent = -1;
+      let current: string[] = [];
+      for (const line of contentLines.slice(servicesAt + 1)) {
+        const dash = /^([ \t]*)-[ \t]/.exec(line);
+        const indent = line.length - line.trimStart().length;
+        if (line.trim() && !dash && indent === 0) break;
+        if (dash && (itemIndent === -1 || dash[1].length === itemIndent)) {
+          if (itemIndent === -1) itemIndent = dash[1].length;
+          if (current.length > 0) blocks.push(current.join('\n'));
+          current = [line];
+          continue;
+        }
+        if (itemIndent !== -1) current.push(line);
+      }
+      if (current.length > 0) blocks.push(current.join('\n'));
+    }
 
-    while ((m = serviceBlockPattern.exec(content)) !== null) {
-      const svcName = m[1];
-      const block = m[2];
+    for (const block of blocks) {
+      const nameMatch = /\bname\s*:\s*(\S+)/.exec(block);
+      if (!nameMatch) continue;
+      const svcName = nameMatch[1];
       const issues: string[] = [];
 
       const typeMatch = /\btype\s*:\s*(\S+)/.exec(block);
