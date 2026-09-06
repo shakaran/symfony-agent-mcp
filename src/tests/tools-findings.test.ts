@@ -12751,3 +12751,266 @@ describe('scheduler intervals in the config', () => {
     expect(text).toContain('EveryMinutes');
   });
 });
+
+describe('two factor authentication', () => {
+  test('2fa without trusted devices, without backup codes and totp with no window', async () => {
+    const app = appWith('two-factor', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'scheb/2fa-bundle': '^7.0', 'scheb/2fa-totp': '^7.0' },
+      }, null, 2),
+      'config/packages/scheb_two_factor.yaml': `scheb_two_factor:
+    totp:
+        enabled: true
+        issuer: Acme
+    google:
+        enabled: true
+    email:
+        enabled: false
+`,
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            lazy: true
+            two_factor:
+                auth_form_path: 2fa_login
+                check_path: 2fa_login_check
+`,
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Scheb\\TwoFactorBundle\\Model\\Totp\\TwoFactorInterface;
+
+class User implements TwoFactorInterface
+{
+    public function isTotpAuthenticationEnabled(): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-two-factor.js', app);
+
+    expect(text).toContain('2FA');
+  });
+});
+
+describe('semaphores', () => {
+  test('a semaphore with max count one, a release outside finally and a single default store', async () => {
+    const app = appWith('semaphore', {
+      'config/packages/semaphore.yaml': `framework:
+    semaphore:
+        default: 'redis://cache:6379'
+        limited:
+            resource: 'redis://cache:6379'
+            max_count: 1
+        pooled:
+            resource: 'redis://cache:6379'
+            max_count: 5
+`,
+      'src/Service/Limited.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Semaphore\\SemaphoreFactory;
+
+class Limited
+{
+    public function __construct(private SemaphoreFactory $factory)
+    {
+    }
+
+    public function run(): void
+    {
+        $semaphore = $this->factory->createSemaphore('import', 1);
+        $semaphore->acquire();
+        $this->work();
+        $semaphore->release();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-semaphore.js', app);
+
+    expect(text).toContain('semaphore');
+  });
+});
+
+describe('sub requests', () => {
+  test('the kernel injected into a command and render(controller()) inside a loop', async () => {
+    const app = appWith('subrequest', {
+      'src/Command/RenderCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\HttpKernel\\HttpKernelInterface;
+
+#[AsCommand(name: 'app:render')]
+class RenderCommand extends Command
+{
+    public function __construct(private HttpKernelInterface $kernel)
+    {
+        parent::__construct();
+    }
+}
+`,
+      'templates/home/index.html.twig': `{% for item in items %}
+    {{ render(controller('App\\\\Controller\\\\ItemController::show', { id: item.id })) }}
+{% endfor %}
+
+{{ render(controller('App\\\\Controller\\\\SidebarController::index')) }}
+`,
+    });
+
+    const text = await runModule('symfony-subrequest.js', app);
+
+    expect(text).toContain('render');
+  });
+});
+
+describe('translation yaml lint', () => {
+  test('a duplicate key and an empty value in a catalogue', async () => {
+    const app = appWith('translation-yaml-lint', {
+      'translations/messages.en.yaml': `app:
+    title: 'Dashboard'
+    subtitle: ''
+    title: 'Dashboard again'
+    empty_section:
+`,
+      'translations/validators.en.yaml': `subscription:
+    plan_required: 'Choose a plan'
+`,
+      'translations/notes.txt': 'not a catalogue\n',
+    });
+
+    const text = await runModule('symfony-translation-yaml-lint.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('openapi security schemes', () => {
+  test('an api key in the query string, an implicit oauth flow and a bearer with no format', async () => {
+    const app = appWith('openapi-schemes', {
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    documentation:
+        components:
+            securitySchemes:
+                ApiKeyQuery:
+                    type: apiKey
+                    name: api_key
+                    in: query
+                OAuthImplicit:
+                    type: oauth2
+                    flows:
+                        implicit:
+                            authorizationUrl: https://auth.example.com/authorize
+                            scopes: {}
+                OAuthNoFlow:
+                    type: oauth2
+                    flows: {}
+                Oidc:
+                    type: openIdConnect
+                BearerNoFormat:
+                    type: http
+                    scheme: bearer
+`,
+    });
+
+    const text = await runModule('api-openapi-security-schemes.js', app);
+
+    expect(text).toContain('ApiKeyQuery');
+  });
+});
+
+describe('openapi context on properties', () => {
+  test('a deprecated property with no reason, an example of the wrong type and a resource with no context', async () => {
+    const app = appWith('openapi-context', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiProperty;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class Invoice
+{
+    #[ApiProperty(deprecationReason: '')]
+    #[ApiProperty(openapiContext: ['example' => '42', 'type' => 'integer'])]
+    public int $number = 0;
+
+    #[ApiProperty(openapiContext: ['example' => 100, 'type' => 'string'])]
+    public string $reference = '';
+
+    #[ApiProperty(openapiContext: ['enum' => ['draft', 'sent']])]
+    public string $status = 'draft';
+}
+`,
+    });
+
+    const text = await runModule('api-platform-openapi-context.js', app);
+
+    expect(text).toContain('Invoice');
+  });
+});
+
+describe('api versioning', () => {
+  test('routes in two versions and serializer groups per version', async () => {
+    const app = appWith('api-versioning', {
+      'src/Controller/V1Controller.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+use Symfony\\Component\\Serializer\\Attribute\\Groups;
+
+class V1Controller
+{
+    #[Route('/api/v1/invoices', name: 'v1_invoices')]
+    #[Groups(['v1:read'])]
+    public function index(): void
+    {
+    }
+
+    #[Route('/api/v1/customers', name: 'v1_customers')]
+    #[Groups(['v1:read'])]
+    public function customers(): void
+    {
+    }
+
+    #[Route('/api/v1/reports', name: 'v1_reports')]
+    #[Groups(['v1:read'])]
+    public function reports(): void
+    {
+    }
+}
+`,
+      'src/Controller/V2Controller.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+use Symfony\\Component\\Serializer\\Attribute\\Groups;
+
+class V2Controller
+{
+    #[Route('/api/v2/invoices', name: 'v2_invoices')]
+    #[Groups(['v2:read'])]
+    public function index(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-versioning.js', app);
+
+    expect(text).toContain('v1');
+  });
+});
