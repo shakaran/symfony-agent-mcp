@@ -22,6 +22,9 @@
 
 /** Flipped per test; the mocks below read it on every call. */
 let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' | 'escape' | 'symlink' | 'huge' = 'none';
+// Only the first few reads of a call are oversized: a module that walks a
+// tree would otherwise scan hundreds of megabytes to reach one size guard.
+let hugeReads = 0;
 
 // The test's own path calls must keep working while the modules' fail.
 const path = jest.requireActual<typeof import('path')>('path');
@@ -67,7 +70,10 @@ jest.mock('fs', () => {
     readFileSync: (...args: Parameters<typeof real.readFileSync>) => {
       if (failMode === 'read') return raise('EIO', 'read');
       // A file above the size every module refuses to read.
-      if (failMode === 'huge') return 'x'.repeat(600_000);
+      if (failMode === 'huge' && hugeReads < 3) {
+        hugeReads += 1;
+        return 'x'.repeat(600_000);
+      }
       return real.readFileSync(...args);
     },
     readdirSync: (...args: Parameters<typeof real.readdirSync>) => {
@@ -168,6 +174,53 @@ beforeAll(() => {
   write('docker-compose.yml', 'services:\n    app:\n        image: acme\n');
   write('.env', 'APP_ENV=prod\nAPP_SECRET=value\n');
   write('phpunit.xml.dist', '<?xml version="1.0"?>\n<phpunit bootstrap="tests/bootstrap.php"/>\n');
+
+  // The ecosystem files, so the modules that read only one of them get past
+  // their own "nothing here" return and into the guarded read this file is
+  // about.
+  write('features/home.feature', 'Feature: Home\n\n    Scenario: Visiting\n        Given I am on the home page\n');
+  write('features/bootstrap/FeatureContext.php', '<?php\n\nclass FeatureContext\n{\n    /**\n     * @Given I am on the home page\n     */\n    public function home(): void\n    {\n    }\n}\n');
+  write('behat.yaml', 'default:\n    suites:\n        default:\n            paths: ["%paths.base%/features"]\n');
+  write('cypress.config.js', 'module.exports = { e2e: { baseUrl: "http://localhost" } };\n');
+  write('cypress/e2e/login.cy.js', 'describe("login", () => { it("works", () => { cy.visit("/"); }); });\n');
+  write('k8s/deployment.yaml', 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n    name: acme\nspec:\n    replicas: 2\n');
+  write('terraform/main.tf', 'terraform {\n  required_version = ">= 1.5"\n}\n\nresource "aws_s3_bucket" "assets" {\n  bucket = "acme"\n}\n');
+  write('helm/acme/Chart.yaml', 'apiVersion: v2\nname: acme\nversion: 1.0.0\n');
+  write('helm/acme/values.yaml', 'replicaCount: 1\nimage:\n    tag: latest\n');
+  write('grafana/dashboards/acme.json', '{"title":"Acme","panels":[]}\n');
+  write('monitoring/acme.rules.yml', 'groups:\n    - name: acme\n      rules:\n          - alert: Down\n            expr: up == 0\n');
+  write('.github/workflows/ci.yml', 'name: ci\non: [push]\njobs:\n    build:\n        runs-on: ubuntu-latest\n        steps:\n            - run: composer install\n');
+  write('bitbucket-pipelines.yml', 'image: php:8.3\n\npipelines:\n    default:\n        - step:\n              script:\n                  - composer install\n');
+  write('azure-pipelines.yml', 'trigger:\n    - main\n\npool:\n    vmImage: ubuntu-latest\n\nsteps:\n    - script: composer install\n');
+  write('.circleci/config.yml', 'version: 2.1\n\njobs:\n    build:\n        docker:\n            - image: cimg/php:8.3\n        steps:\n            - checkout\n');
+  write('.gitlab-ci.yml', 'stages: [test]\n\ntest:\n    stage: test\n    script:\n        - vendor/bin/phpunit\n');
+  write('Dockerfile', 'FROM php:8.3-fpm\n\nUSER www-data\n');
+  write('Caddyfile', 'acme.example.com {\n    tls internal\n    php_server\n}\n');
+  write('netlify.toml', '[build]\n    command = "composer install"\n    publish = "public"\n');
+  write('render.yaml', 'services:\n  - type: web\n    name: acme\n    env: php\n');
+  write('fly.toml', 'app = "acme"\n\n[build]\n    dockerfile = "Dockerfile"\n');
+  write('vercel.json', '{"framework":"symfony"}\n');
+  write('app.json', '{"name":"acme","env":{"APP_ENV":{"value":"prod"}}}\n');
+  write('Procfile', 'web: heroku-php-apache2 public/\n');
+  write('deploy/task-definition.json', '{"family":"acme","containerDefinitions":[{"name":"app","image":"acme:1.0"}]}\n');
+  write('.symfony.cloud.yaml', 'name: app\ntype: php:8.3\n\nrelationships:\n    database: "db:postgresql"\n');
+  write('.platform/services.yaml', 'db:\n    type: postgresql:16\n');
+  write('pgbouncer.ini', '[databases]\nacme = host=db\n\n[pgbouncer]\npool_mode = transaction\n');
+  write('consul.json', '{"service":{"name":"acme","port":8080}}\n');
+  write('phpstan.dist.neon', 'parameters:\n    level: 6\n    paths:\n        - src\n');
+  write('psalm.xml', '<?xml version="1.0"?>\n<psalm errorLevel="3"><projectFiles><directory name="src"/></projectFiles></psalm>\n');
+  write('rector.php', '<?php\n\nuse Rector\\Config\\RectorConfig;\n\nreturn static function (RectorConfig $c): void {\n    $c->paths([__DIR__ . "/src"]);\n};\n');
+  write('ecs.php', '<?php\n\nreturn static function ($config): void {\n};\n');
+  write('phpspec.yml', 'suites:\n  main:\n    namespace: App\n');
+  write('spec/AppSpec.php', '<?php\n\nnamespace spec\\App;\n\nuse PhpSpec\\ObjectBehavior;\n\nclass AppSpec extends ObjectBehavior\n{\n}\n');
+  write('codeception.yml', 'paths:\n    tests: tests\n');
+  write('tests/unit.suite.yml', 'actor: UnitTester\n');
+  write('symfony.lock', '{"symfony/framework-bundle":{"version":"7.0","recipe":{"repo":"github.com/symfony/recipes"}}}\n');
+  write('importmap.php', '<?php\n\nreturn [\n    "app" => ["path" => "./assets/app.js", "entrypoint" => true],\n];\n');
+  write('assets/controllers.json', '{"controllers":{}}\n');
+  write('cypress/fixtures/user.json', '{"email":"acme@example.com"}\n');
+  write('var/cache/dev/profiler/index.csv', 'abc123,127.0.0.1,GET,http://localhost/,1767225600,200\n');
+  write('var/cache/dev/profiler/23/c1/abc123', '{"time":{"duration":1}}\n');
 });
 
 afterAll(() => {
@@ -287,6 +340,7 @@ describe('every module survives a failing filesystem', () => {
       failMode = 'huge';
 
       for (const [, fn] of pathFunctions(mod)) {
+        hugeReads = 0;
         const returned = await Promise.resolve(fn(appPath));
 
         expect(returned).toBeDefined();
