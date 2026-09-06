@@ -52,8 +52,14 @@ function checkFrameworkBundleVersion(appPath: string): boolean {
     const json = JSON.parse(raw) as Record<string, unknown>;
     const require = (json['require'] ?? {}) as Record<string, string>;
     const ver = require['symfony/framework-bundle'] ?? '';
-    // Accept ^6.3, ^7.x, >=6.3, 6.3.*, 7.*
-    return /[67]\.[3-9]|[89]\.|^[1-9][0-9]\./.test(ver);
+    // Accept ^6.3, ^7.0, >=6.3, 6.3.*, 7.*: read the first version in the
+    // constraint and compare it, rather than listing the digits that count,
+    // which left 7.0 through 7.2 out.
+    const m = /(\d+)(?:\.(\d+))?/.exec(ver);
+    if (!m) return false;
+    const major = parseInt(m[1], 10);
+    const minor = m[2] ? parseInt(m[2], 10) : 0;
+    return major > 6 || (major === 6 && minor >= 3);
   } catch { return false; }
 }
 
@@ -79,6 +85,11 @@ function isDtoReadonly(appPath: string, dtoClass: string): boolean {
     return content.includes('readonly class ') || content.includes('readonly ');
   } catch { return false; }
 }
+
+// A mapped query parameter is usually a scalar; only a class of the
+// application's own can be made readonly, and asking for a backslash in the
+// name missed every class that is imported with a use statement.
+const SCALAR_TYPES = new Set(['int', 'float', 'string', 'bool', 'array', 'mixed', 'iterable', 'object']);
 
 function parseControllerFile(filePath: string, appPath: string): MapPayloadInfo[] {
   let content = '';
@@ -148,7 +159,7 @@ function parseControllerFile(filePath: string, appPath: string): MapPayloadInfo[
     const issues: string[] = [];
     const hasConstraints = hasDtoConstraints(appPath, dtoClass);
     const readonly = isDtoReadonly(appPath, dtoClass);
-    if (!readonly && dtoClass.includes('\\')) {
+    if (!readonly && !SCALAR_TYPES.has(dtoClass.toLowerCase())) {
       issues.push(`#[MapQueryParameter] class "${dtoClass}" is not readonly — use readonly/immutable class to avoid mutation after binding`);
     }
     results.push({

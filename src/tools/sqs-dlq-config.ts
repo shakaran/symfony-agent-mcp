@@ -229,7 +229,9 @@ function buildSqsDlqConfigInfos(appPath: string): SqsDlqConfigInfo[] {
         });
 
         // Check max_receive_count in Terraform redrive_policy JSON
-        const redriveMatches = content.matchAll(/"maxReceiveCount"\s*:\s*(\d+)/g);
+        // redrive_policy is usually built with jsonencode({ maxReceiveCount = 5 }),
+        // which is HCL, not JSON: the key carries no quotes and takes an "=".
+        const redriveMatches = content.matchAll(/"?maxReceiveCount"?\s*[:=]\s*(\d+)/g);
         for (const rm of redriveMatches) {
           const count = parseInt(rm[1], 10);
           let issue: string | null = null;

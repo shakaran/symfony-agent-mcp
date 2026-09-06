@@ -87,9 +87,11 @@ function parseRectorPhp(appPath: string): RectorConfig | null {
       }
     }
 
-    // Individual rules
+    // Individual rules. Both spellings are current: the fluent
+    // RectorConfig::configure()->withRules([…]) and the closure style
+    // $rectorConfig->rules([…]), which most existing configs still use.
     const rules: string[] = [];
-    for (const m of content.matchAll(/->withRules\s*\(\s*\[([^\]]+)\]/gs)) {
+    for (const m of content.matchAll(/->(?:withRules|rules)\s*\(\s*\[([^\]]+)\]/gs)) {
       for (const rule of m[1].split(',')) {
         const clean = rule.trim().replace(/::class\s*$/, '').replace(/.*\\/, '').replace(/['"]/g, '');
         if (clean && !clean.includes('//')) rules.push(clean);
@@ -98,7 +100,7 @@ function parseRectorPhp(appPath: string): RectorConfig | null {
 
     // Skipped rules/paths
     const skipped: string[] = [];
-    for (const m of content.matchAll(/->withSkip\s*\(\s*\[([^\]]+)\]/gs)) {
+    for (const m of content.matchAll(/->(?:withSkip|skip)\s*\(\s*\[([^\]]+)\]/gs)) {
       for (const item of m[1].split(',')) {
         const clean = item.trim().replace(/::class\s*$/, '').replace(/['"]/g, '').split('\\').pop() ?? '';
         if (clean && !clean.startsWith('//') && clean.length > 2) skipped.push(clean);
@@ -107,14 +109,15 @@ function parseRectorPhp(appPath: string): RectorConfig | null {
 
     // Paths
     const paths: string[] = [];
-    for (const m of content.matchAll(/->withPaths\s*\(\s*\[([^\]]+)\]/gs)) {
+    for (const m of content.matchAll(/->(?:withPaths|paths)\s*\(\s*\[([^\]]+)\]/gs)) {
       for (const p of m[1].split(',')) {
         const clean = p.trim().replace(/['"]/g, '').replace(/__DIR__\s*\.\s*'\//, '').replace(/'/g, '');
         if (clean && !clean.startsWith('//') && clean.length > 1) paths.push(clean);
       }
     }
 
-    const parallel    = content.includes('->withParallel(') || content.includes('withParallel()');
+    const parallel    = content.includes('->withParallel(') || content.includes('withParallel()') ||
+      content.includes('->parallel(');
     const hasCacheFile = fs.existsSync(path.join(appPath, '.rector_cache')) ||
                          fs.existsSync(path.join(appPath, 'rector.cache'));
 

@@ -15113,3 +15113,677 @@ class Request
     expect(text).toContain('Deep');
   });
 });
+
+describe('batch 52: opcache, redirects, formatting, XSS, benchmarks, doubles, Rector', () => {
+  test('an opcache ini in kilobytes, and one that cannot be read', async () => {
+    const app = appWith('php-opcache-settings', {
+      // A directory in the place of the file.
+      'config/php.ini/placeholder.txt': 'not a file\n',
+      'docker/php.ini': `[opcache]
+opcache.enable=1
+opcache.validate_timestamps=0
+opcache.memory_consumption=262144K
+opcache.max_accelerated_files=4000
+opcache.enable_file_override=1
+opcache.jit=tracing
+opcache.jit_buffer_size=100M
+opcache.interned_strings_buffer=8
+`,
+    });
+
+    const text = await runModule('php-opcache-settings.js', app);
+
+    expect(text).toContain('opcache.jit');
+    expect(text).toContain('enable_file_override');
+  });
+
+  test('a redirect that is checked against a list, and one that is not', async () => {
+    const app = appWith('php-open-redirect', {
+      'src/Controller/RedirectController.php': `<?php
+
+namespace App\\Controller;
+
+class RedirectController
+{
+    private const ALLOWED = ['/home', '/account'];
+
+    public function checked($response, string $target)
+    {
+        if (!in_array($target, self::ALLOWED, true)) {
+            $target = '/home';
+        }
+
+        return $response->redirect($target);
+    }
+
+    public function unchecked($response, string $target)
+    {
+        return $response->redirect($target);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-open-redirect.js', app);
+
+    expect(text).toContain('redirect');
+  });
+
+  test('formatting calls of every kind, more than the report prints', async () => {
+    const many = Array.from({ length: 55 }, (_, i) => `        printf('row %s', $row${i});`).join('\n');
+
+    const app = appWith('php-sprintf-type-safety', {
+      'src/Report/Printer.php': `<?php
+
+namespace App\\Report;
+
+class Printer
+{
+    public function label(int $count): string
+    {
+        return sprintf('%s items', $count);
+    }
+
+    public function money(float $amount): string
+    {
+        return number_format($amount);
+    }
+
+    public function out(array $args): void
+    {
+        vprintf('%s %s', $args);
+        echo vsprintf('%s %s', $args);
+    }
+
+    public function rows(array $rows): void
+    {
+${many}
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-sprintf-type-safety.js', app);
+
+    expect(text).toContain('sprintf');
+    expect(text).toContain('more issues');
+  });
+
+  test('output that is escaped, and output that is not', async () => {
+    const app = appWith('php-xss-patterns', {
+      'src/Controller/OutputController.php': `<?php
+
+namespace App\\Controller;
+
+class OutputController
+{
+    public function safeEcho(string $name): void
+    {
+        $name = htmlspecialchars($name, ENT_QUOTES);
+        echo $name;
+    }
+
+    public function safePrint(string $name): void
+    {
+        $clean = strip_tags($name);
+        print $clean;
+    }
+
+    public function unsafePrint($request): void
+    {
+        print $request->get('name');
+    }
+}
+`,
+      'templates/legacy/profile.phtml': `<div class="profile">
+    <?php $safeName = htmlspecialchars($name, ENT_QUOTES); ?>
+    <?= $safeName ?>
+</div>
+`,
+    });
+
+    const text = await runModule('php-xss-patterns.js', app);
+
+    expect(text).toContain('print $request->get()');
+  });
+
+  test('benchmarks configured without iterations, and kept in src', async () => {
+    const app = appWith('phpbench-config', {
+      'phpbench.json': JSON.stringify({
+        $schema: './vendor/phpbench/phpbench/phpbench.schema.json',
+        runner: 'microtime',
+        'runner.path': 'benchmarks',
+      }, null, 4) + '\n',
+      'benchmarks/HashBench.php': `<?php
+
+namespace App\\Benchmarks;
+
+class HashBench
+{
+    /**
+     * @Subject
+     */
+    public function benchSha256(): void
+    {
+        hash('sha256', 'acme');
+    }
+}
+`,
+      'src/Service/SerializerBench.php': `<?php
+
+namespace App\\Service;
+
+class SerializerBench
+{
+    /**
+     * @Bench
+     */
+    public function benchSerialize(): void
+    {
+        serialize(['a' => 1]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpbench-config.js', app);
+
+    expect(text).toContain('iterations');
+    expect(text).toContain('src/');
+  });
+
+  test('stubs that expect calls, and mocks that expect nothing', async () => {
+    const app = appWith('phpunit-test-doubles', {
+      'tests/Service/PaymentTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\TestCase;
+
+class PaymentTest extends TestCase
+{
+    public function testStubWithExpectation(): void
+    {
+        $gateway = $this->createStub(Gateway::class);
+        $gateway->expects($this->once())->method('charge')->willReturn(true);
+    }
+
+    public function testBuilder(): void
+    {
+        $logger = $this->getMockBuilder(Logger::class)->getMock();
+        $logger->expects($this->any())->method('info');
+        $logger->expects($this->any())->method('warning');
+        $logger->expects($this->any())->method('error');
+    }
+
+    public function testMockThatOnlyReturns(): void
+    {
+        $clock = $this->createMock(Clock::class);
+        $clock->method('now')->willReturn(new \\DateTimeImmutable('2026-01-01'));
+    }
+
+    public function testMockWithAny(): void
+    {
+        $mailer = $this->createMock(Mailer::class);
+        $mailer->expects($this->any())->method('send');
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-doubles.js', app);
+
+    expect(text).toContain('createStub');
+  });
+
+  test('a Rector config with more rules and skips than the report prints', async () => {
+    const rules = Array.from({ length: 18 }, (_, i) => `        Acme\\Rector\\Rule${i}::class,`).join('\n');
+    const skips = Array.from({ length: 12 }, (_, i) => `        Acme\\Rector\\Skipped${i}::class,`).join('\n');
+
+    const app = appWith('rector-config-large', {
+      // Not valid JSON, so the PHP requirement cannot be read.
+      'composer.json': '{ "require": { "php": ">=8.2" }\n',
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([__DIR__ . '/src']);
+    $rectorConfig->parallel();
+    $rectorConfig->rules([
+${rules}
+    ]);
+    $rectorConfig->skip([
+${skips}
+    ]);
+};
+`,
+    });
+
+    const text = await runModule('rector-config.js', app);
+
+    expect(text).toContain('more');
+  });
+
+  test('a custom Rector rule that visits every expression', async () => {
+    const app = appWith('rector-custom-rules', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use App\\Rector\\ReplaceLegacyCallRector;
+use App\\Rector\\RenameServiceRector;
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->rule(ReplaceLegacyCallRector::class);
+    $rectorConfig->rule(RenameServiceRector::class);
+};
+`,
+      'src/Rector/ReplaceLegacyCallRector.php': `<?php
+
+namespace App\\Rector;
+
+use PhpParser\\Node;
+use PhpParser\\Node\\Stmt\\Expression;
+use Rector\\Rector\\AbstractRector;
+
+final class ReplaceLegacyCallRector extends AbstractRector
+{
+    public function getNodeTypes(): array
+    {
+        return [Expression::class];
+    }
+
+    public function refactor(Node $node): ?Node
+    {
+        return null;
+    }
+}
+`,
+      'src/Rector/RenameServiceRector.php': `<?php
+
+namespace App\\Rector;
+
+use PhpParser\\Node;
+use PhpParser\\Node\\Expr\\MethodCall;
+use Rector\\Rector\\AbstractRector;
+
+final class RenameServiceRector extends AbstractRector
+{
+    public function getNodeTypes(): array
+    {
+        return [MethodCall::class];
+    }
+
+    public function refactor(Node $node): ?Node
+    {
+        return null;
+    }
+}
+`,
+      'src/Rector/notes.php': "<?php\n\n// How the rules above were written down.\n",
+    });
+
+    const text = await runModule('rector-custom-rules.js', app);
+
+    expect(text).toContain('ReplaceLegacyCallRector');
+  });
+});
+
+describe('batch 53: Redis pub/sub, SQS, assets, console, controllers, forms', () => {
+  test('subscribing in a controller, wildcards, and what gets published', async () => {
+    const app = appWith('redis-pubsub-patterns', {
+      'src/Controller/NotificationController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class NotificationController extends AbstractController
+{
+    public function listen(\\Redis $redis): Response
+    {
+        $redis->subscribe(['notifications'], static function (): void {
+        });
+
+        return new Response('');
+    }
+
+    public function watch(\\Redis $redis): Response
+    {
+        $redis->psubscribe(['events.*'], static function (): void {
+        });
+
+        return new Response('');
+    }
+
+    public function announce(\\Redis $redis, Request $request): Response
+    {
+        $redis->publish($request->get('channel'), 'hello');
+        $redis->publish('audit', json_encode(['password' => 'hunter2']));
+
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('redis-pubsub-patterns.js', app);
+
+    expect(text).toContain('subscribe');
+  });
+
+  test('a queue that gives up after one failure, and keys left in .env', async () => {
+    const app = appWith('sqs-dlq-one-retry', {
+      '.env': `APP_ENV=prod
+MESSENGER_TRANSPORT_DSN=https://sqs.eu-west-1.amazonaws.com/123456789012/acme
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+`,
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'https://sqs.eu-west-1.amazonaws.com/123456789012/acme'
+                options:
+                    max_receive_count: 1
+                    visibility_timeout: 30
+`,
+      'src/Queue/QueueFactory.php': `<?php
+
+namespace App\\Queue;
+
+use Aws\\Sqs\\SqsClient;
+
+class QueueFactory
+{
+    public function __construct(private SqsClient $client)
+    {
+    }
+
+    public function create(string $name): string
+    {
+        $result = $this->client->createQueue(['QueueName' => $name]);
+
+        return $result['QueueUrl'];
+    }
+}
+`,
+      'terraform/sqs.tf': `resource "aws_sqs_queue" "acme" {
+  name = "acme"
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    maxReceiveCount     = 1
+  })
+}
+
+resource "aws_sqs_queue" "reports" {
+  name = "reports"
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    maxReceiveCount     = 25
+  })
+}
+`,
+    });
+
+    const text = await runModule('sqs-dlq-config.js', app);
+
+    expect(text).toContain('max_receive_count=1');
+    expect(text).toContain('maxReceiveCount=25');
+  });
+
+  test('a queue that retries far too often', async () => {
+    const app = appWith('sqs-dlq-many-retries', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'https://sqs.eu-west-1.amazonaws.com/123456789012/reports'
+                options:
+                    max_receive_count: 20
+`,
+    });
+
+    const text = await runModule('sqs-dlq-config.js', app);
+
+    expect(text).toContain('very high retry count');
+  });
+
+  test('assets with integrity but nothing to send it with', async () => {
+    const app = appWith('symfony-asset-integrity', {
+      'importmap.php': `<?php
+
+return [
+    'app' => ['path' => './assets/app.js', 'entrypoint' => true],
+];
+`,
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="preconnect">
+        <link rel="stylesheet" href="/build/app.css">
+        <link rel="stylesheet" href="https://cdn.example.com/theme.css" integrity="sha384-abc123">
+        <script>
+            window.acme = true;
+        </script>
+        <script src="https://cdn.example.com/chart.js" integrity="sha384-def456"></script>
+    </head>
+    <body></body>
+</html>
+`,
+    });
+
+    const text = await runModule('symfony-asset-integrity.js', app);
+
+    expect(text).toContain('crossorigin');
+  });
+
+  test('a command with a name of its own, and one that takes the framework name', async () => {
+    const app = appWith('symfony-console-namespaces', {
+      'src/Command/ClearCacheCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(name: 'cache:clear', aliases: ['app:import'])]
+class ClearCacheCommand extends Command
+{
+}
+`,
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(name: 'app:import')]
+class ImportCommand extends Command
+{
+}
+`,
+      'src/Command/LongNameCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(name: 'app:reporting:rebuild-every-monthly-invoice-projection')]
+class LongNameCommand extends Command
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-namespaces.js', app);
+
+    expect(text).toContain('conflicts');
+  });
+
+  test('a directory that mixes invokable controllers with ordinary ones', async () => {
+    const app = appWith('symfony-controller-invokable', {
+      'src/Controller/ShowInvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ShowInvoiceController
+{
+    public function __invoke(Request $request, int $id, string $format, bool $download): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/AccountController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class AccountController
+{
+    public function show(): Response
+    {
+        return new Response('');
+    }
+
+    public function edit(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Service/Formatter.php': `<?php
+
+namespace App\\Service;
+
+class Formatter
+{
+    public function format(string $value): string
+    {
+        return trim($value);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-controller-invokable.js', app);
+
+    expect(text).toContain('__invoke');
+  });
+
+  test('a query parameter mapped onto a class that can still be changed', async () => {
+    const app = appWith('symfony-controller-map-payload', {
+      'composer.json': JSON.stringify({ require: { 'symfony/framework-bundle': '^7.0' } }, null, 4) + '\n',
+      'src/Dto/SearchQuery.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class SearchQuery
+{
+    #[Assert\\NotBlank]
+    public string $term = '';
+}
+`,
+      'src/Controller/SearchController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Dto\\SearchQuery;
+use Symfony\\Component\\HttpKernel\\Attribute\\MapQueryParameter;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class SearchController
+{
+    public function __invoke(
+        #[MapQueryParameter] SearchQuery $query,
+    ): Response {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-controller-map-payload.js', app);
+
+    expect(text).toContain('readonly');
+  });
+
+  test('a controller with no payload attributes anywhere', async () => {
+    const app = appWith('symfony-controller-map-payload-none', {
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class HomeController
+{
+    public function index(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-controller-map-payload.js', app);
+
+    expect(text).toContain('No MapRequestPayload/MapQueryString/MapQueryParameter');
+  });
+
+  test('form events used at the wrong moment', async () => {
+    const app = appWith('symfony-form-pre-set-data', {
+      'src/Form/InvoiceType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\Form\\FormEvent;
+use Symfony\\Component\\Form\\FormEvents;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+
+class InvoiceType extends AbstractType
+{
+    public function __construct(private object $repository)
+    {
+    }
+
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('number', TextType::class);
+
+        if ($options['with_notes']) {
+            $builder->add('notes', TextType::class);
+        }
+
+        $builder->addEventListener(FormEvents::POST_SET_DATA, function (FormEvent $event): void {
+            $form = $event->getForm();
+            $form->add('currency', TextType::class);
+        });
+
+        $builder->addEventListener(FormEvents::SUBMIT, function (FormEvent $event): void {
+            $customer = $this->repository->find($event->getData()->getId());
+        });
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-pre-set-data.js', app);
+
+    expect(text).toContain('POST_SET_DATA');
+  });
+});
