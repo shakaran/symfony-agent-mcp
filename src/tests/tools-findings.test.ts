@@ -16325,3 +16325,289 @@ legacy_invoice:
     expect(text).toContain('samesite');
   });
 });
+
+describe('batch 56: serializer, workflows, Traefik, translations, WebAuthn, Encore', () => {
+  test('a name converter registered as a service', async () => {
+    const app = appWith('symfony-serializer-name-converter', {
+      'config/services.yaml': `services:
+    serializer.name_converter.metadata_aware:
+        class: Symfony\\Component\\Serializer\\NameConverter\\MetadataAwareNameConverter
+
+    serializer.name_converter.camel_case:
+        class: Symfony\\Component\\Serializer\\NameConverter\\CamelCaseToSnakeCaseNameConverter
+`,
+      'config/packages/framework.yaml': `framework:
+    serializer:
+        name_converter: 'serializer.name_converter.camel_case'
+`,
+    });
+
+    const text = await runModule('symfony-serializer-name-converter.js', app);
+
+    expect(text).toContain('NameConverter');
+  });
+
+  test('a workflow subscriber that listens to the same event twice', async () => {
+    const app = appWith('symfony-workflow-events', {
+      'src/EventSubscriber/ArticleWorkflowSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\Workflow\\Event\\GuardEvent;
+
+class ArticleWorkflowSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'workflow.article.guard' => 'onGuard',
+            'workflow.article.guard.publish' => 'onGuardPublish',
+            'workflow.guard' => 'onAnyGuard',
+            'workflow.article.announce' => 'onAnnounce',
+        ];
+    }
+
+    public function onGuard(GuardEvent $event): void
+    {
+    }
+
+    public function onGuardPublish(GuardEvent $event): void
+    {
+    }
+
+    public function onAnyGuard(GuardEvent $event): void
+    {
+    }
+
+    public function onAnnounce(GuardEvent $event): void
+    {
+    }
+}
+`,
+      'src/Vendored/WorkflowEvent.php': `<?php
+
+namespace Symfony\\Component\\Workflow\\Event;
+
+class Event
+{
+    public static function getSubscribedEvents(): array
+    {
+        return ['workflow.entered' => 'onEntered'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-events.js', app);
+
+    expect(text).toContain('workflow.article.guard');
+  });
+
+  test('Traefik told not to verify the backend certificate', async () => {
+    const app = appWith('traefik-config', {
+      '.traefik/dynamic.yml': `http:
+    services:
+        acme:
+            loadBalancer:
+                serversTransport: insecure
+    serversTransports:
+        insecure:
+            insecureSkipVerify: true
+`,
+      'docker-compose.yml': `services:
+    web:
+        image: acme/php:8.3
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.acme.rule=Host(\`acme.example.com\`)"
+`,
+    });
+
+    const text = await runModule('traefik-config.js', app);
+
+    expect(text).toContain('insecureSkipVerify');
+  });
+
+  test('translations in several formats, one of them broken', async () => {
+    const app = appWith('translations-formats', {
+      'translations/messages.en.php': `<?php
+
+return [
+    'invoice.line.0' => 'Line 0',
+    'invoice.line.1' => 'Line 1',
+    'invoice.line.2' => 'Line 2',
+    'invoice.line.3' => 'Line 3',
+    'invoice.line.4' => 'Line 4',
+    'invoice.line.5' => 'Line 5',
+    'invoice.line.6' => 'Line 6',
+    'invoice.line.7' => 'Line 7',
+    'invoice.line.8' => 'Line 8',
+    'invoice.line.9' => 'Line 9',
+    'invoice.line.10' => 'Line 10',
+    'invoice.line.11' => 'Line 11',
+    'invoice.line.12' => 'Line 12',
+    'invoice.line.13' => 'Line 13',
+];
+`,
+      'translations/validators.en.json': '{ "invoice.invalid": "Broken JSON"\n',
+      'templates/invoice/show.html.twig': `<h1>{{ 'invoice.line.1'|trans }}</h1>
+<p>{% trans %}invoice.footer{% endtrans %}</p>
+`,
+    });
+
+    const text = await runModule('translations.js', app, ['invoice']);
+
+    expect(text).toContain('invoice');
+  });
+
+  test('WebAuthn options, a credential store and the origins it allows', async () => {
+    const app = appWith('webauthn-integration', {
+      'composer.json': JSON.stringify({ require: { 'web-auth/webauthn-symfony-bundle': '^4.0' } }, null, 4) + '\n',
+      'src/Security/WebAuthnService.php': `<?php
+
+namespace App\\Security;
+
+use Webauthn\\PublicKeyCredentialCreationOptions;
+use Webauthn\\PublicKeyCredentialRequestOptions;
+
+class WebAuthnService
+{
+    public function __construct(private CredentialRepository $credentials)
+    {
+    }
+
+    public function register(): PublicKeyCredentialCreationOptions
+    {
+        $challenge = random_bytes(32);
+
+        return PublicKeyCredentialCreationOptions::create($this->rp(), $this->user(), $challenge);
+    }
+
+    public function login(): PublicKeyCredentialRequestOptions
+    {
+        return PublicKeyCredentialRequestOptions::create(random_bytes(32));
+    }
+
+    public function allowedOrigins(): array
+    {
+        return ['https://acme.example.com'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('webauthn-integration.js', app);
+
+    expect(text).toContain('PublicKeyCredential');
+  });
+
+  test('an Encore build with several presets turned on', async () => {
+    const app = appWith('webpack-encore', {
+      'webpack.config.js': `const Encore = require('@symfony/webpack-encore');
+
+Encore
+    .setOutputPath('public/build/')
+    .setPublicPath('/build')
+    .addEntry('app', './assets/app.js')
+    .addEntry('admin', './assets/admin.js')
+    .enableSassLoader()
+    .enableStimulusBridge('./assets/controllers.json')
+    .enableIntegrityHashes()
+    .enableSourceMaps(!Encore.isProduction())
+    .enableVersioning(Encore.isProduction())
+;
+
+module.exports = Encore.getWebpackConfig();
+`,
+      'package.json': JSON.stringify({ devDependencies: { '@symfony/webpack-encore': '^4.0', webpack: '^5.0' } }, null, 4) + '\n',
+    });
+
+    const text = await runModule('webpack-encore.js', app);
+
+    expect(text).toContain('Stimulus');
+    expect(text).toContain('Subresource Integrity');
+  });
+
+  test('workflows written every way the configuration allows', async () => {
+    const app = appWith('workflow-shapes', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        article:
+            type: workflow
+            marking_store:
+                type: method
+                property: currentPlace
+            supports:
+                - App\\Entity\\Article
+            places:
+                - draft
+                - review
+                - published
+            transitions:
+                to_review:
+                    from: draft
+                    to: review
+                publish:
+                    from: review
+                    to: published
+
+        invoice:
+            type: state_machine
+            supports: App\\Entity\\Invoice
+            initial_marking: new
+            places:
+                new:
+                    metadata:
+                        colour: grey
+                paid:
+                    metadata:
+                        colour: green
+            transitions:
+                pay:
+                    from: new
+                    to: paid
+
+        empty_one: ~
+`,
+    });
+
+    const text = await runModule('workflow.js', app);
+
+    expect(text).toContain('article');
+    expect(text).toContain('invoice');
+  });
+
+  test('Foundry factories in the test suite', async () => {
+    const app = appWith('zenstruck-foundry-config', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'zenstruck/foundry': '^2.0' } }, null, 4) + '\n',
+      'src/Factory/UserFactory.php': `<?php
+
+namespace App\\Factory;
+
+use App\\Entity\\User;
+use Zenstruck\\Foundry\\ModelFactory;
+
+final class UserFactory extends ModelFactory
+{
+    protected function getDefaults(): array
+    {
+        return [
+            'email' => self::faker()->email(),
+            'name' => self::faker()->name(),
+        ];
+    }
+
+    protected static function getClass(): string
+    {
+        return User::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('zenstruck-foundry-config.js', app);
+
+    expect(text).toContain('Factory');
+  });
+});
