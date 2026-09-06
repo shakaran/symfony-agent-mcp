@@ -26124,3 +26124,273 @@ class CountryLabel
     expect(text).toContain('Country');
   });
 });
+
+describe('batch 88: FFI, callables, FTP, GD, heredocs, integers, LDAP and named arguments', () => {
+  test('FFI used with the extension switched off', async () => {
+    const app = appWith('php-ffi', {
+      'php.ini': `[PHP]
+ffi.enable = false
+`,
+      'src/Native/Bridge.php': `<?php
+
+namespace App\\Native;
+
+#[\\FFI\\Scope('acme')]
+class Bridge
+{
+    public function load(): \\FFI
+    {
+        return \\FFI::cdef('int add(int a, int b);', 'libacme.so');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ffi.js', app);
+
+    expect(text).toContain('FFI');
+  });
+
+  test('first-class callables taken from nullable values', async () => {
+    const app = appWith('php-first-class-callables', {
+      'src/Service/Callables.php': `<?php
+
+namespace App\\Service;
+
+class Callables
+{
+    public function handlers(?object $logger): array
+    {
+        return [
+            $logger?->info(...),
+            strlen(...),
+            $this->format(...),
+        ];
+    }
+
+    public function format(string $value): string
+    {
+        return trim($value);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-first-class-callables.js', app);
+
+    expect(text).toContain('callable');
+  });
+
+  test('FTP with the password in the environment and in the code', async () => {
+    const app = appWith('php-ftp-sftp-patterns', {
+      '.env': `APP_ENV=prod
+FTP_HOST=ftp.acme.example.com
+FTP_USER=acme
+FTP_PASSWORD=hunter2acme
+`,
+      'src/Transfer/FtpUploader.php': `<?php
+
+namespace App\\Transfer;
+
+class FtpUploader
+{
+    public function upload(string $path): void
+    {
+        $connection = ftp_connect('ftp.acme.example.com');
+        $user = 'acme';
+        $password = 'hunter2acme';
+        ftp_login($connection, $user, $password);
+        ftp_put($connection, basename($path), $path, FTP_BINARY);
+        ftp_close($connection);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ftp-sftp-patterns.js', app);
+
+    expect(text).toContain('FTP');
+  });
+
+  test('images resized from uploaded files', async () => {
+    const app = appWith('php-gd-security', {
+      'src/Image/Thumbnailer.php': `<?php
+
+namespace App\\Image;
+
+class Thumbnailer
+{
+    public function thumbnail(string $path): string
+    {
+        $image = imagecreatefromjpeg($path);
+        $thumb = imagecreatetruecolor(200, 200);
+        imagecopyresampled($thumb, $image, 0, 0, 0, 0, 200, 200, imagesx($image), imagesy($image));
+        imagejpeg($thumb, $path . '.thumb.jpg');
+        imagedestroy($thumb);
+
+        return $path . '.thumb.jpg';
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-gd-security.js', app);
+
+    expect(text).toContain('image');
+  });
+
+  test('SQL built inside a heredoc', async () => {
+    const app = appWith('php-heredoc-nowdoc', {
+      'src/Repository/ReportRepository.php': `<?php
+
+namespace App\\Repository;
+
+class ReportRepository
+{
+    public function totals(string $status): string
+    {
+        $sql = <<<SQL
+            SELECT number, total
+            FROM invoice
+            WHERE status = '{$status}'
+            ORDER BY issued_at DESC
+            SQL;
+
+        return $sql;
+    }
+
+    public function template(): string
+    {
+        return <<<'TEXT'
+            A plain block with no interpolation in it.
+            TEXT;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-heredoc-nowdoc.js', app);
+
+    expect(text).toContain('Heredoc');
+  });
+
+  test('arithmetic that can overflow, checked and unchecked', async () => {
+    const app = appWith('php-integer-overflow', {
+      'src/Money/Totals.php': `<?php
+
+namespace App\\Money;
+
+class Totals
+{
+    public function unchecked(int $a, int $b): int
+    {
+        return $a * $b;
+    }
+
+    public function checked(int $a, int $b): int
+    {
+        if ($a > PHP_INT_MAX / $b) {
+            throw new \\RuntimeException('overflow');
+        }
+
+        return $a * $b;
+    }
+
+    public function precise(string $a, string $b): string
+    {
+        return bcmul($a, $b);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-integer-overflow.js', app);
+
+    expect(text).toContain('overflow');
+  });
+
+  test('LDAP bound with request data, searched without escaping', async () => {
+    const app = appWith('php-ldap-functions', {
+      'src/Ldap/DirectoryClient.php': `<?php
+
+namespace App\\Ldap;
+
+class DirectoryClient
+{
+    public function authenticate(): bool
+    {
+        $ldap = ldap_connect('ldap://directory.acme.internal');
+        ldap_bind($ldap, $_POST['user'], $_POST['password']);
+
+        $result = ldap_search($ldap, 'dc=acme,dc=com', '(uid=' . $_POST['user'] . ')');
+
+        return $result !== false;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ldap-functions.js', app);
+
+    expect(text).toContain('ldap');
+  });
+
+  test('PHPMetrics installed with no configuration', async () => {
+    const app = appWith('php-metrics-config', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpmetrics/phpmetrics': '^2.8' } }, null, 4) + '\n',
+    });
+
+    const text = await runModule('php-metrics-config.js', app);
+
+    expect(text).toContain('PHPMetrics');
+  });
+
+  test('named arguments used everywhere', async () => {
+    const app = appWith('php-named-arguments', {
+      'src/Service/Builder.php': `<?php
+
+namespace App\\Service;
+
+class Builder
+{
+    public function buildAll(): void
+    {
+        $this->build(name: 'n0', value: 0);
+        $this->build(name: 'n1', value: 1);
+        $this->build(name: 'n2', value: 2);
+        $this->build(name: 'n3', value: 3);
+        $this->build(name: 'n4', value: 4);
+        $this->build(name: 'n5', value: 5);
+        $this->build(name: 'n6', value: 6);
+        $this->build(name: 'n7', value: 7);
+        $this->build(name: 'n8', value: 8);
+        $this->build(name: 'n9', value: 9);
+        $this->build(name: 'n10', value: 10);
+        $this->build(name: 'n11', value: 11);
+        $this->build(name: 'n12', value: 12);
+        $this->build(name: 'n13', value: 13);
+        $this->build(name: 'n14', value: 14);
+        $this->build(name: 'n15', value: 15);
+        $this->build(name: 'n16', value: 16);
+        $this->build(name: 'n17', value: 17);
+        $this->build(name: 'n18', value: 18);
+        $this->build(name: 'n19', value: 19);
+        $this->build(name: 'n20', value: 20);
+        $this->build(name: 'n21', value: 21);
+        $this->build(name: 'n22', value: 22);
+        $this->build(name: 'n23', value: 23);
+    }
+
+    public function build(string $name, int $value): array
+    {
+        return [$name => $value];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-named-arguments.js', app);
+
+    expect(text).toContain('named argument');
+  });
+});
