@@ -27245,3 +27245,301 @@ class WorkerCommand extends Command
     expect(text).toContain('WorkerCommand');
   });
 });
+
+describe('batch 92: console events and helpers, conditional services, lazy ghosts and clients', () => {
+  test('a console error listener that swallows the error', async () => {
+    const app = appWith('symfony-console-events', {
+      'src/EventSubscriber/ConsoleSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\Console\\ConsoleEvents;
+use Symfony\\Component\\Console\\Event\\ConsoleErrorEvent;
+use Symfony\\Component\\Console\\Event\\ConsoleSignalEvent;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class ConsoleSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            ConsoleEvents::ERROR => 'onError',
+            ConsoleEvents::SIGNAL => 'onSignal',
+        ];
+    }
+
+    public function onError(ConsoleErrorEvent $event): void
+    {
+        $event->setExitCode(0);
+    }
+
+    public function onSignal(ConsoleSignalEvent $event): void
+    {
+        $event->getCommand();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-events.js', app);
+
+    expect(text).toContain('rror');
+  });
+
+  test('a console helper with dependencies of its own', async () => {
+    const app = appWith('symfony-console-helper', {
+      'src/Console/Helper/ReportHelper.php': `<?php
+
+namespace App\\Console\\Helper;
+
+use Symfony\\Component\\Console\\Helper\\Helper;
+
+class ReportHelper extends Helper
+{
+    public function __construct(
+        private object $repository,
+        private object $formatter,
+        private object $logger,
+    ) {
+    }
+
+    public function getName(): string
+    {
+        return 'report';
+    }
+}
+`,
+      'src/Command/ReportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class ReportCommand extends Command
+{
+    protected function configure(): void
+    {
+        $helper = $this->getHelper('report');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-helper.js', app);
+
+    expect(text).toContain('helper');
+  });
+
+  test('a service registered only for the test environment', async () => {
+    const app = appWith('symfony-di-conditional-services', {
+      'src/Service/FakeMailer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\When;
+
+#[When(env: 'test')]
+class FakeMailer
+{
+    public function send(): void
+    {
+    }
+}
+`,
+      'config/services_test.yaml': `services:
+    App\\Service\\FakeMailer:
+        public: true
+`,
+    });
+
+    const text = await runModule('symfony-di-conditional-services.js', app);
+
+    expect(text).toContain('test');
+  });
+
+  test('a lazy service with a constructor that does the work anyway', async () => {
+    const app = appWith('symfony-di-lazy-ghost', {
+      'src/Service/HeavyService.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\Lazy;
+
+#[Lazy]
+class HeavyService
+{
+    public function __construct(
+        private object $entityManager,
+        private object $httpClient,
+        private object $logger,
+        private object $cache,
+    ) {
+    }
+}
+`,
+      'config/services.yaml': `services:
+    App\\Service\\HeavyService:
+        lazy: true
+`,
+    });
+
+    const text = await runModule('symfony-di-lazy-ghost.js', app);
+
+    expect(text).toContain('Lazy');
+  });
+
+  test('SQL logging through a middleware of its own', async () => {
+    const app = appWith('symfony-doctrine-sql-logger', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        middlewares:
+            - App\\Doctrine\\SqlLoggingMiddleware
+`,
+      'src/Doctrine/SqlLoggingMiddleware.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Driver;
+use Doctrine\\DBAL\\Driver\\Middleware;
+
+class SqlLoggingMiddleware implements Middleware
+{
+    public function wrap(Driver $driver): Driver
+    {
+        return $driver;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-sql-logger.js', app);
+
+    expect(text).toContain('custom');
+  });
+
+  test('templates that render ESI fragments', async () => {
+    const app = appWith('symfony-esi-config', {
+      'config/packages/framework.yaml': `framework:
+    esi: true
+    fragments:
+        path: /_fragment
+`,
+      'templates/base.html.twig': `<div>
+    {{ render_esi(controller('App\\\\Controller\\\\SidebarController::show')) }}
+    {{ render_esi(url('sidebar')) }}
+</div>
+`,
+      'templates/invoice/show.html.twig': `{{ render_esi(controller('App\\\\Controller\\\\InvoiceController::totals')) }}
+`,
+    });
+
+    const text = await runModule('symfony-esi-config.js', app);
+
+    expect(text).toContain('esi');
+  });
+
+  test('expressions evaluated without caching what was parsed', async () => {
+    const app = appWith('symfony-expression-language-ext', {
+      'src/Expression/PricingLanguage.php': `<?php
+
+namespace App\\Expression;
+
+use Symfony\\Component\\ExpressionLanguage\\ExpressionFunction;
+use Symfony\\Component\\ExpressionLanguage\\ExpressionLanguage;
+
+class PricingLanguage
+{
+    public function evaluate(string $expression, array $values): mixed
+    {
+        $language = new ExpressionLanguage();
+
+        return $language->evaluate($expression, $values);
+    }
+
+    public function parse(string $expression): object
+    {
+        $language = new ExpressionLanguage();
+
+        return $language->parse($expression, ['price']);
+    }
+
+    public function functions(): array
+    {
+        return [
+            ExpressionFunction::fromPhp('count'),
+            new ExpressionFunction('round', static fn ($v): string => "round({$v})", static fn ($args, $v): float => round($v)),
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-expression-language-ext.js', app);
+
+    expect(text).toContain('Expression');
+  });
+
+  test('a data mapper configured for the forms', async () => {
+    const app = appWith('symfony-form-data-mapper', {
+      'config/packages/framework.yaml': `framework:
+    form:
+        data_mapper: App\\Form\\DataMapper\\ImmutableMapper
+`,
+      'src/Form/DataMapper/ImmutableMapper.php': `<?php
+
+namespace App\\Form\\DataMapper;
+
+use Symfony\\Component\\Form\\DataMapperInterface;
+
+class ImmutableMapper implements DataMapperInterface
+{
+    public function mapDataToForms(mixed $viewData, \\Traversable $forms): void
+    {
+    }
+
+    public function mapFormsToData(\\Traversable $forms, mixed &$viewData): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-data-mapper.js', app);
+
+    expect(text).toContain('data_mapper');
+  });
+
+  test('HTTP requests made one after another instead of together', async () => {
+    const app = appWith('symfony-http-client-concurrent', {
+      'src/Http/BatchFetcher.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class BatchFetcher
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetchOne(string $url): string
+    {
+        return $this->client->request('GET', $url)->getContent();
+    }
+
+    public function cancelFirst(array $urls): void
+    {
+        $response = $this->client->request('GET', $urls[0]);
+        $response->cancel();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-concurrent.js', app);
+
+    expect(text).toContain('getContent()');
+  });
+});
