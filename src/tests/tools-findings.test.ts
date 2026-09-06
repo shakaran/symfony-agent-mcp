@@ -36391,3 +36391,381 @@ class TerminateSubscriber implements EventSubscriberInterface
     expect(text).toContain('terminate');
   });
 });
+
+describe('batch 117: locales, mailers, messenger retries, sagas and mime parts', () => {
+  test('Kubernetes manifests read from the deploy directory', async () => {
+    const app = appWith('symfony-kubernetes', {
+      'k8s/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: acme
+spec:
+    replicas: 2
+    template:
+        spec:
+            containers:
+                - name: php
+                  image: acme/php:8.3
+                  resources:
+                      limits:
+                          memory: 512Mi
+                  livenessProbe:
+                      httpGet:
+                          path: /health/live
+                          port: 8080
+`,
+      'k8s/service.yaml': `apiVersion: v1
+kind: Service
+metadata:
+    name: acme
+spec:
+    ports:
+        - port: 80
+          targetPort: 8080
+`,
+    });
+
+    const text = await runModule('symfony-kubernetes.js', app);
+
+    expect(text).toContain('eployment');
+  });
+
+  test('a locale with translations that nothing enables', async () => {
+    const app = appWith('symfony-locale-config', {
+      'config/packages/framework.yaml': `framework:
+    default_locale: en
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+        enabled_locales: ['en', 'fr']
+`,
+      'translations/messages.en.yaml': "home.title: 'Welcome'\n",
+      'translations/messages.fr.yaml': "home.title: 'Bienvenue'\n",
+      'translations/messages.de.yaml': "home.title: 'Willkommen'\n",
+    });
+
+    const text = await runModule('symfony-locale-config.js', app);
+
+    expect(text).toContain('enabled_locales');
+  });
+
+  test('a locale switcher that trusts what it is given', async () => {
+    const app = appWith('symfony-locale-switcher', {
+      'src/Controller/LocaleController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\RedirectResponse;
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class LocaleController
+{
+    public function switch(Request $request): RedirectResponse
+    {
+        $request->getSession()->set('_locale', $request->query->get('locale'));
+
+        return new RedirectResponse('/');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-locale-switcher.js', app);
+
+    expect(text).toContain('locale');
+  });
+
+  test('an email with an attachment, and one without', async () => {
+    const app = appWith('symfony-mailer-attachments', {
+      'src/Mailer/InvoiceMailer.php': `<?php
+
+namespace App\\Mailer;
+
+use Symfony\\Component\\Mailer\\MailerInterface;
+use Symfony\\Component\\Mime\\Email;
+
+class InvoiceMailer
+{
+    public function __construct(private MailerInterface $mailer)
+    {
+    }
+
+    public function withPdf(string $path): void
+    {
+        $email = (new Email())
+            ->to('acme@example.com')
+            ->subject('Your invoice')
+            ->text('Attached')
+            ->attachFromPath($path, 'invoice.pdf', 'application/pdf');
+
+        $this->mailer->send($email);
+    }
+
+    public function plain(): void
+    {
+        $email = (new Email())->to('acme@example.com')->subject('Hello')->text('Hello');
+
+        $this->mailer->send($email);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-mailer-attachments.js', app);
+
+    expect(text).toContain('ttach');
+  });
+
+  test('SMTP configured with nothing handling bounces', async () => {
+    const app = appWith('symfony-mailer-bounce-handling', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'smtp://acme:hunter2@smtp.acme.com:587'
+        envelope:
+            sender: 'noreply@acme.example.com'
+`,
+    });
+
+    const text = await runModule('symfony-mailer-bounce-handling.js', app);
+
+    expect(text).toContain('ounce');
+  });
+
+  test('a mailer with a failover transport', async () => {
+    const app = appWith('symfony-mailer-smtp-fallback', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'failover(sendgrid+api://%env(SENDGRID_KEY)%@default smtp://acme:hunter2@smtp.acme.com:587)'
+`,
+      '.env': 'APP_ENV=prod\nMAILER_DSN=failover(sendgrid+api://KEY@default smtp://smtp.acme.com)\n',
+    });
+
+    const text = await runModule('symfony-mailer-smtp-fallback.js', app);
+
+    expect(text).toContain('ailover');
+  });
+
+  test('a transport retried through a service of its own', async () => {
+    const app = appWith('symfony-messenger-failures', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        failure_transport: failed
+        transports:
+            async:
+                dsn: 'doctrine://default'
+                retry_strategy:
+                    service: 'App\\Messenger\\CustomRetryStrategy'
+            failed: 'doctrine://default?queue_name=failed'
+`,
+      'src/Messenger/CustomRetryStrategy.php': `<?php
+
+namespace App\\Messenger;
+
+use Symfony\\Component\\Messenger\\Envelope;
+use Symfony\\Component\\Messenger\\Retry\\RetryStrategyInterface;
+
+class CustomRetryStrategy implements RetryStrategyInterface
+{
+    public function isRetryable(Envelope $message, ?\\Throwable $throwable = null): bool
+    {
+        return false;
+    }
+
+    public function getWaitingTime(Envelope $message, ?\\Throwable $throwable = null): int
+    {
+        return 1000;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-failures.js', app);
+
+    expect(text).toContain('etry');
+  });
+
+  test('a transport retried far too many times', async () => {
+    const app = appWith('symfony-messenger-retry', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'doctrine://default'
+                retry_strategy:
+                    max_retries: 30
+                    delay: 1000
+                    multiplier: 2
+`,
+    });
+
+    const text = await runModule('symfony-messenger-retry.js', app);
+
+    expect(text).toContain('max_retries');
+  });
+
+  test('a saga correlated by something that is not a UUID', async () => {
+    const app = appWith('symfony-messenger-sagas', {
+      'src/Saga/OrderSaga.php': `<?php
+
+namespace App\\Saga;
+
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+class OrderSaga
+{
+    public function __invoke(object $message): void
+    {
+        $correlationId = $message->orderNumber;
+        $this->state->save($correlationId, ['step' => 'paid']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-sagas.js', app);
+
+    expect(text).toContain('orrelation');
+  });
+
+  test('a schedule that runs every minute', async () => {
+    const app = appWith('symfony-messenger-scheduler', {
+      'src/Scheduler/PollSchedule.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsSchedule;
+use Symfony\\Component\\Scheduler\\RecurringMessage;
+use Symfony\\Component\\Scheduler\\Schedule;
+use Symfony\\Component\\Scheduler\\ScheduleProviderInterface;
+
+#[AsSchedule('poll')]
+class PollSchedule implements ScheduleProviderInterface
+{
+    public function getSchedule(): Schedule
+    {
+        return (new Schedule())->add(RecurringMessage::cron('* * * * *', new PollQueue()));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-scheduler.js', app);
+
+    expect(text).toContain('minute');
+  });
+
+  test('a message delayed for hours through a stamp', async () => {
+    const app = appWith('symfony-messenger-stamps', {
+      'src/Service/Dispatcher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Messenger\\MessageBusInterface;
+use Symfony\\Component\\Messenger\\Stamp\\DelayStamp;
+
+class Dispatcher
+{
+    public function __construct(private MessageBusInterface $bus)
+    {
+    }
+
+    public function later(object $message): void
+    {
+        $this->bus->dispatch($message, [new DelayStamp(21600000)]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-stamps.js', app);
+
+    expect(text).toContain('DelayStamp');
+  });
+
+  test('an email built with a fixed sender address', async () => {
+    const app = appWith('symfony-mime-parts', {
+      'src/Mailer/Builder.php': `<?php
+
+namespace App\\Mailer;
+
+use Symfony\\Component\\Mime\\Email;
+
+class Builder
+{
+    public function build(): Email
+    {
+        return (new Email())
+            ->from('noreply@acme.example.com')
+            ->to('customer@example.com')
+            ->subject('Your invoice')
+            ->text('Plain text')
+            ->html('<p>HTML</p>');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-mime-parts.js', app);
+
+    expect(text).toContain('from');
+  });
+
+  test('mime types guessed in the application', async () => {
+    const app = appWith('symfony-mime-types', {
+      'src/Service/Types.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Mime\\MimeTypes;
+
+class Types
+{
+    public function guess(string $path): ?string
+    {
+        return (new MimeTypes())->guessMimeType($path);
+    }
+}
+`,
+      'src/Service/notes.php': "<?php\n\n// The Mime component is described here.\n",
+    });
+
+    const text = await runModule('symfony-mime-types.js', app);
+
+    expect(text).toContain('ime');
+  });
+
+  test('an urgent notification with no admin recipients', async () => {
+    const app = appWith('symfony-notifier-channels-urgent', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: '%env(SLACK_DSN)%'
+        channel_policy:
+            urgent: ['chat/slack']
+`,
+      'src/Notification/OutageNotification.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+
+class OutageNotification extends Notification
+{
+    public function getImportance(): string
+    {
+        return Notification::IMPORTANCE_URGENT;
+    }
+
+    public function getChannels(object $recipient): array
+    {
+        return ['chat/slack'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-notifier-channels.js', app);
+
+    expect(text).toContain('urgent');
+  });
+});
