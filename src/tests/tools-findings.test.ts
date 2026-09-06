@@ -21247,3 +21247,116 @@ return [
     expect(text).toContain('WebProfilerBundle');
   });
 });
+
+describe('batch 72: mailers, Mailgun, Microsoft Graph and the web server', () => {
+  test('a mailer DSN that is only an environment reference', async () => {
+    const app = appWith('mailer-env-dsn', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'smtp://%env(MAILER_USER)%:%env(MAILER_PASSWORD)%@smtp.acme.com:587'
+        envelope:
+            sender: 'noreply@acme.example.com'
+`,
+      'templates/email/invoice.html.twig': `<h1>Your invoice</h1>
+<p>Thank you.</p>
+`,
+      'templates/email/welcome.html.twig': `<h1>Welcome</h1>
+${'<p>A paragraph to make the template worth measuring in kilobytes.</p>\n'.repeat(40)}
+`,
+    });
+
+    const text = await runModule('mailer.js', app);
+
+    expect(text).toContain('smtp');
+  });
+
+  test('Mailgun on a sandbox domain with the key in the DSN', async () => {
+    const app = appWith('mailgun-integration', {
+      'composer.json': JSON.stringify({ require: { 'symfony/mailgun-mailer': '^7.0' } }, null, 4) + '\n',
+      '.env.prod': `APP_ENV=prod
+MAILGUN_DOMAIN=sandbox1234567890abcdef.mailgun.org
+MAILER_DSN=mailgun+api://key\x2d0123456789abcdef0123456789abcdef:sandbox1234567890abcdef.mailgun.org@default
+`,
+    });
+
+    const text = await runModule('mailgun-integration.js', app);
+
+    expect(text).toContain('sandbox');
+  });
+
+  test('Microsoft Graph reached with application permissions and a wide scope', async () => {
+    const app = appWith('microsoft-graph-integration', {
+      'composer.json': JSON.stringify({ require: { 'microsoft/microsoft-graph': '^2.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nAZURE_TENANT_ID=00000000-0000-0000-0000-000000000000\n',
+      'src/Graph/GraphClient.php': `<?php
+
+namespace App\\Graph;
+
+use Microsoft\\Graph\\GraphServiceClient;
+
+class GraphClient
+{
+    private const CLIENT_SECRET = 'abcdefghij~klmnopqrstuvwxyz012345';
+
+    public function client(): GraphServiceClient
+    {
+        $token = $this->token([
+            'grant_type' => 'client_credentials',
+            'scope' => 'Mail.ReadWrite Files.ReadWrite.All',
+            'client_secret' => self::CLIENT_SECRET,
+        ]);
+
+        return GraphServiceClient::createWithAuthenticationProvider($token);
+    }
+
+    private function token(array $params): object
+    {
+        return (object) $params;
+    }
+}
+`,
+    });
+
+    const text = await runModule('microsoft-graph-integration.js', app);
+
+    expect(text).toContain('client_credentials');
+  });
+
+  test('an nginx site over TLS with no security headers, and an FPM pool', async () => {
+    const app = appWith('nginx-php-fpm', {
+      'docker/nginx/default.conf': `server {
+    listen 443 ssl http2;
+    server_name acme.example.com;
+
+    ssl_certificate /etc/ssl/acme.crt;
+    ssl_certificate_key /etc/ssl/acme.key;
+
+    root /var/www/public;
+
+    location / {
+        try_files $uri /index.php$is_args$args;
+    }
+
+    location ~ ^/index\\.php(/|$) {
+        fastcgi_pass php:9000;
+        fastcgi_split_path_info ^(.+\\.php)(/.*)$;
+        include fastcgi_params;
+    }
+}
+`,
+      'docker/php/www.conf': `[www]
+user = www-data
+group = www-data
+listen = 9000
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.max_requests = 0
+`,
+    });
+
+    const text = await runModule('nginx-php-fpm.js', app);
+
+    expect(text).toContain('Strict-Transport-Security');
+  });
+});
