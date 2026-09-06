@@ -16611,3 +16611,420 @@ final class UserFactory extends ModelFactory
     expect(text).toContain('Factory');
   });
 });
+
+describe('batch 57: versioning, secrets, CI, Codeception, commands, layers, Deptrac', () => {
+  test('more versioned routes than the report prints, and versioned groups', async () => {
+    const app = appWith('api-versioning', {
+      'src/Controller/Api/V1Controller.php': `<?php
+
+namespace App\\Controller\\Api;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class V1Controller
+{
+    #[Route('/api/v1/thing0', name: 'api_v1_thing0')]
+    public function thing0(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing1', name: 'api_v1_thing1')]
+    public function thing1(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing2', name: 'api_v1_thing2')]
+    public function thing2(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing3', name: 'api_v1_thing3')]
+    public function thing3(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing4', name: 'api_v1_thing4')]
+    public function thing4(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing5', name: 'api_v1_thing5')]
+    public function thing5(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing6', name: 'api_v1_thing6')]
+    public function thing6(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing7', name: 'api_v1_thing7')]
+    public function thing7(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing8', name: 'api_v1_thing8')]
+    public function thing8(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing9', name: 'api_v1_thing9')]
+    public function thing9(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing10', name: 'api_v1_thing10')]
+    public function thing10(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing11', name: 'api_v1_thing11')]
+    public function thing11(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing12', name: 'api_v1_thing12')]
+    public function thing12(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing13', name: 'api_v1_thing13')]
+    public function thing13(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing14', name: 'api_v1_thing14')]
+    public function thing14(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing15', name: 'api_v1_thing15')]
+    public function thing15(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing16', name: 'api_v1_thing16')]
+    public function thing16(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing17', name: 'api_v1_thing17')]
+    public function thing17(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing18', name: 'api_v1_thing18')]
+    public function thing18(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing19', name: 'api_v1_thing19')]
+    public function thing19(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing20', name: 'api_v1_thing20')]
+    public function thing20(): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/api/v1/thing21', name: 'api_v1_thing21')]
+    public function thing21(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Serializer\\Annotation\\Groups;
+
+class Invoice
+{
+    #[Groups(groups = ['v1:read', 'v2:read'])]
+    private int $total = 0;
+
+    #[Groups(groups = ['internal'])]
+    private string $note = '';
+}
+`,
+    });
+
+    const text = await runModule('api-versioning.js', app);
+
+    expect(text).toContain('v1');
+  });
+
+  test('secret ARNs written into the environment and the code', async () => {
+    const app = appWith('aws-secrets-manager', {
+      '.env': `APP_ENV=prod
+# RotationEnabled: false while the migration runs
+DATABASE_SECRET_ARN=arn:aws:secretsmanager:eu-west-1:123456789012:secret:acme/database-AbCdEf
+`,
+      'src/Secrets/SecretReader.php': `<?php
+
+namespace App\\Secrets;
+
+use Aws\\SecretsManager\\SecretsManagerClient;
+
+class SecretReader
+{
+    public function __construct(private SecretsManagerClient $client)
+    {
+    }
+
+    public function database(): string
+    {
+        $result = $this->client->getSecretValue([
+            'SecretId' => 'arn:aws:secretsmanager:eu-west-1:123456789012:secret:acme/database-AbCdEf',
+            'RotationEnabled' => false,
+            'aws_secret_access_key' => 'wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY',
+        ]);
+
+        return (string) $result['SecretString'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-secrets-manager.js', app);
+
+    expect(text).toContain('secretsmanager');
+    expect(text).toContain('Rotation');
+  });
+
+  test('a GitLab pipeline with a named environment, and a Makefile', async () => {
+    const app = appWith('cicd-config', {
+      '.gitlab-ci.yml': `stages:
+    - test
+    - deploy
+
+test:
+    stage: test
+    image: php:8.3
+    script:
+        - composer install
+        - vendor/bin/phpunit
+
+deploy:
+    stage: deploy
+    environment:
+        name: production
+        url: https://acme.example.com
+    script:
+        - bin/deploy.sh
+`,
+      '.github/workflows/notes.yml': '# Nothing but a comment\n',
+      'Makefile': `.PHONY: test cache
+
+test:
+	vendor/bin/phpunit
+
+cache:
+	php bin/console cache:clear
+`,
+    });
+
+    const text = await runModule('cicd-config.js', app);
+
+    expect(text).toContain('production');
+  });
+
+  test('a Codeception suite without an application path', async () => {
+    const app = appWith('codeception-config', {
+      'codeception.yml': `paths:
+    tests: tests
+    output: var/tests
+
+modules:
+    enabled:
+        - Db
+`,
+      'tests/functional.suite.yml': `actor: FunctionalTester
+modules:
+    enabled:
+        - Symfony
+        - Doctrine2
+`,
+      'tests/functional/LoginCest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+class LoginCest
+{
+    public function loginWorks(\\FunctionalTester $I): void
+    {
+        $I->amOnPage('/login');
+    }
+}
+`,
+    });
+
+    const text = await runModule('codeception-config.js', app);
+
+    expect(text).toContain('app-path');
+  });
+
+  test('a project with no Codeception in it', async () => {
+    const app = appWith('codeception-absent', {});
+
+    const text = await runModule('codeception-config.js', app);
+
+    expect(text).toContain('missing-config');
+  });
+
+  test('a command with options of every mode', async () => {
+    const app = appWith('commands-options', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+#[AsCommand(name: 'app:import', description: 'Import the catalogue')]
+class ImportCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this
+            ->addOption('file', 'f', InputOption::VALUE_REQUIRED, 'The file to read', 'catalogue.csv')
+            ->addOption('locale', 'l', InputOption::VALUE_OPTIONAL, 'Locale to import', 'en')
+            ->addOption('tag', 't', InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL, 'Tags')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Do not write anything')
+        ;
+    }
+}
+`,
+      'src/Command/notes.php': `<?php
+
+// An #[AsCommand] is mentioned here, but nothing is declared.
+`,
+    });
+
+    const text = await runModule('commands.js', app);
+
+    expect(text).toContain('app:import');
+    expect(text).toContain('default:');
+  });
+
+  test('a domain class that reaches into the infrastructure', async () => {
+    const app = appWith('dependency-graph-layers', {
+      'src/Domain/Invoice.php': `<?php
+
+namespace App\\Domain;
+
+use App\\Infrastructure\\DoctrineInvoiceRepository;
+
+class Invoice
+{
+    public function __construct(private DoctrineInvoiceRepository $repository)
+    {
+    }
+}
+`,
+      'src/Infrastructure/DoctrineInvoiceRepository.php': `<?php
+
+namespace App\\Infrastructure;
+
+class DoctrineInvoiceRepository
+{
+    public function find(int $id): ?object
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('dependency-graph.js', app);
+
+    expect(text).toContain('Invoice');
+  });
+
+  test('Deptrac layers written out one by one', async () => {
+    const app = appWith('deptrac-config', {
+      'deptrac.yaml': `parameters:
+    paths:
+        - ./src
+
+    layers:
+        -
+            name: Domain
+            collectors:
+                - type: className
+                  regex: ^App\\\\Domain\\\\.*
+        -
+            name: Infrastructure
+            collectors:
+                - type: className
+                  regex: ^App\\\\Infrastructure\\\\.*
+
+    ruleset:
+        Infrastructure:
+            - Domain
+`,
+    });
+
+    const text = await runModule('deptrac-config.js', app);
+
+    expect(text).toContain('layer');
+  });
+
+  test('a project with no Deptrac in it', async () => {
+    const app = appWith('deptrac-absent', {});
+
+    const text = await runModule('deptrac-config.js', app);
+
+    expect(text).toContain('No Deptrac configuration found');
+  });
+
+  test('a DBAL connection built by a wrapper class', async () => {
+    const app = appWith('doctrine-dbal-connection-factory', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        wrapper_class: App\\Doctrine\\LoggingConnection
+`,
+      'src/Doctrine/LoggingConnection.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Connection;
+
+class LoggingConnection extends Connection
+{
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-connection-factory.js', app);
+
+    expect(text).toContain('LoggingConnection');
+  });
+});

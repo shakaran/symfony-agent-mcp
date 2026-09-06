@@ -242,10 +242,9 @@ function buildCodeceptionConfigInfos(appPath: string): CodeceptionConfigInfo[] {
 
 export function listCodeceptionConfig(appPath: string): McpToolResult {
   try {
+    // A missing codeception.yml is reported as a finding of its own, so the
+    // list always holds something.
     const infos = buildCodeceptionConfigInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No Codeception configuration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `Codeception Configuration Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {
