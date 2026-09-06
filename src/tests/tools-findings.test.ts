@@ -30377,3 +30377,303 @@ final class Basket
     expect(text).toContain('Basket');
   });
 });
+
+describe('batch 102: JSON flags, static binding, magic methods, encodings and PDO', () => {
+  test('json_encode called without the flags it needs', async () => {
+    const app = appWith('php-json-encode-flags', {
+      'src/Api/Serializer.php': `<?php
+
+namespace App\\Api;
+
+class Serializer
+{
+    public function encode(array $payload): string
+    {
+        return json_encode($payload);
+    }
+
+    public function encodeSafely(array $payload): string
+    {
+        return json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    public function decode(string $json): array
+    {
+        return json_decode($json, true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-json-encode-flags.js', app);
+
+    expect(text).toContain('json_encode');
+  });
+
+  test('self used where static was meant', async () => {
+    const app = appWith('php-late-static-binding', {
+      'src/Model/Entity.php': `<?php
+
+namespace App\\Model;
+
+class Entity
+{
+    public static function create(): self
+    {
+        return new self();
+    }
+
+    public static function make(): static
+    {
+        return new static();
+    }
+
+    public function name(): string
+    {
+        return self::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-late-static-binding.js', app);
+
+    expect(text).toContain('static');
+  });
+
+  test('magic getters and setters standing in for real ones', async () => {
+    const app = appWith('php-magic-methods', {
+      'src/Model/Bag.php': `<?php
+
+namespace App\\Model;
+
+class Bag
+{
+    private array $data = [];
+
+    public function __get(string $name): mixed
+    {
+        return $this->data[$name] ?? null;
+    }
+
+    public function __set(string $name, mixed $value): void
+    {
+        $this->data[$name] = $value;
+    }
+
+    public function __call(string $name, array $arguments): mixed
+    {
+        return $this->data[$name] ?? null;
+    }
+
+    public function __toString(): string
+    {
+        return json_encode($this->data);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-magic-methods.js', app);
+
+    expect(text).toContain('__');
+  });
+
+  test('encodings converted automatically and set globally', async () => {
+    const app = appWith('php-mbstring-patterns', {
+      'src/Text/Encoder.php': `<?php
+
+namespace App\\Text;
+
+class Encoder
+{
+    public function boot(): void
+    {
+        mb_internal_encoding('UTF-8');
+    }
+
+    public function convert(string $value): string
+    {
+        return mb_convert_encoding($value, 'UTF-8', 'auto');
+    }
+
+    public function length(string $value): int
+    {
+        return mb_strlen($value, 'UTF-8');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-mbstring-patterns.js', app);
+
+    expect(text).toContain('mb_');
+  });
+
+  test('encryption with a short key and a weak digest', async () => {
+    const app = appWith('php-openssl-patterns', {
+      'src/Crypto/Cipher.php': `<?php
+
+namespace App\\Crypto;
+
+class Cipher
+{
+    public function encrypt(string $plain, string $key): string
+    {
+        $iv = openssl_random_pseudo_bytes(16);
+
+        return (string) openssl_encrypt($plain, 'aes-128-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    }
+
+    public function digest(string $value): string
+    {
+        return (string) openssl_digest($value, 'sha1');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-openssl-patterns.js', app);
+
+    expect(text).toContain('AES');
+  });
+
+  test('the parallel extension used to run work in threads', async () => {
+    const app = appWith('php-parallel-extension', {
+      'src/Parallel/Runner.php': `<?php
+
+namespace App\\Parallel;
+
+use parallel\\Channel;
+use parallel\\Runtime;
+
+class Runner
+{
+    public function run(array $jobs): array
+    {
+        $channel = new parallel\\Channel(count($jobs));
+        $futures = [];
+
+        foreach ($jobs as $job) {
+            $runtime = new Runtime();
+            $futures[] = $runtime->run(static function () use ($job, $channel): void {
+                $channel->send($job);
+            });
+        }
+
+        return $futures;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-parallel-extension.js', app);
+
+    expect(text).toContain('parallel');
+  });
+
+  test('a backtrack limit lowered in the ini', async () => {
+    const app = appWith('php-pcre-security', {
+      'docker/php/php.ini': `[Pcre]
+pcre.backtrack_limit = 100000
+pcre.recursion_limit = 100000
+pcre.jit = 1
+`,
+      'src/Service/Matcher.php': `<?php
+
+namespace App\\Service;
+
+class Matcher
+{
+    public function match(string $subject, string $pattern): bool
+    {
+        return (bool) preg_match('/' . $pattern . '/', $subject);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-pcre-security.js', app);
+
+    expect(text).toContain('backtrack');
+  });
+
+  test('a PDO connection kept open between requests', async () => {
+    const app = appWith('php-pdo-patterns', {
+      'src/Database/Connection.php': `<?php
+
+namespace App\\Database;
+
+class Connection
+{
+    public function connect(): \\PDO
+    {
+        return new \\PDO('pgsql:host=db;dbname=acme', 'acme', 'hunter2', [
+            \\PDO::ATTR_PERSISTENT => true,
+            \\PDO::ATTR_ERRMODE => \\PDO::ERRMODE_SILENT,
+            \\PDO::ATTR_EMULATE_PREPARES => true,
+        ]);
+    }
+
+    public function query(\\PDO $pdo, string $status): array
+    {
+        return $pdo->query("SELECT * FROM invoice WHERE status = '{$status}'")->fetchAll();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-pdo-patterns.js', app);
+
+    expect(text).toContain('PERSISTENT');
+  });
+
+  test('a property hook that reads another hooked property', async () => {
+    const app = appWith('php-property-hooks-pair', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.4' } }, null, 4) + '\n',
+      'src/Model/Temperature.php': `<?php
+
+namespace App\\Model;
+
+class Temperature
+{
+    public float $celsius = 0.0;
+
+    public float $fahrenheit {
+        get => $this->celsius * 9 / 5 + 32;
+        set => $this->celsius = ($value - 32) * 5 / 9;
+    }
+}
+`,
+      'src/Model/notes.php': "<?php\n\n// The hooks above are described here.\n",
+    });
+
+    const text = await runModule('php-property-hooks.js', app);
+
+    expect(text).toContain('Temperature');
+  });
+
+  test('a SOAP client pointed at a plain HTTP WSDL', async () => {
+    const app = appWith('php-soap-patterns', {
+      'src/Soap/LegacyClient.php': `<?php
+
+namespace App\\Soap;
+
+class LegacyClient
+{
+    public function client(): \\SoapClient
+    {
+        return new \\SoapClient('http://legacy.acme.internal/service?wsdl', [
+            'trace' => 1,
+            'exceptions' => false,
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-soap-patterns.js', app);
+
+    expect(text).toContain('WSDL');
+  });
+});

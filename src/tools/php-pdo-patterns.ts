@@ -66,7 +66,9 @@ function analysePdoFile(content: string, relFile: string): PdoPatternInfo[] {
     if (/ERRMODE_SILENT/.test(line)) {
       connectionIssues.push(`Line ${i + 1}: PDO::ERRMODE_SILENT found — errors are suppressed`);
     }
-    if (/ATTR_PERSISTENT\s*,\s*true/.test(line)) {
+    // The option is passed in the constructor's options array, written with
+    // "=>", as well as through setAttribute(), written with a comma.
+    if (/ATTR_PERSISTENT\s*(?:,|=>)\s*true/.test(line)) {
       connectionIssues.push(`Line ${i + 1}: PDO::ATTR_PERSISTENT => true — persistent connections can cause state leakage`);
     }
   }

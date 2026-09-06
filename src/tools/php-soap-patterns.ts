@@ -43,8 +43,9 @@ function buildSoapPatternInfos(appPath: string): SoapPatternInfo[] {
     let content: string;
     try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
 
-    const hasClient = content.includes('new SoapClient');
-    const hasServer = content.includes('new SoapServer');
+    // A namespaced file reaches the global class as "new \\SoapClient(".
+    const hasClient = /new\s+\\?SoapClient\b/.test(content);
+    const hasServer = /new\s+\\?SoapServer\b/.test(content);
     const hasFault = content.includes('SoapFault');
 
     if (!hasClient && !hasServer && !hasFault) continue;
@@ -56,7 +57,7 @@ function buildSoapPatternInfos(appPath: string): SoapPatternInfo[] {
     if (hasClient) {
       soapType = 'client';
       // Extract WSDL URL from new SoapClient('...')
-      const wsdlMatch = /new\s+SoapClient\s*\(\s*['"]([^'"]{0,300})['"]/i.exec(content);
+      const wsdlMatch = /new\s+\\?SoapClient\s*\(\s*['"]([^'"]{0,300})['"]/i.exec(content);
       if (wsdlMatch) {
         wsdl = sanitizeWsdlUrl(wsdlMatch[1]);
         if (wsdl.startsWith('http://')) {
@@ -74,7 +75,7 @@ function buildSoapPatternInfos(appPath: string): SoapPatternInfo[] {
       }
 
       // Check for try/catch around SOAP calls
-      const clientBlockStart = content.indexOf('new SoapClient');
+      const clientBlockStart = content.search(/new\s+\\?SoapClient/);
       const contextSlice = content.slice(Math.max(0, clientBlockStart - 200), Math.min(content.length, clientBlockStart + 500));
       if (!contextSlice.includes('try') || !contextSlice.includes('catch')) {
         issues.push('SoapClient usage without try/catch — SoapFault exceptions must be caught');
@@ -83,7 +84,7 @@ function buildSoapPatternInfos(appPath: string): SoapPatternInfo[] {
 
     if (hasServer) {
       soapType = 'server';
-      const wsdlMatch = /new\s+SoapServer\s*\(\s*['"]([^'"]{0,300})['"]/i.exec(content);
+      const wsdlMatch = /new\s+\\?SoapServer\s*\(\s*['"]([^'"]{0,300})['"]/i.exec(content);
       wsdl = wsdlMatch ? sanitizeWsdlUrl(wsdlMatch[1]) : '(dynamic or null)';
       issues.push('SoapServer detected — ensure WSDL does not expose internal structure details');
     }
