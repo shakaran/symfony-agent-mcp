@@ -9379,3 +9379,308 @@ class Publisher
     expect(singleText).toContain('single.example.com');
   });
 });
+
+describe('nelmio api doc', () => {
+  test('areas with path and host patterns, an Info block and controllers with no 404', async () => {
+    const app = appWith('nelmio', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'nelmio/api-doc-bundle': '^4.0' },
+      }, null, 2),
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    documentation:
+        info:
+            title: Acme API
+            version: 1.0.0
+    areas:
+        default:
+            path_patterns: ['^/api', '^/v2']
+            host_patterns: ['^api\\.']
+        internal:
+            path_patterns: ['^/internal']
+`,
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use OpenApi\\Attributes as OA;
+
+#[OA\\Info(version: '1.0.0', title: 'Acme API')]
+class ApiController
+{
+    #[OA\\Get(path: '/api/invoices')]
+    #[OA\\Response(response: 200, description: 'ok')]
+    public function index(): void
+    {
+    }
+}
+`,
+      'src/Controller/NoResponsesController.php': `<?php
+
+namespace App\\Controller;
+
+use OpenApi\\Attributes as OA;
+
+class NoResponsesController
+{
+    #[OA\\Get(path: '/api/customers')]
+    public function index(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('nelmio-api-doc.js', app);
+
+    expect(text).toContain('Path patterns');
+  });
+});
+
+describe('pgbouncer', () => {
+  test('a transaction pool with a small limit, plain auth and a direct database url', async () => {
+    const app = appWith('pgbouncer', {
+      'docker/pgbouncer/pgbouncer.ini': `[databases]
+acme = host=db port=5432 dbname=acme
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = trust
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = statement
+max_client_conn = 50
+default_pool_size = 2
+server_reset_query = DISCARD ALL
+`,
+      '.env': `DATABASE_URL=postgresql://app:pass@db:5432/acme
+`,
+    });
+
+    const text = await runModule('pgbouncer-config.js', app);
+
+    expect(text).toContain('pool_mode');
+  });
+});
+
+describe('date intervals', () => {
+  test('every interval shape the analyser warns about', async () => {
+    const app = appWith('date-interval', {
+      'src/Service/Intervals.php': `<?php
+
+namespace App\\Service;
+
+class Intervals
+{
+    public function zero(): \\DateInterval
+    {
+        return new DateInterval('0');
+    }
+
+    public function concatenated(int $hours): \\DateInterval
+    {
+        return new DateInterval('PT' . $hours . 'H');
+    }
+
+    public function prefixed(int $days): \\DateInterval
+    {
+        return new DateInterval('P' . $days . 'D');
+    }
+
+    public function fromVariable(string $spec): \\DateInterval
+    {
+        return new DateInterval($spec);
+    }
+
+    public function fullDay(): \\DateInterval
+    {
+        return new DateInterval('PT24H');
+    }
+
+    public function longHours(): \\DateInterval
+    {
+        return new DateInterval('PT48H');
+    }
+
+    public function days(\\DateTimeInterface $a, \\DateTimeInterface $b): int
+    {
+        $diff = $a->diff($b);
+
+        return $diff->days;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-date-interval.js', app);
+
+    expect(text).toContain('DateInterval');
+  });
+});
+
+describe('static analysis ignores in bulk', () => {
+  test('more than ten suppressions in one file and both styles mixed', async () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      `    /** @phpstan-ignore-next-line */\n    public function ignored${i}(): void\n    {\n    }\n`,
+    ).join('\n');
+    const mixed = Array.from({ length: 7 }, (_, i) =>
+      `    /** @psalm-suppress MissingReturnType */\n    public function suppressed${i}()\n    {\n    }\n`,
+    ).join('\n');
+    const app = appWith('ignores-bulk', {
+      'phpstan.neon': `parameters:
+    level: 8
+`,
+      'src/Service/Suppressed.php': `<?php
+
+namespace App\\Service;
+
+class Suppressed
+{
+${many}
+${mixed}
+    /** @phpstan-ignore */
+    public function bare(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-static-analysis-ignore.js', app);
+
+    expect(text).toContain('phpstan');
+  });
+});
+
+describe('phpunit attributes', () => {
+  test('a #[Test] on a method that does not start with test, and both styles in one project', async () => {
+    const app = appWith('phpunit-attributes', {
+      'tests/Service/AttributeTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\Attributes\\Before;
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+use PHPUnit\\Framework\\Attributes\\Group;
+use PHPUnit\\Framework\\Attributes\\Test;
+use PHPUnit\\Framework\\TestCase;
+
+#[Group('unit')]
+class AttributeTest extends TestCase
+{
+    #[Before]
+    public function prepare(): void
+    {
+    }
+
+    #[Test]
+    public function itWorks(): void
+    {
+    }
+
+    #[Test]
+    #[DataProvider('rows')]
+    public function testWithProvider(array $row): void
+    {
+    }
+
+    public static function rows(): array
+    {
+        return [[['a']]];
+    }
+}
+`,
+      'tests/Service/AnnotationTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\TestCase;
+
+class AnnotationTest extends TestCase
+{
+    /**
+     * @test
+     * @group legacy
+     * @dataProvider rows
+     */
+    public function it_still_works(array $row): void
+    {
+    }
+
+    public static function rows(): array
+    {
+        return [[['a']]];
+    }
+}
+`,
+      'tests/Service/notes.md': 'not a test\n',
+    });
+
+    const text = await runModule('phpunit-attributes.js', app);
+
+    expect(text).toContain('AttributeTest');
+  });
+});
+
+describe('phpunit extensions', () => {
+  test('an extension registered in the xml, one with no hooks and a deprecated listener', async () => {
+    const app = appWith('phpunit-extensions', {
+      'phpunit.xml': `<?xml version="1.0"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <extensions>
+        <bootstrap class="App\\Tests\\Extension\\TimingExtension"/>
+        <bootstrap class="App\\Tests\\Extension\\EmptyExtension"/>
+        <extension class="App\\Tests\\Extension\\LegacyListener"/>
+    </extensions>
+</phpunit>
+`,
+      'tests/Extension/TimingExtension.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Runner\\Extension\\Extension;
+use PHPUnit\\Runner\\Extension\\Facade;
+use PHPUnit\\Runner\\Extension\\ParameterCollection;
+use PHPUnit\\TextUI\\Configuration\\Configuration;
+
+class TimingExtension implements Extension
+{
+    public function bootstrap(Configuration $configuration, Facade $facade, ParameterCollection $parameters): void
+    {
+    }
+}
+`,
+      'tests/Extension/EmptyExtension.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+class EmptyExtension
+{
+}
+`,
+      'tests/Extension/LegacyListener.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Framework\\TestListener;
+
+class LegacyListener implements TestListener
+{
+}
+`,
+      'tests/Extension/Unregistered.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Runner\\Extension\\Extension;
+
+class Unregistered implements Extension
+{
+}
+`,
+    });
+
+    const text = await runModule('phpunit-extensions.js', app);
+
+    expect(text).toContain('TimingExtension');
+  });
+});
