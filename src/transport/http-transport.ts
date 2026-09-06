@@ -145,21 +145,17 @@ function isIpAllowed(remoteAddress: string | undefined, allowedIps: string[]): b
   );
 }
 
+// Every step here returns rather than throws: a malformed entry parses to
+// NaN or null and the address is refused, so the allowlist fails closed
+// without a catch that no input can reach.
 function ipMatchesCidr(ip: string, cidr: string): boolean {
-  try {
-    const [range, bitsStr] = cidr.split('/');
-    const bits = parseInt(bitsStr, 10);
-    const ipNum = ipToNum(ip);
-    const rangeNum = ipToNum(range);
-    if (ipNum === null || rangeNum === null) return false;
-    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-    return (ipNum & mask) === (rangeNum & mask);
-  // Unreachable today: split, parseInt and ipToNum all return rather than
-  // throw. Kept so that if this ever grows a call that can throw, the
-  // allowlist fails closed instead of propagating into the request handler.
-  } catch {
-    return false;
-  }
+  const [range, bitsStr] = cidr.split('/');
+  const bits = parseInt(bitsStr, 10);
+  const ipNum = ipToNum(ip);
+  const rangeNum = ipToNum(range);
+  if (ipNum === null || rangeNum === null) return false;
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return (ipNum & mask) === (rangeNum & mask);
 }
 
 function ipToNum(ip: string): number | null {

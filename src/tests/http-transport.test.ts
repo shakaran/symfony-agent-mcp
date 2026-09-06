@@ -366,6 +366,22 @@ describe('payload cap', () => {
     }
   });
 
+  test('a body sent in several chunks stops being read once it is over', async () => {
+    // The chunks already in flight keep arriving after the cap is hit; they
+    // are dropped rather than added to the buffer.
+    const { port, server } = await start({ SYMFONY_MCP_MAX_PAYLOAD_BYTES: '1024' });
+    try {
+      const res = await request(port, 'POST', '/message?sessionId=x', {
+        body: 'x'.repeat(2_000_000),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(res.status).toBe(413);
+    } finally {
+      await stop(server);
+    }
+  });
+
   test('an unparseable limit falls back to the 1 MiB default', async () => {
     const { port, server } = await start({ SYMFONY_MCP_MAX_PAYLOAD_BYTES: 'garbage' });
     try {
@@ -388,6 +404,19 @@ describe('session tokens on GET /sse', () => {
 
       expect(res.status).toBe(401);
       expect(JSON.parse(res.body)).toHaveProperty('error');
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test('a token in the dedicated header is read, and refused when invalid', async () => {
+    const { port, server } = await start({ SYMFONY_MCP_SESSION_SECRET: 'shhh' });
+    try {
+      const res = await request(port, 'GET', '/sse', {
+        headers: { 'X-MCP-Session-Token': 'not-a-real-token' },
+      });
+
+      expect(res.status).toBe(401);
     } finally {
       await stop(server);
     }
@@ -416,6 +445,29 @@ describe('session tokens on GET /sse', () => {
     });
     try {
       expect((await request(port, 'GET', '/sse?token=nope')).status).toBe(401);
+    } finally {
+      await stop(server);
+    }
+  });
+});
+
+describe('addresses as the socket reports them', () => {
+  test('an IPv4 caller on a dual-stack listener matches its plain form', async () => {
+    // Listening on :: gives ::ffff:127.0.0.1 for a v4 client, which is the
+    // same address as the one written in the allowlist.
+    const port = await freePort();
+    process.env['SYMFONY_MCP_HTTP_PORT'] = String(port);
+    process.env['SYMFONY_MCP_HTTP_HOST'] = '::';
+    process.env['SYMFONY_MCP_ALLOWED_IPS'] = '127.0.0.1';
+
+    const mcp = new Server({ name: 'test', version: '0.0.0' }, { capabilities: { tools: {} } });
+    const server = await startHttpTransport(mcp);
+    if (!server) throw new Error('transport did not start');
+
+    try {
+      const res = await request(port, 'GET', '/health');
+
+      expect(res.status).toBe(200);
     } finally {
       await stop(server);
     }
