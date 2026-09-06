@@ -35270,3 +35270,298 @@ class Handleholder
     expect(text).toContain('clone');
   });
 });
+
+describe('batch 114: randomness, readonly, streams, UUIDs, archives and PHPUnit setups', () => {
+  test('a token generated from random bytes', async () => {
+    const app = appWith('php-random-security', {
+      'src/Security/TokenGenerator.php': `<?php
+
+namespace App\\Security;
+
+class TokenGenerator
+{
+    public function token(): string
+    {
+        return bin2hex(random_bytes(32));
+    }
+
+    public function urlToken(): string
+    {
+        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-random-security.js', app);
+
+    expect(text).toContain('random_bytes');
+  });
+
+  test('a readonly class that is also serialized', async () => {
+    const app = appWith('php-readonly-classes', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.2' } }, null, 4) + '\n',
+      'src/Model/Money.php': `<?php
+
+namespace App\\Model;
+
+final readonly class Money
+{
+    public function __construct(
+        public int $amount,
+        public string $currency,
+    ) {
+    }
+
+    public function __serialize(): array
+    {
+        return ['amount' => $this->amount];
+    }
+
+    public function __unserialize(array $data): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-readonly-classes.js', app);
+
+    expect(text).toContain('readonly');
+  });
+
+  test('a readonly property serialized back into place', async () => {
+    const app = appWith('php-readonly-props', {
+      'src/Model/Token.php': `<?php
+
+namespace App\\Model;
+
+final class Token
+{
+    public readonly string $value;
+
+    public function __construct(string $value)
+    {
+        $this->value = $value;
+    }
+
+    public function __unserialize(array $data): void
+    {
+        $this->value = $data['value'];
+    }
+
+    public function __serialize(): array
+    {
+        return ['value' => $this->value];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-readonly.js', app);
+
+    expect(text).toContain('readonly');
+  });
+
+  test('a stream wrapper with only half its methods', async () => {
+    const app = appWith('php-stream-wrappers', {
+      'src/Stream/AcmeStream.php': `<?php
+
+namespace App\\Stream;
+
+class AcmeStream
+{
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        return true;
+    }
+
+    public function stream_read(int $count): string
+    {
+        return '';
+    }
+
+    public function stream_eof(): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Stream/Register.php': `<?php
+
+namespace App\\Stream;
+
+class Register
+{
+    public function register(): void
+    {
+        stream_wrapper_register('acme', AcmeStream::class);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-stream-wrappers.js', app);
+
+    expect(text).toContain('stream');
+  });
+
+  test('string helpers used in place of the component', async () => {
+    const app = appWith('php-string-helpers', {
+      'src/Text/Helpers.php': `<?php
+
+namespace App\\Text;
+
+class Helpers
+{
+    public function starts(string $value, string $prefix): bool
+    {
+        return substr($value, 0, strlen($prefix)) === $prefix;
+    }
+
+    public function contains(string $value, string $needle): bool
+    {
+        return strpos($value, $needle) !== false;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-string-helpers.js', app);
+
+    expect(text).toContain('str');
+  });
+
+  test('a UUID built with sprintf by hand', async () => {
+    const app = appWith('php-uuid-generation', {
+      'src/Service/UuidFactory.php': `<?php
+
+namespace App\\Service;
+
+class UuidFactory
+{
+    public function uuid(): string
+    {
+        return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            random_int(0, 0xffff), random_int(0, 0xffff),
+            random_int(0, 0xffff),
+            random_int(0, 0x0fff) | 0x4000,
+            random_int(0, 0x3fff) | 0x8000,
+            random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff),
+        );
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-uuid-generation.js', app);
+
+    expect(text).toContain('UUID');
+  });
+
+  test('an archive extracted without checking its entries', async () => {
+    const app = appWith('php-zip-archive', {
+      'src/Import/ZipImporter.php': `<?php
+
+namespace App\\Import;
+
+class ZipImporter
+{
+    public function import(string $path): void
+    {
+        $zip = new \\ZipArchive();
+        $zip->open($path);
+        $zip->extractTo('/var/uploads');
+        $zip->close();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-zip-archive.js', app);
+
+    expect(text).toContain('extractTo');
+  });
+
+  test('coverage collected through the slow driver', async () => {
+    const app = appWith('phpunit-coverage-config', {
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <coverage>
+        <report>
+            <clover outputFile="var/coverage/clover.xml"/>
+        </report>
+    </coverage>
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+      'docker/php/xdebug.ini': `[xdebug]
+xdebug.mode = coverage
+`,
+    });
+
+    const text = await runModule('phpunit-coverage-config.js', app);
+
+    expect(text).toContain('overage');
+  });
+
+  test('a database test with nothing to clean up after it', async () => {
+    const app = appWith('phpunit-database', {
+      'tests/Integration/InvoiceRepositoryTest.php': `<?php
+
+namespace App\\Tests\\Integration;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+class InvoiceRepositoryTest extends KernelTestCase
+{
+    public function testItSaves(): void
+    {
+        self::bootKernel();
+        $em = self::getContainer()->get('doctrine')->getManager();
+        $em->persist(new \\App\\Entity\\Invoice());
+        $em->flush();
+
+        $this->assertNotNull($em->getRepository(\\App\\Entity\\Invoice::class)->findAll());
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-database.js', app);
+
+    expect(text).toContain('cleanup');
+  });
+
+  test('a test building more mocks than it should', async () => {
+    const app = appWith('phpunit-mocks', {
+      'tests/Unit/ServiceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ServiceTest extends TestCase
+{
+    public function testItWorks(): void
+    {
+        $m0 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
+        $m1 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
+        $m2 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
+        $m3 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
+
+        $this->assertNotNull($m0);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-mocks.js', app);
+
+    expect(text).toContain('getMockBuilder');
+  });
+});
