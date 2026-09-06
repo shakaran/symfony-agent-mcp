@@ -129,6 +129,9 @@ function parseMiddleware(messenger: Record<string, unknown>): string[] {
 
   const allMiddleware: string[] = [];
   for (const busConfig of Object.values(buses)) {
+    // "command.bus: ~" is how a bus with default middleware is declared, and
+    // reading a key off that null threw before anything was reported.
+    if (!busConfig || typeof busConfig !== 'object') continue;
     const bus = busConfig as Record<string, unknown>;
     const mw = bus['middleware'] as unknown[] | undefined;
     if (Array.isArray(mw)) {

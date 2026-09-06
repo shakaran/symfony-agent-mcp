@@ -76,8 +76,10 @@ function buildReadReplicaInfos(appPath: string): ReadReplicaInfo[] {
           if (e.isDirectory()) checkFiles(full);
           else if (e.name.endsWith('.php')) {
             let content = '';
-            try { content = fs.readFileSync(full, 'utf-8'); } catch { return; }
-            if (!content.includes('getConnection') && !content.includes('createQueryBuilder')) return;
+            try { content = fs.readFileSync(full, 'utf-8'); } catch { continue; }
+            // Returning here ended the walk at the first file that does not
+            // touch the connection, which is most of src/.
+            if (!content.includes('getConnection') && !content.includes('createQueryBuilder')) continue;
 
             const relFile = path.relative(appPath, full);
             const hasForceMaster = content.includes('getWrappedConnection') || content.includes('connect(') || content.includes('forceConnect');

@@ -62,7 +62,9 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
 
   for (const jobName of jobNames) {
     // Extract block for this job (heuristic: find the job block)
-    const jobBlockPattern = new RegExp(`^ {${jobIndent}}${jobName}\\s*:[\\s\\S]{0,3000}?(?=^ {${jobIndent}}(?! )\\w|$)`, 'm');
+    // $ under the m flag ends the block at the first line break, so every job
+    // was read as a single line.
+    const jobBlockPattern = new RegExp(`^ {${jobIndent}}${jobName}\\s*:[\\s\\S]{0,3000}?(?=^ {${jobIndent}}(?! )\\w|$(?![\\s\\S]))`, 'm');
     const jobBlockMatch = jobSection.match(jobBlockPattern);
     const jobBlock = jobBlockMatch ? jobBlockMatch[0] : '';
 

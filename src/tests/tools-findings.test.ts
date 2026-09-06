@@ -1701,3 +1701,387 @@ class SecretsReader
     expect(text).toContain('SecretsReader');
   });
 });
+
+describe('circleci', () => {
+  test('a deploy job with no pinned image, no cache, no parallelism and a secret in a command', async () => {
+    const app = appWith('circleci', {
+      '.circleci/config.yml': `version: 2.1
+
+jobs:
+    build:
+        docker:
+            - image: cimg/php:8.3
+        steps:
+            - checkout
+            - restore_cache:
+                  keys:
+                      - composer-{{ checksum "composer.lock" }}
+            - run:
+                  name: Install
+                  command: composer install --no-dev --optimize-autoloader
+            - save_cache:
+                  key: composer-{{ checksum "composer.lock" }}
+                  paths:
+                      - vendor
+            - run:
+                  name: Test
+                  command: vendor/bin/phpunit
+        parallelism: 4
+
+    deploy:
+        docker:
+            - image: cimg/php:latest
+        steps:
+            - checkout
+            - run:
+                  name: Install
+                  command: composer install
+            - run:
+                  name: Push
+                  command: curl -u acme:hunter2-password https://deploy.example.com/release
+
+workflows:
+    main:
+        jobs:
+            - build
+            - deploy:
+                  requires:
+                      - build
+`,
+    });
+
+    const text = await runModule('circleci-config.js', app);
+
+    expect(text).toContain('deploy');
+  });
+});
+
+describe('change tracking', () => {
+  test('every change tracking policy, and the mix of two of them', async () => {
+    const fields = Array.from({ length: 30 }, (_, i) => `    #[ORM\\Column]\n    private ?string $field${i} = null;`).join('\n\n');
+    const app = appWith('change-tracking', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: true
+        change_tracking_policy: DEFERRED_IMPLICIT
+`,
+      'src/Entity/WideEntity.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\ChangeTrackingPolicy('DEFERRED_IMPLICIT')]
+class WideEntity
+{
+${fields}
+}
+`,
+      'src/Entity/NotifyEntity.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\ChangeTrackingPolicy('NOTIFY')]
+class NotifyEntity
+{
+    #[ORM\\Column]
+    private ?string $name = null;
+
+    public function setName(string $name): void
+    {
+        $this->name = $name;
+    }
+}
+`,
+      'src/Entity/NotifierEntity.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\NotifyPropertyChanged;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\ChangeTrackingPolicy('NOTIFY')]
+class NotifierEntity implements NotifyPropertyChanged
+{
+    #[ORM\\Column]
+    private ?string $name = null;
+
+    public function setName(string $name): void
+    {
+        $this->name = $name;
+    }
+}
+`,
+      'src/Entity/ExplicitEntity.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
+class ExplicitEntity
+{
+    #[ORM\\Column]
+    private ?string $name = null;
+}
+`,
+      'src/Entity/LegacyEntity.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\ChangeTrackingPolicy("DEFERRED_IMPLICIT")
+ */
+class LegacyEntity
+{
+    /**
+     * @ORM\\Column
+     */
+    private $name;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-change-tracking.js', app);
+
+    expect(text).toContain('NOTIFY');
+    expect(text).toContain('DEFERRED_IMPLICIT');
+  });
+});
+
+describe('read replicas', () => {
+  test('a connection that names replicas but defines none, and one single host', async () => {
+    const app = appWith('read-replica', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                url: 'postgresql://app:pass@db.example.com:5432/acme'
+            reporting:
+                url: 'postgresql://app:pass@db.example.com:5432/acme'
+                replicas: {}
+            analytics:
+                url: 'postgresql://app:pass@db.example.com:5432/acme'
+                slaves:
+                    replica_one:
+                        host: replica-1.example.com
+                    replica_two:
+                        host: replica-2.example.com
+                keep_slave: true
+`,
+    });
+
+    const text = await runModule('doctrine-read-replica.js', app);
+    const forced = appWith('read-replica-forced', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: 'postgresql://app:pass@db.example.com:5432/acme'
+`,
+      'src/Repository/ReportRepository.php': `<?php
+
+namespace App\\Repository;
+
+class ReportRepository
+{
+    public function build(): void
+    {
+        $qb = $this->createQueryBuilder('r');
+        $this->getEntityManager()->getConnection()->getWrappedConnection();
+    }
+}
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+class Kernel
+{
+}
+`,
+    });
+
+    const forcedText = await runModule('doctrine-read-replica.js', forced);
+
+    expect(text).toContain('reporting');
+    expect(forcedText).toContain('forced master connection');
+  });
+});
+
+describe('messenger', () => {
+  test('a transport of every kind, routed, with a failure transport', async () => {
+    const app = appWith('messenger-transports', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        failure_transport: failed
+        default_bus: command.bus
+        buses:
+            command.bus: ~
+            query.bus:
+                default_middleware: false
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            redis: 'redis://app:s3cret@cache:6379/messages'
+            beanstalk: 'beanstalkd://queue:11300'
+            kafka: 'kafka://broker:9092'
+            memory: 'in-memory://'
+            void: 'null://'
+            amqp:
+                dsn: 'amqp://guest:guest@rabbit:5672/%2f/messages'
+                options:
+                    auto_setup: false
+            failed: 'doctrine://default?queue_name=failed'
+        routing:
+            'App\\Message\\SendInvoice': async
+            'App\\Message\\RebuildIndex': [redis, kafka]
+`,
+      '.env': `MESSENGER_TRANSPORT_DSN=amqp://guest:guest@rabbit:5672/%2f/messages
+`,
+      'src/Message/SendInvoice.php': `<?php
+
+namespace App\\Message;
+
+final class SendInvoice
+{
+    public function __construct(public readonly int $invoiceId)
+    {
+    }
+}
+`,
+      'src/MessageHandler/SendInvoiceHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use App\\Message\\SendInvoice;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+final class SendInvoiceHandler
+{
+    public function __invoke(SendInvoice $message): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('messenger.js', app, ['async', 'App\\Message\\SendInvoice']);
+
+    expect(text).toContain('Redis');
+    expect(text).not.toContain('s3cret');
+  });
+});
+
+describe('object injection', () => {
+  test('unserialize on every source of attacker-controlled data', async () => {
+    const app = appWith('object-injection', {
+      'src/Controller/LegacyController.php': `<?php
+
+namespace App\\Controller;
+
+class LegacyController
+{
+    public function fromCookie(): void
+    {
+        $data = unserialize($_COOKIE['prefs']);
+    }
+
+    public function fromBase64(): void
+    {
+        $data = unserialize(base64_decode($_GET['state']));
+    }
+
+    public function fromHeader(): void
+    {
+        $headers = getallheaders();
+        $data = unserialize($headers['X-State']);
+    }
+
+    public function fromQuery(): void
+    {
+        $data = unserialize($_POST['payload']);
+    }
+
+    public function fromSession(): void
+    {
+        $data = unserialize($_SESSION['cart']);
+    }
+
+    public function igbinary(): void
+    {
+        $data = igbinary_unserialize($_GET['blob']);
+    }
+
+    public function msgpack(): void
+    {
+        $data = msgpack_unpack($_GET['blob']);
+    }
+
+    public function jsonObjects(): void
+    {
+        $payload = $_GET['payload'];
+        $decoded = json_decode($payload, false);
+        if ($decoded instanceof \\stdClass) {
+            return;
+        }
+    }
+
+    public function incomplete(): void
+    {
+        $data = unserialize('O:8:"Missing":0:{}');
+        if ($data instanceof __PHP_Incomplete_Class) {
+            return;
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-object-injection.js', app);
+
+    expect(text).toContain('unserialize');
+  });
+});
+
+describe('prometheus alerting rules', () => {
+  test('alerts with no duration, no severity, a lowercase name and deprecated functions', async () => {
+    const app = appWith('prometheus', {
+      'monitoring/acme.rules.yml': `groups:
+    - name: acme
+      rules:
+          - alert: highErrorRate
+            expr: count_values("code", http_requests_total) > 100
+            annotations:
+                summary: Too many errors
+
+          - alert: SlowResponses
+            expr: topk(http_request_duration_seconds) > 2
+            for: 5m
+            labels:
+                severity: warning
+            annotations:
+                summary: Responses are slow
+                description: The p99 is above two seconds
+
+          - record: job:http_requests:rate5m
+            expr: rate(http_requests_total[5m])
+            labels:
+                job: acme
+
+          - record: job:http_errors:rate5m
+            expr: rate(http_errors_total[5m])
+`,
+    });
+
+    const text = await runModule('prometheus-alerting-rules.js', app);
+
+    expect(text).toContain('highErrorRate');
+  });
+});
