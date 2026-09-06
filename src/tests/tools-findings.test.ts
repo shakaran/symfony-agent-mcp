@@ -8614,3 +8614,243 @@ class UserRepository implements PasswordUpgraderInterface
     expect(text.length).toBeGreaterThan(0);
   });
 });
+
+describe('mailer dsn shapes', () => {
+  test('each transport scheme in its own .env, and failover with a single transport', async () => {
+    const dsns = [
+      ['sendmail', 'sendmail://default'],
+      ['ses', 'ses+smtp://KEY:SECRET@default'],
+      ['mandrill', 'mandrill://KEY@default'],
+      ['sendgrid', 'sendgrid://KEY@default'],
+      ['async', 'messenger://async'],
+      ['failover-one', 'failover(smtp://only.example.com)'],
+      ['roundrobin-one', 'roundrobin(smtp://only.example.com)'],
+      ['null', 'null://null'],
+    ];
+
+    for (const [name, dsn] of dsns) {
+      const app = appWith(`mailer-dsn-${name}`, {
+        '.env': `MAILER_DSN=${dsn}\n`,
+      });
+
+      const text = await runModule('symfony-mailer-smtp-fallback.js', app);
+
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('role hierarchy', () => {
+  test('a cycle between roles and a role nobody references', async () => {
+    const app = appWith('role-hierarchy', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER]
+        ROLE_USER: [ROLE_ADMIN]
+        ROLE_SUPER_ADMIN: [ROLE_ADMIN, ROLE_ALLOWED_TO_SWITCH]
+        ROLE_ORPHAN: [ROLE_USER]
+    access_control:
+        - { path: ^/admin, roles: ROLE_ADMIN }
+`,
+      'src/Controller/AdminController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+class AdminController
+{
+    #[IsGranted('ROLE_ADMIN')]
+    public function index(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-role-hierarchy.js', app);
+
+    expect(text).toContain('ROLE_ADMIN');
+  });
+});
+
+describe('tagged iterators', () => {
+  test('a locator used without has(), and tags written as strings and as maps', async () => {
+    const app = appWith('tagged-iterator', {
+      'config/services.yaml': `services:
+    App\\Handler\\HandlerCollection:
+        arguments:
+            - tagged_iterator: app.handler
+
+    App\\Handler\\EmailHandler:
+        tags:
+            - 'app.handler'
+            - { name: app.notifier, priority: 10 }
+            - { priority: 5 }
+`,
+      'src/Handler/HandlerCollection.php': `<?php
+
+namespace App\\Handler;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireLocator;
+use Symfony\\Component\\DependencyInjection\\ServiceLocator;
+
+class HandlerCollection
+{
+    public function __construct(
+        #[AutowireLocator('app.handler')] private ServiceLocator $handlers,
+    ) {
+    }
+
+    public function get(string $name): object
+    {
+        return $this->handlers->get($name);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-tagged-iterator.js', app);
+
+    expect(text).toContain('app.handler');
+  });
+});
+
+describe('kernel in tests', () => {
+  test('a test that keeps the client between tests and one that resets it', async () => {
+    const app = appWith('test-http-kernel', {
+      'tests/Controller/LeakyTest.php': `<?php
+
+namespace App\\Tests\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class LeakyTest extends WebTestCase
+{
+    private static $client;
+
+    protected function setUp(): void
+    {
+        $this->client = static::createClient();
+    }
+
+    public function testHome(): void
+    {
+        $this->client->request('GET', '/');
+        self::assertResponseIsSuccessful();
+    }
+}
+`,
+      'tests/Controller/TidyTest.php': `<?php
+
+namespace App\\Tests\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class TidyTest extends WebTestCase
+{
+    private static $client;
+
+    protected function setUp(): void
+    {
+        $this->client = static::createClient();
+    }
+
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+        $this->client = null;
+    }
+
+    public function testHome(): void
+    {
+        $this->client->request('GET', '/');
+        self::assertResponseIsSuccessful();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-test-http-kernel.js', app);
+
+    expect(text).toContain('LeakyTest');
+  });
+});
+
+describe('validator auto mapping', () => {
+  test('auto-mapped namespaces, explicit constraints and the compromised password check', async () => {
+    const entities = Object.fromEntries(
+      Array.from({ length: 25 }, (_, i) => [
+        `src/Entity/Mapped${i}.php`,
+        `<?php\n\nnamespace App\\Entity;\n\nuse Doctrine\\ORM\\Mapping as ORM;\n\n#[ORM\\Entity]\nclass Mapped${i}\n{\n    #[ORM\\Column(length: 255)]\n    private string $name = '';\n}\n`,
+      ]),
+    );
+    const explicit = Object.fromEntries(
+      Array.from({ length: 25 }, (_, i) => [
+        `src/Entity/Explicit${i}.php`,
+        `<?php\n\nnamespace App\\Entity;\n\nuse Symfony\\Component\\Validator\\Constraints as Assert;\n\nclass Explicit${i}\n{\n    #[Assert\\NotBlank]\n    private string $name = '';\n}\n`,
+      ]),
+    );
+    const app = appWith('validator-auto-mapping', {
+      'config/packages/validator.yaml': `framework:
+    validation:
+        auto_mapping:
+            'App\\Entity\\': []
+        not_compromised_password:
+            enabled: true
+`,
+      ...entities,
+      ...explicit,
+    });
+
+    const text = await runModule('symfony-validator-auto-mapping.js', app);
+
+    expect(text).toContain('auto');
+  });
+});
+
+describe('var dumper stubs', () => {
+  test('a caster that returns without a stub and one that exposes private state', async () => {
+    const app = appWith('var-dumper-stubs', {
+      'src/Caster/PayloadCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class PayloadCaster
+{
+    public static function cast($payload, array $a, Stub $stub, bool $isNested): array
+    {
+        $a['data'] = $payload->data;
+
+        return $a;
+    }
+}
+`,
+      'src/Caster/StubbedCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class StubbedCaster
+{
+    public static function cast($value, array $a, Stub $stub, bool $isNested): array
+    {
+        $stub->class = 'Acme';
+
+        return $a;
+    }
+}
+`,
+      'config/packages/dev/debug.yaml': `debug:
+    dump_destination: 'tcp://%env(VAR_DUMPER_SERVER)%'
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('Caster');
+  });
+});
