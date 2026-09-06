@@ -36769,3 +36769,428 @@ class OutageNotification extends Notification
     expect(text).toContain('urgent');
   });
 });
+
+describe('batch 118: object mappers, resolvers, outbox, policies and serializers', () => {
+  test('a mapped object with a target of its own', async () => {
+    const app = appWith('symfony-object-mapper', {
+      'src/Dto/InvoiceDto.php': `<?php
+
+namespace App\\Dto;
+
+use App\\Entity\\Invoice;
+use Symfony\\Component\\ObjectMapper\\Attribute\\Map;
+
+#[Map(target: Invoice::class)]
+class InvoiceDto
+{
+    #[Map(target: 'number')]
+    public string $reference = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-object-mapper.js', app);
+
+    expect(text).toContain('ap');
+  });
+
+  test('an options resolver normalising without a type', async () => {
+    const app = appWith('symfony-options-resolver', {
+      'src/Form/ReportType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\OptionsResolver\\Options;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class ReportType extends AbstractType
+{
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults(['period' => 'month']);
+        $resolver->setNormalizer('period', static fn (Options $options, string $value): string => strtolower($value));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-options-resolver.js', app);
+
+    expect(text).toContain('ormalizer');
+  });
+
+  test('an outbox subscriber dispatching outside a transaction', async () => {
+    const app = appWith('symfony-outbox-pattern', {
+      'src/EventSubscriber/OutboxSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Attribute\\AsDoctrineListener;
+use Doctrine\\ORM\\Event\\PostFlushEventArgs;
+use Symfony\\Component\\Messenger\\MessageBusInterface;
+
+#[AsDoctrineListener(event: 'postFlush')]
+class OutboxSubscriber
+{
+    public function __construct(private MessageBusInterface $bus)
+    {
+    }
+
+    public function postFlush(PostFlushEventArgs $args): void
+    {
+        foreach ($this->pending as $message) {
+            $this->bus->dispatch($message);
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-outbox-pattern.js', app);
+
+    expect(text).toContain('utbox');
+  });
+
+  test('a permissions policy header set for the site', async () => {
+    const app = appWith('symfony-permissions-policy', {
+      'config/packages/nelmio_security.yaml': `nelmio_security:
+    permissions_policy:
+        camera: []
+        microphone: []
+        geolocation: ['self']
+        payment: ['self']
+`,
+      'src/EventSubscriber/SecurityHeadersSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\ResponseEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class SecurityHeadersSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::RESPONSE => 'onResponse'];
+    }
+
+    public function onResponse(ResponseEvent $event): void
+    {
+        $event->getResponse()->headers->set('Permissions-Policy', 'geolocation=self, camera=()');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-permissions-policy.js', app);
+
+    expect(text).toContain('ermissions');
+  });
+
+  test('the property accessor used from a service', async () => {
+    const app = appWith('symfony-property-access', {
+      'src/Service/Accessor.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\PropertyAccess\\PropertyAccess;
+
+class Accessor
+{
+    public function read(object $entity, string $path): mixed
+    {
+        return PropertyAccess::createPropertyAccessor()->getValue($entity, $path);
+    }
+}
+`,
+      'src/Service/notes.php': "<?php\n\n// The PropertyAccess component is described here.\n",
+    });
+
+    const text = await runModule('symfony-property-access.js', app);
+
+    expect(text).toContain('roperty');
+  });
+
+  test('a role hierarchy with a role nothing references', async () => {
+    const app = appWith('symfony-role-hierarchy', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER]
+        ROLE_SUPER_ADMIN: [ROLE_ADMIN, ROLE_ALLOWED_TO_SWITCH]
+        ROLE_FORGOTTEN: [ROLE_USER]
+
+    access_control:
+        - { path: ^/admin, roles: ROLE_ADMIN }
+`,
+      'src/Controller/AdminController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+class AdminController
+{
+    #[IsGranted('ROLE_SUPER_ADMIN')]
+    public function index(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-role-hierarchy.js', app);
+
+    expect(text).toContain('ROLE_');
+  });
+
+  test('two routes that answer the same path', async () => {
+    const app = appWith('symfony-routing-conflicts', {
+      'config/routes.yaml': `invoice_show:
+    path: /invoices/{id}
+    controller: App\\Controller\\InvoiceController::show
+    methods: [GET]
+`,
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class InvoiceController
+{
+    #[Route('/invoices/{id}', name: 'invoice_show', methods: ['GET'])]
+    public function show(int $id): Response
+    {
+        return new Response('');
+    }
+
+    #[Route('/invoices/{reference}', name: 'invoice_show', methods: ['GET'])]
+    public function showAlias(string $reference): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-routing-conflicts.js', app);
+
+    expect(text).toContain('duplicate route name');
+  });
+
+  test('a secrets vault with keys that were never rotated', async () => {
+    const app = appWith('symfony-secrets-rotation', {
+      'config/secrets/prod/prod.list.php': `<?php
+
+return ['APP_SECRET' => 'abc', 'DATABASE_URL' => 'def'];
+`,
+      'config/secrets/prod/prod.encrypt.public.php': "<?php\n\nreturn 'public-key';\n",
+      'config/secrets/prod/APP_SECRET.abcdef.php': "<?php\n\nreturn 'encrypted';\n",
+    });
+
+    const text = await runModule('symfony-secrets-rotation.js', app);
+
+    expect(text).toContain('ecret');
+  });
+
+  test('a voter whose attributes come from constants', async () => {
+    const app = appWith('symfony-security-custom-voter-consts', {
+      'src/Security/Voter/ReportVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authentication\\Token\\TokenInterface;
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+// supports() comes from the abstract voter this one extends.
+class ReportVoter extends Voter
+{
+    public const SUPPORTED_ATTRIBUTES = ['REPORT_VIEW', 'REPORT_EXPORT'];
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        return $token->getUser() !== null;
+    }
+}
+`,
+      'src/Security/Voter/InvoiceVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authentication\\Token\\TokenInterface;
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class InvoiceVoter extends Voter
+{
+    public const VIEW = 'INVOICE_VIEW';
+    public const EDIT = 'INVOICE_EDIT';
+
+    private const SUPPORTED_ATTRIBUTES = [self::VIEW, self::EDIT];
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, self::SUPPORTED_ATTRIBUTES, true);
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        return $token->getUser() !== null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-custom-voter.js', app);
+
+    expect(text).toContain('REPORT_VIEW');
+  });
+
+  test('a firewall listener with a priority of its own', async () => {
+    const app = appWith('symfony-security-firewall-listeners', {
+      'src/Security/Firewall/TenantListener.php': `<?php
+
+namespace App\\Security\\Firewall;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\Security\\Http\\Event\\CheckPassportEvent;
+
+#[AsEventListener(event: CheckPassportEvent::class, priority: 512)]
+class TenantListener
+{
+    public function __invoke(CheckPassportEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-firewall-listeners.js', app);
+
+    expect(text).toContain('istener');
+  });
+
+  test('a listener that runs after authentication', async () => {
+    const app = appWith('symfony-security-post-auth', {
+      'src/EventSubscriber/LoginSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\Security\\Http\\Event\\LoginSuccessEvent;
+
+class LoginSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [LoginSuccessEvent::class => 'onLoginSuccess'];
+    }
+
+    public function onLoginSuccess(LoginSuccessEvent $event): void
+    {
+        $event->getUser();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-post-auth.js', app);
+
+    expect(text).toContain('ogin');
+  });
+
+  test('a semaphore configured for the application', async () => {
+    const app = appWith('symfony-semaphore', {
+      'config/packages/semaphore.yaml': `framework:
+    semaphore: 'redis://redis:6379'
+`,
+      'src/Service/Limited.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Semaphore\\SemaphoreFactory;
+
+class Limited
+{
+    public function __construct(private SemaphoreFactory $semaphoreFactory)
+    {
+    }
+
+    public function run(): void
+    {
+        $semaphore = $this->semaphoreFactory->createSemaphore('import', 2);
+        if ($semaphore->acquire()) {
+            $semaphore->release();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-semaphore.js', app);
+
+    expect(text).toContain('emaphore');
+  });
+
+  test('a serialization context built in a service', async () => {
+    const app = appWith('symfony-serializer-context', {
+      'src/Service/Exporter.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Serializer\\Normalizer\\AbstractNormalizer;
+use Symfony\\Component\\Serializer\\SerializerInterface;
+
+class Exporter
+{
+    public function __construct(private SerializerInterface $serializer)
+    {
+    }
+
+    public function export(object $invoice): string
+    {
+        return $this->serializer->serialize($invoice, 'json', [
+            AbstractNormalizer::GROUPS => ['invoice:read'],
+            AbstractNormalizer::IGNORED_ATTRIBUTES => ['internalNote'],
+        ]);
+    }
+}
+`,
+      'src/Service/notes.php': "<?php\n\n// The Serializer contexts are described here.\n",
+    });
+
+    const text = await runModule('symfony-serializer-context.js', app);
+
+    expect(text).toContain('roup');
+  });
+
+  test('a class that denormalizes itself', async () => {
+    const app = appWith('symfony-serializer-denormalization', {
+      'src/Dto/InvoiceDto.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Serializer\\Normalizer\\DenormalizableInterface;
+use Symfony\\Component\\Serializer\\Normalizer\\DenormalizerInterface;
+
+class InvoiceDto implements DenormalizableInterface
+{
+    public string $number = '';
+
+    public function denormalize(DenormalizerInterface $denormalizer, array|string|int|float|bool $data, ?string $format = null, array $context = []): void
+    {
+        $this->number = (string) $data['number'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-denormalization.js', app);
+
+    expect(text).toContain('enormaliz');
+  });
+});
