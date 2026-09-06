@@ -20942,3 +20942,174 @@ final class InvoiceFactory extends ModelFactory
     expect(text).toContain('InvoiceFactory');
   });
 });
+
+describe('batch 70: entity listeners, fetch modes, sequences, env diffs and error pages', () => {
+  test('a listener nothing registers, and one with nothing to do', async () => {
+    const app = appWith('doctrine-entity-listeners', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\EntityListeners({"App\\EventListener\\InvoiceListener", "App\\EventListener\\AuditListener"})
+ */
+class Invoice
+{
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $id;
+}
+`,
+      'src/EventListener/InvoiceListener.php': `<?php
+
+namespace App\\EventListener;
+
+use App\\Entity\\Invoice;
+use Doctrine\\ORM\\Event\\PrePersistEventArgs;
+
+class InvoiceListener
+{
+    public function prePersist(Invoice $invoice, PrePersistEventArgs $event): void
+    {
+    }
+}
+`,
+      'src/EventListener/AuditListener.php': `<?php
+
+namespace App\\EventListener;
+
+class AuditListener
+{
+    public function describe(): string
+    {
+        return 'audit';
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-listeners.js', app);
+
+    expect(text).toContain('Listener');
+  });
+
+  test('associations fetched eagerly, ordered, and lazily where it does not help', async () => {
+    const app = appWith('doctrine-fetch-modes', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Order
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\ManyToMany(targetEntity: Tag::class, fetch: 'EAGER')]
+    private Collection $tags;
+
+    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: 'order')]
+    #[ORM\\OrderBy(['position' => 'ASC'])]
+    private Collection $lines;
+
+    #[ORM\\ManyToOne(targetEntity: Customer::class, fetch: 'EXTRA_LAZY')]
+    private ?Customer $customer = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-fetch-modes.js', app);
+
+    expect(text).toContain('EXTRA_LAZY');
+  });
+
+  test('the platform read from the ORM configuration', async () => {
+    const app = appWith('doctrine-sequence-generator', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+    orm:
+        database_platform: Doctrine\\DBAL\\Platforms\\PostgreSQLPlatform
+        auto_mapping: true
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    #[ORM\\SequenceGenerator(sequenceName: 'invoice_id_seq', allocationSize: 1)]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-sequence-generator.js', app);
+
+    expect(text).toContain('sequence');
+  });
+
+  test('a package configured for dev and never for prod', async () => {
+    const app = appWith('env-config-diff', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Symfony\\Bundle\\WebProfilerBundle\\WebProfilerBundle::class => ['dev' => true, 'test' => true],
+    Doctrine\\Bundle\\DoctrineBundle\\DoctrineBundle::class => ['all' => true],
+];
+`,
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+`,
+      'config/packages/dev/monolog.yaml': `monolog:
+    handlers:
+        main:
+            level: debug
+`,
+      'config/packages/test/monolog.yaml': `monolog:
+    handlers:
+        main:
+            level: error
+`,
+    });
+
+    const text = await runModule('env-config-diff.js', app);
+
+    expect(text).toContain('monolog');
+  });
+
+  test('error templates alongside something that is not a file', async () => {
+    const app = appWith('error-pages', {
+      'templates/bundles/TwigBundle/Exception/error404.html.twig': `{% extends 'base.html.twig' %}
+
+{% block body %}<h1>Not found</h1>{% endblock %}
+`,
+      'templates/bundles/TwigBundle/Exception/error500.html.twig': `<h1>Something went wrong</h1>
+`,
+      'templates/bundles/TwigBundle/Exception/partials/keep.txt': 'A directory beside the templates.\n',
+    });
+
+    const text = await runModule('error-pages.js', app);
+
+    expect(text).toContain('404');
+  });
+});
