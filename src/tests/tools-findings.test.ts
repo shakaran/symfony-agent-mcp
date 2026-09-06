@@ -33353,3 +33353,390 @@ class Unaccent extends FunctionNode
     expect(text).toContain('UNACCENT');
   });
 });
+
+describe('batch 111: container tags and the last of the Doctrine analysers', () => {
+  test('a services file with no services section in it', async () => {
+    const app = appWith('container-tags', {
+      'config/services.yaml': `parameters:
+    app.name: acme
+`,
+      'config/services_test.yaml': `services:
+    App\\Service\\FakeMailer:
+        tags: ['app.mailer']
+`,
+      'src/Service/FakeMailer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutoconfigureTag;
+
+#[AutoconfigureTag('app.mailer')]
+class FakeMailer
+{
+}
+`,
+    });
+
+    const text = await runModule('container-tags.js', app, ['app.mailer']);
+
+    expect(text).toContain('app.mailer');
+  });
+
+  test('an entity detached from the manager', async () => {
+    const app = appWith('doctrine-entity-state', {
+      'src/Service/StateChanger.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class StateChanger
+{
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function run(object $invoice): void
+    {
+        $this->entityManager->persist($invoice);
+        $this->entityManager->flush();
+        $this->entityManager->detach($invoice);
+        $this->entityManager->refresh($invoice);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-state.js', app);
+
+    expect(text).toContain('detach');
+  });
+
+  test('an entity with a great many versioned fields', async () => {
+    const app = appWith('doctrine-gedmo-blameable', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[Gedmo\\Loggable]
+#[ORM\\Entity]
+class Article
+{
+    #[Gedmo\\Blameable(on: 'create')]
+    #[ORM\\Column(nullable: true)]
+    private ?string $createdBy = null;
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field0 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field1 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field2 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field3 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field4 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field5 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field6 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field7 = '';
+
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field8 = '';
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field9 = '';
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field10 = '';
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field11 = '';
+    #[Gedmo\\Versioned]
+    #[ORM\\Column]
+    private string $field12 = '';
+
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-blameable.js', app);
+
+    expect(text).toContain('Versioned');
+  });
+
+  test('a tree entity using the extensions trait', async () => {
+    const app = appWith('doctrine-gedmo-tree', {
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+use Gedmo\\Tree\\Traits\\NestedSetEntity;
+
+#[Gedmo\\Tree(type: 'nested')]
+#[ORM\\Entity]
+class Category
+{
+    use NestedSetEntity;
+
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[Gedmo\\TreeParent]
+    #[ORM\\ManyToOne(targetEntity: self::class)]
+    private ?self $parent = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-tree.js', app);
+
+    expect(text).toContain('ree');
+  });
+
+  test('an entity with neither indexes nor anything to report', async () => {
+    const app = appWith('doctrine-indexes-plain', {
+      'src/Entity/Setting.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Setting
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column]
+    private string $name = '';
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Index(name: 'idx_invoice_status', columns: ['status'])]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column]
+    private string $status = '';
+
+    #[ORM\\ManyToOne(targetEntity: Setting::class)]
+    private ?Setting $setting = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-indexes.js', app);
+
+    expect(text).toContain('idx_invoice_status');
+  });
+
+  test('a lifecycle callback in a file with no class name', async () => {
+    const app = appWith('doctrine-lifecycle-noclass', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\HasLifecycleCallbacks]
+class Invoice
+{
+    #[ORM\\PrePersist]
+    public function onPrePersist(): void
+    {
+    }
+
+    #[ORM\\PostLoad]
+    public function onPostLoad(): void
+    {
+    }
+}
+`,
+      'src/Entity/notes.php': "<?php\n\n// HasLifecycleCallbacks and PrePersist are described here.\n",
+    });
+
+    const text = await runModule('doctrine-lifecycle.js', app);
+
+    expect(text).toContain('PrePersist');
+  });
+
+  test('two connections, one of them with no mapping of its own', async () => {
+    const app = appWith('doctrine-multi-connection', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                url: '%env(resolve:DATABASE_URL)%'
+            reporting:
+                url: '%env(resolve:REPORTING_DATABASE_URL)%'
+    orm:
+        default_entity_manager: default
+        entity_managers:
+            default:
+                connection: default
+                mappings:
+                    App:
+                        type: attribute
+                        dir: '%kernel.project_dir%/src/Entity'
+                        prefix: 'App\\Entity'
+            reporting:
+                connection: reporting
+                mappings:
+                    Reporting: ~
+`,
+    });
+
+    const text = await runModule('doctrine-multi-connection.js', app);
+
+    expect(text).toContain('reporting');
+  });
+
+  test('an association that removes orphans and cascades the removal', async () => {
+    const app = appWith('doctrine-orphan-removal', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: 'invoice', orphanRemoval: true, cascade: ['remove'])]
+    private Collection $lines;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-orphan-removal.js', app);
+
+    expect(text).toContain('orphanRemoval');
+  });
+
+  test('a query built and run inside a loop', async () => {
+    const app = appWith('doctrine-query-builder', {
+      'src/Repository/LineRepository.php': `<?php
+
+namespace App\\Repository;
+
+class LineRepository
+{
+    public function forInvoices(array $invoiceIds): array
+    {
+        $out = [];
+        foreach ($invoiceIds as $id) {
+            $query = $this->createQueryBuilder('l')->where('l.invoice = ' . $id)->getQuery();
+            $out[] = $query->getResult();
+        }
+
+        return $out;
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-query-builder.js', app);
+
+    expect(text).toContain('loop');
+  });
+
+  test('a LIKE clause built by concatenation', async () => {
+    const app = appWith('doctrine-raw-sql', {
+      'src/Repository/SearchRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\DBAL\\Connection;
+
+class SearchRepository
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function search(string $term): array
+    {
+        $like = '%' . $term . '%';
+        $sql = "SELECT * FROM invoice WHERE number LIKE '{$like}'";
+
+        return $this->connection->executeQuery($sql)->fetchAllAssociative();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-raw-sql.js', app);
+
+    expect(text).toContain('LIKE');
+  });
+
+  test('a cached entity that is not strict about writes', async () => {
+    const app = appWith('doctrine-second-level-cache', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        second_level_cache:
+            enabled: true
+            regions:
+                invoice_region:
+                    lifetime: 3600
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Cache(usage: 'NONSTRICT_READ_WRITE', region: 'invoice_region')]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-second-level-cache.js', app);
+
+    expect(text).toContain('NONSTRICT_READ_WRITE');
+  });
+});

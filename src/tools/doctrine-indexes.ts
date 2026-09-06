@@ -89,7 +89,9 @@ function parseEntityIndexes(filePath: string, appPath: string): EntityIndexInfo 
   const indexes: EntityIndex[] = [];
 
   // Attribute-based indexes
-  for (const m of content.matchAll(/new\s+(?:ORM\\)?Index\s*\([^)]{0,300}\)/g)) {
+  // The index is written either inside #[ORM\Table(indexes: [new ORM\Index(…)])]
+  // or as its own attribute on the class, #[ORM\Index(…)].
+  for (const m of content.matchAll(/(?:new\s+|#\[)(?:ORM\\)?Index\s*\([^)]{0,300}\)/g)) {
     const block = m[0];
     const nameM = /name\s*:\s*['"]([^'"]+)['"]/.exec(block);
     const colsM = /columns\s*:\s*\[([^\]]+)\]/.exec(block);
