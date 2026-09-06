@@ -26394,3 +26394,301 @@ class Builder
     expect(text).toContain('named argument');
   });
 });
+
+describe('batch 89: named constructors, buffering, reflection, ignores and type juggling', () => {
+  test('a class with more factories than it needs', async () => {
+    const app = appWith('php-named-constructors', {
+      'src/Money/Amount.php': `<?php
+
+namespace App\\Money;
+
+class Amount
+{
+    private function __construct(private int $value)
+    {
+    }
+
+    public static function from0(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function from1(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function from2(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function from3(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function from4(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function from5(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function from6(int $v): self
+    {
+        return new self($v);
+    }
+
+    public static function fromParent(int $v): self
+    {
+        parent::__construct($v);
+
+        return new self($v);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-named-constructors.js', app);
+
+    expect(text).toContain('named constructor');
+  });
+
+  test('a filename stripped of null bytes, and one that is not', async () => {
+    const app = appWith('php-null-byte-injection', {
+      'src/Upload/FileReader.php': `<?php
+
+namespace App\\Upload;
+
+class FileReader
+{
+    public function unsafe(string $name): string
+    {
+        return (string) file_get_contents('/var/uploads/' . $_GET['file']);
+    }
+
+    public function safe(string $name): string
+    {
+        $clean = str_replace("\\0", '', $_GET['file']);
+
+        return (string) file_get_contents('/var/uploads/' . $clean);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-null-byte-injection.js', app);
+
+    expect(text).toContain('null byte');
+  });
+
+  test('output buffering opened and never closed', async () => {
+    const app = appWith('php-output-buffering', {
+      'src/Render/Renderer.php': `<?php
+
+namespace App\\Render;
+
+class Renderer
+{
+    public function render(string $template, array $vars): string
+    {
+        ob_start();
+        extract($vars);
+        include $template;
+
+        return (string) ob_get_clean();
+    }
+
+    public function capture(): void
+    {
+        ob_start();
+        echo 'never flushed';
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-output-buffering.js', app);
+
+    expect(text).toContain('ob_');
+  });
+
+  test('reflection built inside a loop', async () => {
+    const app = appWith('php-reflection-api', {
+      'src/Service/Hydrator.php': `<?php
+
+namespace App\\Service;
+
+class Hydrator
+{
+    public function hydrate(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            $reflection = new \\ReflectionClass($row['class']);
+            $property = $reflection->getProperty('id');
+            $property->setAccessible(true);
+            $out[] = $reflection->newInstanceWithoutConstructor();
+        }
+
+        return $out;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-reflection-api.js', app);
+
+    expect(text).toContain('Reflection');
+  });
+
+  test('static analysis silenced without saying what for', async () => {
+    const app = appWith('php-static-analysis-ignore', {
+      'src/Service/Legacy.php': `<?php
+
+namespace App\\Service;
+
+class Legacy
+{
+    public function run(array $rows): int
+    {
+        /** @phpstan-ignore-next-line */
+        $total = $rows['total'];
+
+        /** @psalm-suppress MixedAssignment */
+        $count = $rows['count'];
+
+        // @phpstan-ignore-next-line
+        return $total + $count;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-static-analysis-ignore.js', app);
+
+    expect(text).toContain('ignore');
+  });
+
+  test('a template name taken from the request', async () => {
+    const app = appWith('php-template-injection-request', {
+      'src/Controller/PageController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class PageController extends AbstractController
+{
+    public function show(Request $request): Response
+    {
+        return $this->render($request->query->get('template') . '.html.twig', []);
+    }
+}
+`,
+      'templates/page/dynamic.html.twig': `{{ include(app.request.get('partial')) }}
+`,
+    });
+
+    const text = await runModule('php-template-injection.js', app);
+
+    expect(text).toContain('template');
+  });
+
+  test('secrets compared with ==', async () => {
+    const app = appWith('php-timing-attack', {
+      'src/Security/TokenChecker.php': `<?php
+
+namespace App\\Security;
+
+class TokenChecker
+{
+    public function check(string $given, string $expected): bool
+    {
+        return $given === $expected;
+    }
+
+    public function checkHash(string $given, string $expected): bool
+    {
+        return md5($given) == md5($expected);
+    }
+
+    public function checkSafely(string $given, string $expected): bool
+    {
+        return hash_equals($expected, $given);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-timing-attack.js', app);
+
+    expect(text).toContain('timing');
+  });
+
+  test('values compared loosely, in switch and in place', async () => {
+    const app = appWith('php-type-juggling', {
+      'src/Service/Comparisons.php': `<?php
+
+namespace App\\Service;
+
+class Comparisons
+{
+    public function loose(array $row): bool
+    {
+        if ($row['id'] == '0') {
+            return true;
+        }
+
+        switch ($row['status']) {
+            case 0:
+                return false;
+        }
+
+        return in_array($row['id'], [1, 2, 3]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-type-juggling.js', app);
+
+    expect(text).toContain('==');
+  });
+
+  test('a nullable value used without narrowing it', async () => {
+    const app = appWith('php-type-narrowing', {
+      'src/Service/Narrowing.php': `<?php
+
+namespace App\\Service;
+
+class Narrowing
+{
+    public function describe(?object $invoice): string
+    {
+        if ($invoice === null) {
+            return '';
+        }
+
+        return $invoice->getNumber();
+    }
+
+    public function unchecked(?object $invoice): string
+    {
+        return $invoice->getNumber();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-type-narrowing.js', app);
+
+    expect(text).toContain('Narrowing');
+  });
+});
