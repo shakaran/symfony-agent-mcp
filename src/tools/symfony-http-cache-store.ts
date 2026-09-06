@@ -76,7 +76,10 @@ function analysePhpFileForHttpCache(content: string, relFile: string): HttpCache
     if (/new\s+HttpCache\s*\(/.test(line)) {
       // Look ahead for Store class
       const block = lines.slice(i, Math.min(i + 5, lines.length)).join('\n');
-      const storeMatch = /new\s+([\w\\]+Store)\s*\(([^)]{0,200})/.exec(block);
+      // [\w\\]+Store demanded a character before "Store", so the plain
+      // new Store(...) of the documentation never matched and its arguments
+      // were never looked at.
+      const storeMatch = /new\s+([\w\\]*Store)\s*\(([^)]{0,200})/.exec(block);
       const storeClass = storeMatch ? storeMatch[1] : 'Store';
       const storeArgs = storeMatch ? storeMatch[2] : '';
 

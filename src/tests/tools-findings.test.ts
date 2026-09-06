@@ -1322,3 +1322,382 @@ final class Version20260303000000 extends AbstractMigration
     expect(text).toContain('No destructive operations detected');
   });
 });
+
+describe('new relic', () => {
+  test('an agent turned off in production, recording raw sql and sending a password', async () => {
+    const app = appWith('newrelic', {
+      'docker/php/newrelic.ini': `extension = newrelic.so
+
+newrelic.license = ""
+newrelic.appname = "Acme (production)"
+newrelic.enabled = false
+newrelic.transaction_tracer.record_sql = raw
+newrelic.distributed_tracing_enabled = false
+newrelic.loglevel = info
+`,
+      'conf.d/90-newrelic.ini': `newrelic.license = "0123456789abcdef0123456789abcdef01234567"
+newrelic.enabled = true
+newrelic.transaction_tracer.record_sql = obfuscated
+newrelic.distributed_tracing_enabled = true
+`,
+      'conf.d/10-opcache.ini': `opcache.enable = 1
+`,
+      'src/Service/Telemetry.php': `<?php
+
+namespace App\\Service;
+
+class Telemetry
+{
+    public function record(string $user, string $password): void
+    {
+        newrelic_start_transaction('acme');
+        newrelic_name_transaction('checkout');
+        newrelic_add_custom_parameter('password', $password);
+        newrelic_add_custom_parameter('order_id', 42);
+        newrelic_record_custom_event('Checkout', ['user' => $user]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('newrelic-php-agent.js', app);
+
+    expect(text).toContain('record_sql');
+    expect(text).toContain('newrelic.enabled');
+  });
+});
+
+describe('csv parsing', () => {
+  test('fgetcsv with no comment, str_getcsv on a line read by hand, and a reader with no header offset', async () => {
+    const app = appWith('csv-parsing', {
+      'src/Import/ProductImporter.php': `<?php
+
+namespace App\\Import;
+
+class ProductImporter
+{
+    public function import(string $file): array
+    {
+        $rows = [];
+        $handle = fopen($file, 'r');
+        while (($row = fgetcsv($handle)) !== false) {
+            $rows[] = $row;
+        }
+        fclose($handle);
+
+        return $rows;
+    }
+
+    public function semicolons(string $file): array
+    {
+        $rows = [];
+        $handle = fopen($file, 'r');
+        while (($row = fgetcsv($handle, 1000, ';')) !== false) {
+            $rows[] = $row;
+        }
+        fclose($handle);
+
+        return $rows;
+    }
+
+    public function byHand(string $file): array
+    {
+        $rows = [];
+        $handle = fopen($file, 'r');
+        while (($line = fgets($handle)) !== false) {
+            $rows[] = explode(',', $line);
+        }
+        fclose($handle);
+
+        return $rows;
+    }
+
+    public function wholeFile(string $file): array
+    {
+        $contents = file_get_contents($file);
+        $rows = [];
+        foreach (explode("\\n", $contents) as $row) {
+            $rows[] = str_getcsv($row);
+        }
+
+        return $rows;
+    }
+
+    public function splitRow(string $row): array
+    {
+        return explode(',', $row);
+    }
+}
+`,
+      'src/Import/BareLeagueImporter.php': `<?php
+
+namespace App\\Import;
+
+use League\\Csv\\Reader;
+
+class BareLeagueImporter
+{
+    public function bare(string $file): iterable
+    {
+        $reader = Reader::createFromPath($file, 'r');
+
+        return $reader->getRecords();
+    }
+}
+`,
+      'src/Import/LeagueImporter.php': `<?php
+
+namespace App\\Import;
+
+use League\\Csv\\Reader;
+
+class LeagueImporter
+{
+    public function complete(string $file): iterable
+    {
+        $reader = Reader::createFromPath($file, 'r');
+        $reader->setHeaderOffset(0);
+        $reader->setCharset('UTF-8');
+
+        return $reader->getRecords();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-csv-parsing.js', app);
+
+    expect(text).toContain('ProductImporter');
+  });
+});
+
+describe('phpbench', () => {
+  test('phpbench installed with no configuration, and a configuration with runners', async () => {
+    const bare = appWith('phpbench-bare', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpbench/phpbench': '^1.2' },
+      }, null, 2),
+      'src/Benchmark/RoutingBench.php': `<?php
+
+namespace App\\Benchmark;
+
+class RoutingBench
+{
+    public function benchMatch(): void
+    {
+    }
+}
+`,
+    });
+    const configured = appWith('phpbench-configured', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpbench/phpbench': '^1.2' },
+      }, null, 2),
+      'phpbench.xml': `<?xml version="1.0"?>
+<phpbench bootstrap="vendor/autoload.php">
+    <executor name="microtime" iterations="5" revolutions="100"/>
+    <executor name="xdebug"/>
+    <path>benchmarks</path>
+</phpbench>
+`,
+      'benchmarks/RoutingBench.php': `<?php
+
+namespace App\\Benchmark;
+
+class RoutingBench
+{
+    public function benchMatch(): void
+    {
+    }
+}
+`,
+    });
+
+    const one = await runModule('phpbench-config.js', bare);
+    const two = await runModule('phpbench-config.js', configured);
+
+    expect(one).toContain('PHPBench');
+    expect(two).toContain('microtime');
+  });
+});
+
+describe('http cache store', () => {
+  test('a default store in the temp directory, and one with a shared path', async () => {
+    const app = appWith('http-cache-store', {
+      'src/CacheKernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Component\\HttpKernel\\HttpCache\\HttpCache;
+use Symfony\\Component\\HttpKernel\\HttpCache\\Store;
+
+class CacheKernel extends HttpCache
+{
+    protected function createStore(): Store
+    {
+        return new Store(sys_get_temp_dir() . '/http_cache');
+    }
+}
+`,
+      'src/SharedCacheKernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Component\\HttpKernel\\HttpCache\\HttpCache;
+use App\\Cache\\RedisStore;
+
+class SharedCacheKernel extends HttpCache
+{
+    protected function createStore(): RedisStore
+    {
+        return new RedisStore('redis://cache:6379/http');
+    }
+}
+`,
+      'src/CacheFactory.php': `<?php
+
+namespace App;
+
+use Symfony\\Component\\HttpKernel\\HttpCache\\HttpCache;
+use Symfony\\Component\\HttpKernel\\HttpCache\\Store;
+
+class CacheFactory
+{
+    public function build($kernel): HttpCache
+    {
+        return new HttpCache(
+            $kernel,
+            new Store(sys_get_temp_dir() . '/http_cache'),
+        );
+    }
+
+    public function buildShared($kernel): HttpCache
+    {
+        return new HttpCache(
+            $kernel,
+            new \\App\\Cache\\RedisStore('redis://cache:6379/http'),
+        );
+    }
+}
+`,
+      'config/packages/framework.yaml': `framework:
+    http_cache:
+        enabled: true
+        store_options:
+            private_headers: ['Authorization', 'Cookie']
+            allow_reload: true
+`,
+    });
+
+    const text = await runModule('symfony-http-cache-store.js', app);
+
+    expect(text).toContain('Store');
+  });
+});
+
+describe('twig templates', () => {
+  test('a template that extends, includes, embeds, uses and defines macros', async () => {
+    const files: Record<string, string> = {
+      'templates/base.html.twig': `<!doctype html>
+<html>
+    <body>
+        {% block body %}{% endblock %}
+    </body>
+</html>
+`,
+      'templates/blog/show.html.twig': `{% extends 'base.html.twig' %}
+{% use 'blocks/sidebar.html.twig' %}
+{% import 'macros/forms.html.twig' as forms %}
+
+{% block body %}
+    {% include 'blog/_meta.html.twig' %}
+    {% embed 'blocks/card.html.twig' %}
+        {% block title %}{{ post.title }}{% endblock %}
+    {% endembed %}
+    {{ forms.field('title') }}
+{% endblock %}
+`,
+      'templates/macros/forms.html.twig': `{% macro field(name) %}
+    <input name="{{ name }}">
+{% endmacro %}
+
+{% macro label(name) %}
+    <label>{{ name }}</label>
+{% endmacro %}
+`,
+      'templates/blog/_meta.html.twig': `<p>{{ post.publishedAt|date('Y-m-d') }}</p>
+`,
+      'templates/blocks/card.html.twig': `<div class="card">{% block title %}{% endblock %}</div>
+`,
+      'templates/blocks/sidebar.html.twig': `{% block sidebar %}{% endblock %}
+`,
+    };
+    // Enough standalone templates that the list has to be cut short.
+    for (let i = 0; i < 14; i++) {
+      files[`templates/standalone/page-${i}.html.twig`] = `<p>page ${i}</p>\n`;
+    }
+    const app = appWith('twig-templates', files);
+
+    const text = await runModule('twig.js', app, ['blog/show.html.twig', 'macros/forms.html.twig']);
+
+    expect(text).toContain('Extends');
+    expect(text).toContain('Macros');
+  });
+});
+
+describe('aws secrets manager', () => {
+  test('a secret read with no version stage and decoded without a guard', async () => {
+    const app = appWith('aws-secrets', {
+      'src/Secrets/SecretsReader.php': `<?php
+
+namespace App\\Secrets;
+
+use Aws\\SecretsManager\\SecretsManagerClient;
+
+class SecretsReader
+{
+    public function __construct(private SecretsManagerClient $client)
+    {
+    }
+
+    public function read(string $id): array
+    {
+        $result = $this->client->getSecretValue([
+            'SecretId' => $id,
+        ]);
+
+        $decoded = json_decode($result['SecretString'], true);
+
+        return $decoded;
+    }
+
+    public function readGuarded(string $id): array
+    {
+        try {
+            $result = $this->client->getSecretValue([
+                'SecretId' => $id,
+                'VersionStage' => 'AWSCURRENT',
+            ]);
+
+            return json_decode($result['SecretString'], true);
+        } catch (\\Throwable $e) {
+            return [];
+        }
+    }
+}
+`,
+      'config/packages/aws.yaml': `aws:
+    version: latest
+    region: eu-west-1
+    SecretsManager:
+        version: '2017-10-17'
+`,
+    });
+
+    const text = await runModule('aws-secrets-manager.js', app);
+
+    expect(text).toContain('SecretsReader');
+  });
+});
