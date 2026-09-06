@@ -27839,3 +27839,316 @@ class User
     expect(text).toContain('assword');
   });
 });
+
+describe('batch 94: responses, access decisions, providers, encoders, aliases and Twig', () => {
+  test('a JSON response returned without a status code', async () => {
+    const app = appWith('symfony-response-types', {
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpFoundation\\StreamedResponse;
+
+class ApiController
+{
+    public function create(): JsonResponse
+    {
+        return new JsonResponse(['created' => true]);
+    }
+
+    public function stream(): StreamedResponse
+    {
+        return new StreamedResponse(static function (): void {
+            echo 'rows';
+        });
+    }
+
+    public function plain(): Response
+    {
+        return new Response('', Response::HTTP_NO_CONTENT);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-response-types.js', app);
+
+    expect(text).toContain('esponse');
+  });
+
+  test('a unanimous access decision over several voters', async () => {
+    const app = appWith('symfony-security-access-decision', {
+      'config/packages/security.yaml': `security:
+    access_decision_manager:
+        strategy: unanimous
+        allow_if_all_abstain: false
+`,
+      'src/Security/Voter/InvoiceVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class InvoiceVoter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/CustomerVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class CustomerVoter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/TenantVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class TenantVoter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-access-decision.js', app);
+
+    expect(text).toContain('unanimous');
+  });
+
+  test('a rehash that is checked and never applied', async () => {
+    const app = appWith('symfony-security-password-upgrade', {
+      'src/Security/UserChecker.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\PasswordHasher\\Hasher\\UserPasswordHasherInterface;
+
+class UserChecker
+{
+    public function __construct(private UserPasswordHasherInterface $hasher)
+    {
+    }
+
+    public function check(object $user, string $plain): bool
+    {
+        if ($this->hasher->needsRehash($user)) {
+            return false;
+        }
+
+        return $this->hasher->isPasswordValid($user, $plain);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-password-upgrade.js', app);
+
+    expect(text).toContain('ehash');
+  });
+
+  test('a chain of user providers, one of an unknown kind', async () => {
+    const app = appWith('symfony-security-user-provider', {
+      'config/packages/security.yaml': `security:
+    providers:
+        app_users:
+            entity:
+                class: App\\Entity\\User
+                property: email
+        in_memory_users:
+            memory:
+                users:
+                    admin: { password: '%env(ADMIN_PASSWORD)%', roles: ['ROLE_ADMIN'] }
+        custom_users:
+            id: App\\Security\\CustomUserProvider
+        odd_users: ~
+        all_users:
+            chain:
+                providers: [app_users, in_memory_users]
+`,
+    });
+
+    const text = await runModule('symfony-security-user-provider.js', app);
+
+    expect(text).toContain('provider');
+  });
+
+  test('an encoder that claims every format', async () => {
+    const app = appWith('symfony-serializer-encoders', {
+      'src/Serializer/CsvEncoder.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Encoder\\EncoderInterface;
+
+class CsvEncoder implements EncoderInterface
+{
+    public function encode(mixed $data, string $format, array $context = []): string
+    {
+        return '';
+    }
+
+    public function supportsEncoding(string $format): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-encoders.js', app);
+
+    expect(text).toContain('ncod');
+  });
+
+  test('a service alias marked deprecated', async () => {
+    const app = appWith('symfony-service-aliases', {
+      'config/services.yaml': `services:
+    App\\Service\\Importer: ~
+
+    app.importer:
+        alias: App\\Service\\Importer
+        public: true
+        deprecated:
+            package: acme/app
+            version: '2.0'
+            message: 'Use App\\Service\\Importer directly.'
+`,
+    });
+
+    const text = await runModule('symfony-service-aliases.js', app);
+
+    expect(text).toContain('alias');
+  });
+
+  test('a Sonata admin class registered for an entity', async () => {
+    const app = appWith('symfony-sonata-admin', {
+      'composer.json': JSON.stringify({ require: { 'sonata-project/admin-bundle': '^4.0' } }, null, 4) + '\n',
+      'src/Admin/InvoiceAdmin.php': `<?php
+
+namespace App\\Admin;
+
+use Sonata\\AdminBundle\\Admin\\AbstractAdmin;
+use Sonata\\AdminBundle\\Datagrid\\ListMapper;
+use Sonata\\AdminBundle\\Form\\FormMapper;
+
+class InvoiceAdmin extends AbstractAdmin
+{
+    protected function configureFormFields(FormMapper $form): void
+    {
+        $form->add('number');
+    }
+
+    protected function configureListFields(ListMapper $list): void
+    {
+        $list->add('number');
+    }
+
+    public function getExportFormats(): array
+    {
+        return ['csv'];
+    }
+
+    protected function getClass(): string
+    {
+        return \\App\\Entity\\Invoice::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-sonata-admin.js', app);
+
+    expect(text).toContain('Admin');
+  });
+
+  test('a tagged locator read without asking whether the service is there', async () => {
+    const app = appWith('symfony-tagged-iterator', {
+      'src/Export/ExporterRegistry.php': `<?php
+
+namespace App\\Export;
+
+use Psr\\Container\\ContainerInterface;
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireLocator;
+
+class ExporterRegistry
+{
+    public function __construct(
+        #[AutowireLocator('app.exporter', defaultIndexMethod: 'getFormat')]
+        private ContainerInterface $exporters,
+    ) {
+    }
+
+    public function get(string $format): object
+    {
+        return $this->exporters->get($format);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-tagged-iterator.js', app);
+
+    expect(text).toContain('ocator');
+  });
+
+  test('a template that counts inside a loop and includes a dozen partials', async () => {
+    const app = appWith('symfony-twig-profiling', {
+      'templates/invoice/list.html.twig': `{% for invoice in invoices %}
+    <span>{{ invoice.lines|length }}</span>
+    <span>{{ invoice.payments|count }}</span>
+{% endfor %}
+
+{{ include('partials/row0.html.twig') }}
+{{ include('partials/row1.html.twig') }}
+{{ include('partials/row2.html.twig') }}
+{{ include('partials/row3.html.twig') }}
+{{ include('partials/row4.html.twig') }}
+{{ include('partials/row5.html.twig') }}
+{{ include('partials/row6.html.twig') }}
+{{ include('partials/row7.html.twig') }}
+{{ include('partials/row8.html.twig') }}
+{{ include('partials/row9.html.twig') }}
+{{ include('partials/row10.html.twig') }}
+{{ include('partials/row11.html.twig') }}
+`,
+    });
+
+    const text = await runModule('symfony-twig-profiling.js', app);
+
+    expect(text).toContain('include');
+  });
+});
