@@ -18537,3 +18537,754 @@ parameters:
     expect(text).toContain('aseline');
   });
 });
+
+describe('batch 62: PHPUnit extensions and tests, PWA, limiters, repositories, voters', () => {
+  test('a PHPUnit extension registered in the configuration', async () => {
+    const app = appWith('phpunit-extensions', {
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <extensions>
+        <bootstrap class="App\\Tests\\Extension\\ResetDatabaseExtension"/>
+    </extensions>
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+      'tests/Extension/ResetDatabaseExtension.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Event\\Test\\Prepared;
+use PHPUnit\\Event\\Test\\PreparedSubscriber as TestPreparedSubscriber;
+
+final class ResetDatabaseExtension implements TestPreparedSubscriber
+{
+    public function notify(Prepared $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-extensions.js', app);
+
+    expect(text).toContain('ResetDatabaseExtension');
+  });
+
+  test('test classes that are slow, flaky and too big', async () => {
+    const app = appWith('phpunit-performance', {
+      'tests/Unit/ClockTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ClockTest extends TestCase
+{
+    public static function setUpBeforeClass(): void
+    {
+        self::$connection->executeQuery('TRUNCATE invoice');
+        self::$connection->executeQuery('TRUNCATE customer');
+        self::$connection->executeQuery('INSERT INTO customer VALUES (1)');
+        self::$connection->executeQuery('INSERT INTO invoice VALUES (1)');
+    }
+
+    public function testNow(): void
+    {
+        $this->assertSame(time(), (new \\DateTimeImmutable())->getTimestamp());
+    }
+}
+`,
+      'tests/Unit/HugeTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class HugeTest extends TestCase
+{
+    public function testCase0(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase1(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase2(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase3(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase4(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase5(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase6(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase7(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase8(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase9(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase10(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase11(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase12(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase13(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase14(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase15(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase16(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase17(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase18(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase19(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase20(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase21(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase22(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase23(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase24(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase25(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase26(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase27(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase28(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase29(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase30(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase31(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase32(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase33(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase34(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase35(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase36(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase37(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase38(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase39(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase40(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase41(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase42(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase43(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase44(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase45(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase46(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase47(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase48(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase49(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase50(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase51(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase52(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase53(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase54(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/Unit/OneLongTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class OneLongTest extends TestCase
+{
+    public function testEverythingAtOnce(): void
+    {
+        $step0 = 0;
+        $step1 = 1;
+        $step2 = 2;
+        $step3 = 3;
+        $step4 = 4;
+        $step5 = 5;
+        $step6 = 6;
+        $step7 = 7;
+        $step8 = 8;
+        $step9 = 9;
+        $step10 = 10;
+        $step11 = 11;
+        $step12 = 12;
+        $step13 = 13;
+        $step14 = 14;
+        $step15 = 15;
+        $step16 = 16;
+        $step17 = 17;
+        $step18 = 18;
+        $step19 = 19;
+        $step20 = 20;
+        $step21 = 21;
+        $step22 = 22;
+        $step23 = 23;
+        $step24 = 24;
+        $step25 = 25;
+        $step26 = 26;
+        $step27 = 27;
+        $step28 = 28;
+        $step29 = 29;
+        $step30 = 30;
+        $step31 = 31;
+        $step32 = 32;
+        $step33 = 33;
+        $step34 = 34;
+        $step35 = 35;
+        $step36 = 36;
+        $step37 = 37;
+        $step38 = 38;
+        $step39 = 39;
+        $step40 = 40;
+        $step41 = 41;
+        $step42 = 42;
+        $step43 = 43;
+        $step44 = 44;
+        $step45 = 45;
+        $step46 = 46;
+        $step47 = 47;
+        $step48 = 48;
+        $step49 = 49;
+        $step50 = 50;
+        $step51 = 51;
+        $step52 = 52;
+        $step53 = 53;
+        $step54 = 54;
+        $step55 = 55;
+        $step56 = 56;
+        $step57 = 57;
+        $step58 = 58;
+        $step59 = 59;
+        $step60 = 60;
+        $step61 = 61;
+        $step62 = 62;
+        $step63 = 63;
+        $step64 = 64;
+        $step65 = 65;
+        $step66 = 66;
+        $step67 = 67;
+        $step68 = 68;
+        $step69 = 69;
+        $step70 = 70;
+        $step71 = 71;
+        $step72 = 72;
+        $step73 = 73;
+        $step74 = 74;
+        $step75 = 75;
+        $step76 = 76;
+        $step77 = 77;
+        $step78 = 78;
+        $step79 = 79;
+        $step80 = 80;
+        $step81 = 81;
+        $step82 = 82;
+        $step83 = 83;
+        $step84 = 84;
+        $step85 = 85;
+        $step86 = 86;
+        $step87 = 87;
+        $step88 = 88;
+        $step89 = 89;
+        $step90 = 90;
+        $step91 = 91;
+        $step92 = 92;
+        $step93 = 93;
+        $step94 = 94;
+        $step95 = 95;
+        $step96 = 96;
+        $step97 = 97;
+        $step98 = 98;
+        $step99 = 99;
+        $step100 = 100;
+        $step101 = 101;
+        $step102 = 102;
+        $step103 = 103;
+        $step104 = 104;
+        $step105 = 105;
+        $step106 = 106;
+        $step107 = 107;
+        $step108 = 108;
+        $step109 = 109;
+        $step110 = 110;
+        $step111 = 111;
+        $step112 = 112;
+        $step113 = 113;
+        $step114 = 114;
+        $step115 = 115;
+        $step116 = 116;
+        $step117 = 117;
+        $step118 = 118;
+        $step119 = 119;
+        $this->assertTrue(true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-performance.js', app);
+
+    expect(text).toContain('HugeTest');
+  });
+
+  test('tests that share state between themselves', async () => {
+    const app = appWith('phpunit-test-isolation', {
+      'tests/Functional/OrderTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use PHPUnit\\Framework\\TestCase;
+
+class OrderTest extends TestCase
+{
+    private static $client;
+
+    protected function setUp(): void
+    {
+        $_ENV['APP_ENV'] = 'test';
+        self::$client = static::getConnection();
+    }
+
+    public function testFirst(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    /**
+     * @depends testFirst
+     */
+    public function testSecond(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    /**
+     * @depends testSecond
+     */
+    public function testThird(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    /**
+     * @depends testThird
+     */
+    public function testFourth(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    /**
+     * @depends testFourth
+     */
+    public function testFifth(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-isolation.js', app);
+
+    expect(text).toContain('OrderTest');
+  });
+
+  test('a web app manifest that will not install', async () => {
+    const app = appWith('pwa-manifest-config', {
+      'public/manifest.json': JSON.stringify({
+        short_name: 'Acme Invoicing Suite',
+        display: 'browser',
+        start_url: '/',
+        icons: [{ src: '/icons/192.png', sizes: '192x192', type: 'image/png' }],
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('pwa-manifest-config.js', app);
+
+    expect(text).toContain('short_name');
+  });
+
+  test('rate limiters with their own pool and lock', async () => {
+    const app = appWith('rate-limiter-pools', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        login:
+            policy: sliding_window
+            limit: 5
+            interval: '15 minutes'
+            cache_pool: cache.rate_limiter
+            lock_factory: lock.default.factory
+        broken: ~
+`,
+      'src/Controller/LoginController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\RateLimiter\\RateLimiterFactory;
+
+class LoginController
+{
+    public function __construct(private RateLimiterFactory $loginLimiter)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('rate-limiter.js', app);
+
+    expect(text).toContain('login');
+  });
+
+  test('a repository with nothing of its own, and one with a native query', async () => {
+    const app = appWith('repository-analyzer', {
+      'src/Repository/PlainRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+use Doctrine\\Persistence\\ManagerRegistry;
+
+class PlainRepository extends ServiceEntityRepository
+{
+    public function __construct(ManagerRegistry $registry)
+    {
+        parent::__construct($registry, Plain::class);
+    }
+}
+`,
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+use Doctrine\\Persistence\\ManagerRegistry;
+
+class InvoiceRepository extends ServiceEntityRepository
+{
+    public function __construct(ManagerRegistry $registry)
+    {
+        parent::__construct($registry, Invoice::class);
+    }
+
+    public function totalsByMonth(): array
+    {
+        $sql = 'SELECT month, SUM(total) FROM invoice GROUP BY month ORDER BY month';
+
+        return $this->getEntityManager()->getConnection()->createNativeQuery($sql, new ResultSetMapping())->getResult();
+    }
+}
+`,
+    });
+
+    const text = await runModule('repository-analyzer.js', app, ['PlainRepository', 'InvoiceRepository']);
+
+    expect(text).toContain('Repository');
+  });
+
+  test('a voter that names the classes it supports', async () => {
+    const app = appWith('security-voters', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER]
+        ROLE_USER: [ROLE_ADMIN]
+`,
+      'src/Security/Voter/InvoiceVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use App\\Entity\\Invoice;
+use Symfony\\Component\\Security\\Core\\Authentication\\Token\\TokenInterface;
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class InvoiceVoter extends Voter
+{
+    public const VIEW = 'INVOICE_VIEW';
+    public const EDIT = 'INVOICE_EDIT';
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        if (!in_array($attribute, ['INVOICE_VIEW', 'INVOICE_EDIT'], true)) {
+            return false;
+        }
+
+        if (is_a($subject, Invoice::class)) {
+            return true;
+        }
+
+        return $subject instanceof Invoice;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        return $token->getUser() !== null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('security-voters.js', app, ['INVOICE_VIEW']);
+
+    expect(text).toContain('Invoice');
+  });
+
+  test('Segment events named the wrong way, carrying personal data', async () => {
+    const app = appWith('segment-analytics', {
+      'composer.json': JSON.stringify({ require: { 'segmentio/analytics-php': '^3.0' } }, null, 4) + '\n',
+      'src/Analytics/Tracker.php': `<?php
+
+namespace App\\Analytics;
+
+use Segment\\Segment;
+
+class Tracker
+{
+    public function completed(string $userId, string $email): void
+    {
+        Segment::track([
+            'userId' => $userId,
+            'event' => 'order_completed',
+            'properties' => [
+                'email' => $email,
+                'total' => 100,
+            ],
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('segment-analytics.js', app);
+
+    expect(text).toContain('order_completed');
+  });
+
+  test('a serialized class with ignored and ungrouped properties', async () => {
+    const app = appWith('serializer-groups', {
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Serializer\\Annotation\\Groups;
+use Symfony\\Component\\Serializer\\Annotation\\Ignore;
+use Symfony\\Component\\Serializer\\Annotation\\SerializedName;
+
+class Customer
+{
+    #[Groups(['customer:read'])]
+    private int $id = 0;
+
+    #[Groups(['customer:read', 'customer:write'])]
+    #[SerializedName('display_name')]
+    private string $name = '';
+
+    #[Ignore]
+    private string $passwordHash = '';
+
+    private string $internalNote = '';
+}
+`,
+    });
+
+    const text = await runModule('serializer.js', app, ['App\\Entity\\Customer', 'Customer']);
+
+    expect(text).toContain('Customer');
+  });
+});

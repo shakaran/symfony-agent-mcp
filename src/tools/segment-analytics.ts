@@ -61,9 +61,13 @@ function buildSegmentAnalyticsInfos(appPath: string): SegmentAnalyticsInfo[] {
   for (const filePath of phpFiles) {
     const content = safeRead(filePath, appPath);
     if (!content) continue;
+    // The library's own API is static — Segment::track([...]) — so the
+    // instance spelling alone left every real call unread.
     if (
       !content.includes('->identify(') &&
+      !content.includes('::identify(') &&
       !content.includes('->track(') &&
+      !content.includes('::track(') &&
       !content.includes('->flush(') &&
       !content.includes('Analytics::init(')
     ) continue;
@@ -144,8 +148,8 @@ function buildSegmentAnalyticsInfos(appPath: string): SegmentAnalyticsInfo[] {
     }
 
     // track() event name not in Title Case
-    if (content.includes('->track(')) {
-      const trackMatches = [...content.matchAll(/->track\s*\(\s*\[\s*['"]event['"]\s*=>\s*['"]([^'"]+)['"]/g)];
+    if (content.includes('->track(') || content.includes('::track(')) {
+      const trackMatches = [...content.matchAll(/(?:->|::)track\s*\(\s*\[[\s\S]{0,200}?['"]event['"]\s*=>\s*['"]([^'"]+)['"]/g)];
       for (const match of trackMatches) {
         const eventName = match[1];
         if (isNonTitleCase(eventName)) {
