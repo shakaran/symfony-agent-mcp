@@ -26962,3 +26962,286 @@ class ReportTest extends TestCase
     expect(text).toContain('napshot');
   });
 });
+
+describe('batch 91: profiler, Psalm, Pusher, Render, scheduler, decorators and adapters', () => {
+  test('profiler tokens read from the cache directory', async () => {
+    const app = appWith('profiler-tokens', {
+      'var/cache/dev/profiler/index.csv': `abc123,127.0.0.1,GET,http://localhost/,1767225600,200
+def456,127.0.0.1,POST,http://localhost/invoice,1767225601,302
+`,
+      'var/cache/dev/profiler/23/c1/abc123': '{"time":{"duration":12}}\n',
+      'var/cache/dev/profiler/45/d2/def456': '{"time":{"duration":34}}\n',
+    });
+
+    const text = await runModule('profiler.js', app, ['abc123']);
+
+    expect(text).toContain('rofiler');
+  });
+
+  test('a Psalm configuration with a baseline', async () => {
+    const app = appWith('psalm-config', {
+      'psalm.xml': `<?xml version="1.0"?>
+<psalm errorLevel="3" errorBaseline="psalm-baseline.xml" findUnusedBaselineEntry="true">
+    <projectFiles>
+        <directory name="src"/>
+        <ignoreFiles>
+            <directory name="vendor"/>
+        </ignoreFiles>
+    </projectFiles>
+</psalm>
+`,
+      'psalm-baseline.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<files psalm-version="5.0.0">
+    <file src="src/Service/Importer.php">
+        <MixedAssignment occurrences="3"/>
+    </file>
+</files>
+`,
+    });
+
+    const text = await runModule('psalm-config.js', app);
+
+    expect(text).toContain('aseline');
+  });
+
+  test('a Pusher private channel triggered without authentication', async () => {
+    const app = appWith('pusher-integration', {
+      'composer.json': JSON.stringify({ require: { 'pusher/pusher-php-server': '^7.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nPUSHER_APP_KEY=abcdef1234567890\nPUSHER_APP_SECRET=0123456789abcdef\n',
+      'src/Realtime/PusherPublisher.php': `<?php
+
+namespace App\\Realtime;
+
+use Pusher\\Pusher;
+
+class PusherPublisher
+{
+    public function publish(array $payload): void
+    {
+        $pusher = new Pusher('key', 'secret', 'app', ['debug' => true]);
+        $pusher->trigger('private-invoices', 'created', $payload);
+    }
+}
+`,
+      'src/Controller/PusherWebhookController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class PusherWebhookController
+{
+    public function webhook(Request $request): Response
+    {
+        $payload = json_decode($request->getContent(), true);
+
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('pusher-integration.js', app);
+
+    expect(text).toContain('usher');
+  });
+
+  test('a Render service with its environment written in', async () => {
+    const app = appWith('render-deploy-config-env', {
+      'render.yaml': `services:
+    - type: web
+      name: acme
+      env: php
+      buildCommand: composer install --no-dev
+      startCommand: heroku-php-apache2 public/
+      envVars:
+          - key: APP_ENV
+            value: prod
+          - key: DATABASE_URL
+            value: postgresql://acme:hunter2@db:5432/acme
+          - key: APP_SECRET
+            sync: false
+`,
+    });
+
+    const text = await runModule('render-deploy-config.js', app);
+
+    expect(text).toContain('plain-text value');
+  });
+
+  test('scheduled messages with a timezone of their own', async () => {
+    const app = appWith('scheduler-timezone', {
+      'src/Scheduler/ReportSchedule.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsSchedule;
+use Symfony\\Component\\Scheduler\\RecurringMessage;
+use Symfony\\Component\\Scheduler\\Schedule;
+use Symfony\\Component\\Scheduler\\ScheduleProviderInterface;
+
+#[AsSchedule('reports')]
+class ReportSchedule implements ScheduleProviderInterface
+{
+    public function getSchedule(): Schedule
+    {
+        return (new Schedule())->add(
+            RecurringMessage::cron('0 6 * * *', new SendDailyReport(), new \\DateTimeZone('Europe/Madrid')),
+        );
+    }
+}
+`,
+    });
+
+    const text = await runModule('scheduler.js', app);
+
+    expect(text).toContain('Schedule');
+  });
+
+  test('decorators declared with the attribute, one behind the other', async () => {
+    const app = appWith('service-decorators', {
+      'src/Cache/CachedExporter.php': `<?php
+
+namespace App\\Cache;
+
+use App\\Export\\ExporterInterface;
+use Symfony\\Component\\DependencyInjection\\Attribute\\AsDecorator;
+
+#[AsDecorator(decorates: ExporterInterface::class, priority: 10)]
+class CachedExporter implements ExporterInterface
+{
+    public function __construct(private ExporterInterface $inner)
+    {
+    }
+
+    public function export(array $rows): string
+    {
+        return $this->inner->export($rows);
+    }
+}
+`,
+      'src/Logging/LoggedExporter.php': `<?php
+
+namespace App\\Logging;
+
+use App\\Cache\\CachedExporter;
+use App\\Export\\ExporterInterface;
+use Symfony\\Component\\DependencyInjection\\Attribute\\AsDecorator;
+
+#[AsDecorator(decorates: CachedExporter::class, priority: 5, inner_id: 'app.logged.inner')]
+class LoggedExporter implements ExporterInterface
+{
+    public function __construct(private ExporterInterface $inner)
+    {
+    }
+
+    public function export(array $rows): string
+    {
+        return $this->inner->export($rows);
+    }
+}
+`,
+    });
+
+    const text = await runModule('service-decorators.js', app);
+
+    expect(text).toContain('Exporter');
+  });
+
+  test('a filesystem pool with no namespace, behind a chain', async () => {
+    const app = appWith('symfony-cache-psr6-adapters', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app.files_pool:
+                adapter: cache.adapter.filesystem
+            app.chain_pool:
+                adapters:
+                    - cache.adapter.filesystem
+                    - cache.adapter.redis
+`,
+    });
+
+    const text = await runModule('symfony-cache-psr6-adapters.js', app);
+
+    expect(text).toContain('dapter');
+  });
+
+  test('the clock read directly in application code', async () => {
+    const app = appWith('symfony-clock', {
+      'src/Service/Billing.php': `<?php
+
+namespace App\\Service;
+
+class Billing
+{
+    public function due(): \\DateTimeImmutable
+    {
+        // The clock is read straight from the runtime here.
+        return new \\DateTimeImmutable('now');
+    }
+
+    public function stamp(): int
+    {
+        return time();
+    }
+}
+`,
+      'tests/Unit/BillingTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class BillingTest extends TestCase
+{
+    public function testDue(): void
+    {
+        $this->assertNotNull(new \\DateTimeImmutable('now'));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-clock.js', app);
+
+    expect(text).toContain('lock');
+  });
+
+  test('a console command that loops for ever', async () => {
+    const app = appWith('symfony-console-daemon', {
+      'src/Command/WorkerCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+
+#[AsCommand(name: 'app:worker')]
+class WorkerCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        while (true) {
+            $this->handleOne();
+            sleep(1);
+        }
+
+        return Command::SUCCESS;
+    }
+
+    private function handleOne(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-daemon.js', app);
+
+    expect(text).toContain('WorkerCommand');
+  });
+});
