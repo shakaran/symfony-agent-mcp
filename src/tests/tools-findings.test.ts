@@ -17486,3 +17486,388 @@ return (new PhpCsFixer\\Config())->setRules(['@PSR12' => true]);
     expect(text).toContain('php-cs-fixer');
   });
 });
+
+describe('batch 59: env files, events, exports, Firebase, Fly, FOSRest, Grafana, caches', () => {
+  test('an .env whose sensitive keys are all placeholders', async () => {
+    const app = appWith('env-diff-clean', {
+      '.env': `APP_ENV=prod
+APP_SECRET=
+DATABASE_URL=
+MAILER_DSN=
+`,
+      '.env.local': `APP_SECRET=1a2b3c4d5e6f
+DATABASE_URL=postgresql://acme:hunter2@db:5432/acme
+`,
+    });
+
+    const text = await runModule('env-diff.js', app);
+
+    expect(text).toContain('sensitive');
+  });
+
+  test('more keys differing between environments than the report prints', async () => {
+    const app = appWith('env-diff-many', {
+      '.env': `APP_ENV=prod
+KEY_0=dist-value-0
+KEY_1=dist-value-1
+KEY_2=dist-value-2
+KEY_3=dist-value-3
+KEY_4=dist-value-4
+KEY_5=dist-value-5
+KEY_6=dist-value-6
+KEY_7=dist-value-7
+KEY_8=dist-value-8
+KEY_9=dist-value-9
+KEY_10=dist-value-10
+KEY_11=dist-value-11
+KEY_12=dist-value-12
+KEY_13=dist-value-13
+KEY_14=dist-value-14
+KEY_15=dist-value-15
+KEY_16=dist-value-16
+KEY_17=dist-value-17
+`,
+      '.env.local': `KEY_0=local-value-0
+KEY_1=local-value-1
+KEY_2=local-value-2
+KEY_3=local-value-3
+KEY_4=local-value-4
+KEY_5=local-value-5
+KEY_6=local-value-6
+KEY_7=local-value-7
+KEY_8=local-value-8
+KEY_9=local-value-9
+KEY_10=local-value-10
+KEY_11=local-value-11
+KEY_12=local-value-12
+KEY_13=local-value-13
+KEY_14=local-value-14
+KEY_15=local-value-15
+KEY_16=local-value-16
+KEY_17=local-value-17
+`,
+    });
+
+    const text = await runModule('env-diff.js', app);
+
+    expect(text).toContain('KEY_1');
+  });
+
+  test('subscribers and listeners written every way', async () => {
+    const app = appWith('events-shapes', {
+      'src/EventSubscriber/RequestSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class RequestSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            KernelEvents::REQUEST => ['onRequest', 128],
+            'kernel.response' => 'onResponse',
+        ];
+    }
+
+    public function onRequest(RequestEvent $event): void
+    {
+    }
+
+    public function onResponse(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventListener/LocaleListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+#[AsEventListener(event: 'kernel.request', method: 'setLocale', priority: 20)]
+class LocaleListener
+{
+    public function setLocale(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventListener/notes.php': `<?php
+
+// getSubscribedEvents is described here, with no class to hold it.
+`,
+    });
+
+    const text = await runModule('events.js', app);
+
+    expect(text).toContain('kernel.request');
+  });
+
+  test('the deprecated Excel library, exporting everything at once', async () => {
+    const app = appWith('excel-generation', {
+      'composer.json': JSON.stringify({ require: { 'phpoffice/phpexcel': '^1.8' } }, null, 4) + '\n',
+      'src/Export/InvoiceExport.php': `<?php
+
+namespace App\\Export;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceExport
+{
+    public function download(Request $request): Response
+    {
+        $spreadsheet = new \\PHPExcel();
+        $rows = range(1, 100000);
+        foreach ($rows as $row) {
+            $spreadsheet->getActiveSheet()->setCellValue('A' . $row, $row);
+        }
+
+        $filename = $request->query->get('filename');
+
+        return new Response('', 200, ['Content-Disposition' => 'attachment; filename=' . $filename]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('excel-generation.js', app);
+
+    expect(text).toContain('deprecated');
+  });
+
+  test('Firebase credentials pointed at a file, and pasted into the code', async () => {
+    const app = appWith('firebase-integration', {
+      '.env': 'APP_ENV=prod\nFIREBASE_CREDENTIALS=config/firebase/service-account.json\n',
+      'config/packages/kreait_firebase.yaml': `kreait_firebase:
+    projects:
+        default:
+            credentials: '%kernel.project_dir%/config/firebase/service-account.json'
+`,
+      'src/Push/Notifier.php': `<?php
+
+namespace App\\Push;
+
+use Kreait\\Firebase\\Factory;
+
+class Notifier
+{
+    private const SERVICE_ACCOUNT = '{"type": "service_account", "project_id": "acme"}';
+
+    public function send(string $token): void
+    {
+        $messaging = (new Factory())->withServiceAccount(self::SERVICE_ACCOUNT)->createMessaging();
+        $messaging->send(['token' => $token, 'notification' => ['title' => 'Hello']]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('firebase-integration.js', app);
+
+    expect(text).toContain('service account');
+  });
+
+  test('a Fly service with no health check', async () => {
+    const app = appWith('fly-io-config', {
+      'fly.toml': `app = "acme"
+primary_region = "cdg"
+
+[env]
+    APP_ENV = "prod"
+    DATABASE_URL = "postgres://acme:hunter2@db.internal:5432/acme"
+
+[[services]]
+    internal_port = 8080
+    protocol = "tcp"
+`,
+    });
+
+    const text = await runModule('fly-io-config.js', app);
+
+    expect(text).toContain('health checks');
+  });
+
+  test('FOSRest with templating formats and a query parameter that accepts anything', async () => {
+    const app = appWith('fos-rest-bundle', {
+      'config/packages/fos_rest.yaml': `fos_rest:
+    routing_loader: false
+    view:
+        view_response_listener: true
+        templating_formats:
+            html: true
+`,
+      'src/Controller/SearchController.php': `<?php
+
+namespace App\\Controller;
+
+use FOS\\RestBundle\\Controller\\Annotations\\QueryParam;
+use FOS\\RestBundle\\Controller\\AbstractFOSRestController;
+
+class SearchController extends AbstractFOSRestController
+{
+    /**
+     * @QueryParam(name="term", requirements=".+", description="What to search for")
+     */
+    public function search(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('fos-rest-bundle.js', app);
+
+    expect(text).toContain('templating_formats');
+  });
+
+  test('Grafana provisioned with a password in plain text and no dashboards', async () => {
+    const app = appWith('grafana-dashboard', {
+      'grafana/dashboards/README.md': 'Dashboards are imported by hand for now.\n',
+      'grafana/provisioning/datasources/prometheus.yaml': `apiVersion: 1
+
+datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://prometheus:9090
+      basicAuth: true
+      basicAuthUser: acme
+      password: hunter2
+`,
+    });
+
+    const text = await runModule('grafana-dashboard.js', app);
+
+    expect(text).toContain('Plain-text');
+  });
+
+  test('the HTTP cache proxy with a trace level and a long default TTL', async () => {
+    const app = appWith('http-cache-config', {
+      'config/packages/framework.yaml': `framework:
+    http_cache:
+        enabled: true
+        trace_level: full
+        default_ttl: 7200
+    trusted_proxies: '192.0.2.0/24'
+`,
+      'src/Controller/CachedController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpKernel\\Attribute\\Cache;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class CachedController
+{
+    #[Route('/reports', name: 'reports')]
+    #[Cache(public: true, maxage: 7200, smaxage: 7200)]
+    public function reports(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('http-cache.js', app);
+
+    expect(text).toContain('Trace level');
+  });
+
+  test('HubSpot reached through the retired API key', async () => {
+    const app = appWith('hubspot-integration', {
+      '.env': 'APP_ENV=prod\nHUBSPOT_API_KEY=pat\x2deu1-abcdef12-3456-7890-abcd-ef1234567890\n',
+      'src/Crm/HubspotClient.php': `<?php
+
+namespace App\\Crm;
+
+use HubSpot\\Factory;
+
+class HubspotClient
+{
+    public function create(): object
+    {
+        return Factory::createWithApiKey($_ENV['HUBSPOT_API_KEY']);
+    }
+
+    public function oauth(): array
+    {
+        return [
+            'client_secret' => 'abcdefghijklmnopqrstuvwxyz012345',
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('hubspot-integration.js', app);
+
+    expect(text).toContain('createWithApiKey');
+  });
+
+  test('a schema registry without a serialization library, and a broken schema file', async () => {
+    const app = appWith('kafka-schema-registry', {
+      '.env': 'APP_ENV=prod\nSCHEMA_REGISTRY_URL=https://acme:hunter2@schema-registry.acme.com\n',
+      'src/Kafka/Producer.php': `<?php
+
+namespace App\\Kafka;
+
+class Producer
+{
+    public function schema(): object
+    {
+        return \\AvroSchema::parse('{"type": "record", "name": "Invoice", "fields": []}');
+    }
+}
+`,
+      'schemas/invoice.avsc': '{"type": "record", "name": "Invoice"\n',
+    });
+
+    const text = await runModule('kafka-schema-registry.js', app);
+
+    expect(text).toContain('Avro');
+  });
+
+  test('an API operation documented without a not-found response', async () => {
+    const app = appWith('nelmio-api-doc', {
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    documentation:
+        info:
+            title: Acme
+            version: 1.0.0
+    areas:
+        default:
+            path_patterns: ['^/api']
+`,
+      'src/Controller/Api/InvoiceController.php': `<?php
+
+namespace App\\Controller\\Api;
+
+use OpenApi\\Attributes as OA;
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class InvoiceController
+{
+    #[Route('/api/invoices/{id}', name: 'api_invoice_show', methods: ['GET'])]
+    #[OA\\Response(response: 200, description: 'The invoice')]
+    public function show(int $id): JsonResponse
+    {
+        return new JsonResponse([]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('nelmio-api-doc.js', app);
+
+    expect(text).toContain('InvoiceController');
+  });
+});
