@@ -26692,3 +26692,273 @@ class Narrowing
     expect(text).toContain('Narrowing');
   });
 });
+
+describe('batch 90: typed constants, Xdebug, XML, XSL and PHPUnit style', () => {
+  test('a typed constant given a number where a boolean belongs', async () => {
+    const app = appWith('php-typed-constants', {
+      'composer.json': JSON.stringify({ require: { php: '~8.3' } }, null, 4) + '\n',
+      'src/Config/Flags.php': `<?php
+
+namespace App\\Config;
+
+class Flags
+{
+    public const bool ENABLED = 1;
+
+    public const string NAME = 'acme';
+
+    public const int RETRIES = 3;
+}
+`,
+    });
+
+    const text = await runModule('php-typed-constants.js', app);
+
+    expect(text).toContain('const');
+  });
+
+  test('Xdebug left in develop mode', async () => {
+    const app = appWith('php-xdebug-config', {
+      'docker/php/xdebug.ini': `[xdebug]
+xdebug.mode = develop,debug,coverage
+xdebug.start_with_request = yes
+xdebug.client_host = host.docker.internal
+xdebug.max_nesting_level = 512
+`,
+    });
+
+    const text = await runModule('php-xdebug-config.js', app);
+
+    expect(text).toContain('xdebug');
+  });
+
+  test('XML loaded with entities enabled', async () => {
+    const app = appWith('php-xml-security', {
+      'src/Import/XmlImporter.php': `<?php
+
+namespace App\\Import;
+
+class XmlImporter
+{
+    public function load(string $xml): \\SimpleXMLElement
+    {
+        libxml_disable_entity_loader(false);
+
+        return simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOENT | LIBXML_DTDLOAD);
+    }
+
+    public function parse(string $xml): \\DOMDocument
+    {
+        $document = new \\DOMDocument();
+        $document->loadXML($xml, LIBXML_NOENT);
+
+        return $document;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-xml-security.js', app);
+
+    expect(text).toContain('XML');
+  });
+
+  test('an XSL transformation with PHP functions enabled', async () => {
+    const app = appWith('php-xsl-transformation', {
+      'src/Export/XslRenderer.php': `<?php
+
+namespace App\\Export;
+
+class XslRenderer
+{
+    public function render(string $xml, string $xslPath): string
+    {
+        $processor = new \\XSLTProcessor();
+        $processor->registerPHPFunctions();
+
+        $stylesheet = new \\DOMDocument();
+        $stylesheet->load($xslPath);
+        $processor->importStylesheet($stylesheet);
+
+        $document = new \\DOMDocument();
+        $document->loadXML($xml);
+
+        return (string) $processor->transformToXml($document);
+    }
+}
+`,
+      'templates/xsl/invoice.xsl': `<?xml version="1.0"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+    <xsl:template match="/">
+        <html><body><xsl:value-of select="invoice/number"/></body></html>
+    </xsl:template>
+</xsl:stylesheet>
+`,
+    });
+
+    const text = await runModule('php-xsl-transformation.js', app);
+
+    expect(text).toContain('XSL');
+  });
+
+  test('a suite that mixes annotations with attributes', async () => {
+    const app = appWith('phpunit-attributes', {
+      'tests/Unit/InvoiceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\CoversClass;
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+use PHPUnit\\Framework\\TestCase;
+
+#[CoversClass(\\App\\Entity\\Invoice::class)]
+class InvoiceTest extends TestCase
+{
+    #[DataProvider('totals')]
+    public function testTotals(int $a, int $b): void
+    {
+        $this->assertSame($a, $b);
+    }
+
+    public static function totals(): array
+    {
+        return [[1, 1]];
+    }
+}
+`,
+      'tests/Unit/LegacyTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class LegacyTest extends TestCase
+{
+    /**
+     * @covers \\App\\Entity\\Line
+     * @dataProvider lines
+     */
+    public function testLines(int $a): void
+    {
+        $this->assertSame(1, $a);
+    }
+
+    public static function lines(): array
+    {
+        return [[1]];
+    }
+}
+`,
+      'tests/Unit/notes.php': "<?php\n\n// The attributes used by the suite are described here.\n",
+    });
+
+    const text = await runModule('phpunit-attributes.js', app);
+
+    expect(text).toContain('attribute');
+  });
+
+  test('a test that asserts on the clock', async () => {
+    const app = appWith('phpunit-clock-assertion', {
+      'tests/Unit/ClockTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ClockTest extends TestCase
+{
+    public function testNow(): void
+    {
+        $this->assertSame(time(), (new \\DateTimeImmutable())->getTimestamp());
+    }
+
+    public function testToday(): void
+    {
+        $this->assertSame(date('Y-m-d'), (new \\DateTimeImmutable())->format('Y-m-d'));
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-clock-assertion.js', app);
+
+    expect(text).toContain('clock');
+  });
+
+  test('an expected exception declared after the call', async () => {
+    const app = appWith('phpunit-expect-exception', {
+      'tests/Unit/ValidatorTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ValidatorTest extends TestCase
+{
+    public function testItThrows(): void
+    {
+        $validator = new \\App\\Service\\Validator();
+        $validator->validate('bad');
+
+        $this->expectException(\\InvalidArgumentException::class);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-expect-exception.js', app);
+
+    expect(text).toContain('expectException');
+  });
+
+  test('a partial mock of the class under test', async () => {
+    const app = appWith('phpunit-self-shunting', {
+      'tests/Unit/ImporterTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ImporterTest extends TestCase
+{
+    public function testImport(): void
+    {
+        $importer = $this->getMockBuilder(\\App\\Import\\Importer::class)->onlyMethods(['fetch'])->getMock();
+        $importer->method('fetch')->willReturn([]);
+
+        $this->assertSame([], $importer->import());
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-self-shunting.js', app);
+
+    expect(text).toContain('mock');
+  });
+
+  test('snapshot tests with their stored snapshots', async () => {
+    const app = appWith('phpunit-snapshot', {
+      'tests/Unit/ReportTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ReportTest extends TestCase
+{
+    public function testMatchesSnapshot(): void
+    {
+        $this->assertMatchesJsonSnapshot(['total' => 100]);
+    }
+}
+`,
+      'tests/Unit/__snapshots__/ReportTest__testMatchesSnapshot__1.json': '{"total":100}\n',
+      'tests/Unit/notes.php': "<?php\n\n// The snapshots live beside the tests.\n",
+    });
+
+    const text = await runModule('phpunit-snapshot.js', app);
+
+    expect(text).toContain('napshot');
+  });
+});
