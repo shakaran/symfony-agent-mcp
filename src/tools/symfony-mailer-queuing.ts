@@ -25,7 +25,10 @@ function buildMailerQueuingInfos(appPath: string): MailerQueuingInfo[] {
   if (fs.existsSync(mailerYaml)) {
     const cfg = parseYamlFile(mailerYaml) as Record<string, unknown> | null;
     if (cfg) {
-      const mailer = (cfg['framework'] ?? cfg['mailer'] ?? {}) as Record<string, unknown>;
+      // The DSN sits at framework.mailer.dsn; taking the framework section
+      // itself as the mailer left every DSN unread.
+      const framework = (cfg['framework'] ?? {}) as Record<string, unknown>;
+      const mailer = (framework['mailer'] ?? cfg['mailer'] ?? {}) as Record<string, unknown>;
       const dsn = String(mailer['dsn'] ?? mailer['transport'] ?? '');
       const issues: string[] = [];
 

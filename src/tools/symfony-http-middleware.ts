@@ -155,7 +155,9 @@ function analyseFile(filePath: string, base: string): HttpMiddlewareFinding[] {
         issues.push(`Priority ${prio} > 200 on kernel.request — runs before most Symfony internals (router at 32, firewall at 8); ensure this is intentional`);
       }
       // Check if method calls setResponse without stopPropagation
-      const methodBodyMatch = new RegExp(`function\\s+${sub.method}\\s*\\([^)]{0,200}\\)\\s*\\{([^}]{0,1500})\\}`, 's').exec(content);
+      // The listener declares a return type, so the brace does not follow the
+      // parameters directly.
+      const methodBodyMatch = new RegExp(`function\\s+${sub.method}\\s*\\([^)]{0,200}\\)\\s*(?::\\s*[\\w\\\\|?]{1,80}\\s*)?\\{([^}]{0,1500})\\}`, 's').exec(content);
       if (methodBodyMatch) {
         const mb = methodBodyMatch[1];
         if (/->setResponse\s*\(/.test(mb) && !/->stopPropagation\s*\(/.test(mb)) {

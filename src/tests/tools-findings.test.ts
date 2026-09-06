@@ -23527,3 +23527,289 @@ class CustomerType extends AbstractType
     expect(text).toContain('AddressType');
   });
 });
+
+describe('batch 78: form events and themes, sanitizers, HTTP caches and mailers', () => {
+  test('a PRE_SUBMIT listener that flushes, and a subscriber nothing defines', async () => {
+    const app = appWith('symfony-form-events', {
+      'src/Form/InvoiceType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\Form\\FormEvent;
+use Symfony\\Component\\Form\\FormEvents;
+
+class InvoiceType extends AbstractType
+{
+    public function __construct(private object $entityManager)
+    {
+    }
+
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->addEventListener(FormEvents::PRE_SUBMIT, function (FormEvent $event): void {
+            $this->entityManager->flush();
+        });
+
+        $builder->addEventListener(FormEvents::PRE_SUBMIT, function (FormEvent $event): void {
+            $event->stopPropagation();
+        });
+
+        $builder->addEventSubscriber(new AddCurrencySubscriber());
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-events.js', app);
+
+    expect(text).toContain('PRE_SUBMIT');
+  });
+
+  test('a form theme applied in the templates rather than the configuration', async () => {
+    const app = appWith('symfony-form-themes', {
+      'config/packages/twig.yaml': `twig:
+    form_themes:
+        - 'bootstrap_5_layout.html.twig'
+`,
+      'templates/invoice/new.html.twig': `{% form_theme form 'form/custom_layout.html.twig' %}
+
+{{ form(form) }}
+`,
+      'templates/invoice/edit.html.twig': `{% form_theme form 'form/custom_layout.html.twig' %}
+
+{{ form(form) }}
+`,
+      'templates/form/custom_layout.html.twig': `{% block form_row %}{{ form_widget(form) }}{% endblock %}
+`,
+    });
+
+    const text = await runModule('symfony-form-themes.js', app);
+
+    expect(text).toContain('custom_layout');
+  });
+
+  test('a sanitizer that allows scripts and event attributes', async () => {
+    const app = appWith('symfony-html-sanitizer', {
+      'config/packages/html_sanitizer.yaml': `framework:
+    html_sanitizer:
+        sanitizers:
+            app.post_sanitizer:
+                allow_safe_elements: true
+                allow_all_attributes: true
+                allow_elements:
+                    script: []
+                    iframe: []
+                    p: ['class']
+                allow_attributes:
+                    onclick: ['*']
+                    onerror: ['*']
+`,
+      'src/Service/PostRenderer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HtmlSanitizer\\HtmlSanitizerInterface;
+
+class PostRenderer
+{
+    public function __construct(private HtmlSanitizerInterface $appPostSanitizer)
+    {
+    }
+
+    public function render(string $html): string
+    {
+        return $this->appPostSanitizer->sanitize($html);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-html-sanitizer.js', app);
+
+    expect(text).toContain('allow_all_attributes');
+  });
+
+  test('an ETag built straight from an identifier', async () => {
+    const app = appWith('symfony-http-cache-validation', {
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceController
+{
+    public function show(Request $request, object $invoice): Response
+    {
+        $response = new Response();
+        $response->setEtag($invoice->getId() . $invoice->getUpdatedAt()->getTimestamp());
+        $response->setPublic();
+
+        if ($response->isNotModified($request)) {
+            return $response;
+        }
+
+        return $response;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-cache-validation.js', app);
+
+    expect(text).toContain('ETag');
+  });
+
+  test('an HTTP client using basic auth over plain HTTP', async () => {
+    const app = appWith('symfony-http-client-auth', {
+      'src/Http/LegacyApiClient.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class LegacyApiClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(): array
+    {
+        return $this->client->request('GET', 'http://legacy.acme.internal/api/invoices', [
+            'auth_basic' => ['acme', 'hunter2'],
+        ])->toArray();
+    }
+}
+`,
+      'src/Http/KeyedApiClient.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class KeyedApiClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(): array
+    {
+        return $this->client->request('GET', 'https://api.acme.com/invoices', [
+            'headers' => ['X-Api-Key' => '%env(ACME_API_KEY)%'],
+        ])->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-auth.js', app);
+
+    expect(text).toContain('Basic auth');
+  });
+
+  test('a kernel listener that answers the request and lets the rest run', async () => {
+    const app = appWith('symfony-http-middleware', {
+      'src/EventSubscriber/MaintenanceSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class MaintenanceSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            KernelEvents::REQUEST => ['onMaintenance', 512],
+            KernelEvents::RESPONSE => ['onLocale', 10],
+        ];
+    }
+
+    public function onMaintenance(RequestEvent $event): void
+    {
+        $event->setResponse(new Response('Down for maintenance', 503));
+    }
+
+    public function onLocale(RequestEvent $event): void
+    {
+        $event->getRequest()->setLocale('en');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-middleware.js', app);
+
+    expect(text).toContain('stopPropagation');
+  });
+
+  test('an email that inlines CSS without the package, and has no text part', async () => {
+    const app = appWith('symfony-mailer-inliner', {
+      'templates/email/invoice.html.twig': `{% apply inline_css %}
+<html>
+    <head>
+        <style>body { color: black; }</style>
+        <link rel="stylesheet" href="http://acme.example.com/email.css">
+    </head>
+    <body>
+        <h1>Your invoice</h1>
+    </body>
+</html>
+{% endapply %}
+`,
+      'src/Mailer/InvoiceMailer.php': `<?php
+
+namespace App\\Mailer;
+
+use Symfony\\Bridge\\Twig\\Mime\\TemplatedEmail;
+use Symfony\\Component\\Mailer\\MailerInterface;
+
+class InvoiceMailer
+{
+    public function __construct(private MailerInterface $mailer)
+    {
+    }
+
+    public function send(string $to): void
+    {
+        $email = (new TemplatedEmail())
+            ->to($to)
+            ->htmlTemplate('email/invoice.html.twig');
+
+        $this->mailer->send($email);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-mailer-inliner.js', app);
+
+    expect(text).toContain('inline_css');
+  });
+
+  test('mail sent over SMTP with nothing to queue it', async () => {
+    const app = appWith('symfony-mailer-queuing', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'smtp://acme:hunter2@smtp.acme.com:587'
+`,
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default'
+`,
+    });
+
+    const text = await runModule('symfony-mailer-queuing.js', app);
+
+    expect(text).toContain('synchronously');
+  });
+});
