@@ -13620,3 +13620,299 @@ groups:
     expect(text).toContain('Grafana');
   });
 });
+
+describe('http client scopes in detail', () => {
+  test('a scope with redirects and basic auth, and a client used by name', async () => {
+    const app = appWith('http-client-scopes-detail', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        default_options:
+            base_uri: 'https://api.example.com'
+            max_redirects: 5
+        scoped_clients:
+            acme.client:
+                base_uri: 'https://acme.example.com'
+                max_redirects: 3
+                auth_basic: 'acme:hunter2'
+`,
+      'src/Client/AcmeClient.php': `<?php
+
+namespace App\\Client;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class AcmeClient
+{
+    public function __construct(private HttpClientInterface $acmeClient)
+    {
+    }
+
+    public function fetch(): array
+    {
+        return $this->acmeClient->request('GET', '/items')->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('http-client.js', app);
+
+    expect(text).toContain('acme.client');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('mailer transports', () => {
+  test('a null transport, a dsn in the config and templates with attachments', async () => {
+    const app = appWith('mailer-null', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'null://null'
+        envelope:
+            sender: 'noreply@example.com'
+`,
+      'src/Mail/Welcome.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Bridge\\Twig\\Mime\\TemplatedEmail;
+
+class Welcome
+{
+    public function build(): TemplatedEmail
+    {
+        return (new TemplatedEmail())
+            ->htmlTemplate('mail/welcome.html.twig')
+            ->attachFromPath('/srv/app/public/terms.pdf');
+    }
+}
+`,
+      'templates/mail/welcome.html.twig': `<h1>Welcome</h1>
+`,
+    });
+
+    const text = await runModule('mailer.js', app);
+
+    expect(text).toContain('null');
+  });
+});
+
+describe('monolog levels', () => {
+  test('handlers at several levels, including alerting ones', async () => {
+    const app = appWith('monolog-levels', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        debug:
+            type: stream
+            level: debug
+        info:
+            type: stream
+            level: info
+        warning:
+            type: stream
+            level: warning
+        error:
+            type: stream
+            level: error
+        critical:
+            type: stream
+            level: critical
+        emergency:
+            type: stream
+            level: emergency
+        slack:
+            type: slack
+            level: critical
+            token: '%env(SLACK_TOKEN)%'
+        broken: ~
+`,
+    });
+
+    const text = await runModule('monolog.js', app);
+
+    expect(text).toContain('slack');
+  });
+});
+
+describe('multi tenancy connections', () => {
+  test('tenant entities with no doctrine filter, several connections and tenant env files', async () => {
+    const app = appWith('multi-tenancy-connections', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                url: '%env(DATABASE_URL)%'
+            tenant_one:
+                url: '%env(TENANT_ONE_DATABASE_URL)%'
+            tenant_two:
+                url: '%env(TENANT_TWO_DATABASE_URL)%'
+`,
+      '.env.tenant_one': `DATABASE_URL=postgresql://app:pass@db:5432/tenant_one
+`,
+      '.env.tenant_two': `DATABASE_URL=postgresql://app:pass@db:5432/tenant_two
+`,
+      'src/Entity/Tenant.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Tenant
+{
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\ManyToOne(targetEntity: Tenant::class)]
+    private ?Tenant $tenant = null;
+}
+`,
+    });
+
+    const text = await runModule('multi-tenancy.js', app);
+
+    expect(text).toContain('Tenant');
+  });
+});
+
+describe('pgbouncer sessions', () => {
+  test('session pooling with a large limit and a direct database url', async () => {
+    const app = appWith('pgbouncer-session', {
+      'pgbouncer.ini': `[databases]
+acme = host=db port=5432 dbname=acme
+
+[pgbouncer]
+pool_mode = session
+max_client_conn = 5000
+default_pool_size = 100
+auth_type = md5
+server_reset_query = DISCARD ALL
+`,
+      '.env.local': `DATABASE_URL=postgres://app:pass@db:5432/acme
+`,
+    });
+
+    const text = await runModule('pgbouncer-config.js', app);
+
+    expect(text).toContain('session');
+  });
+});
+
+describe('asymmetric visibility on older php', () => {
+  test('private(set) in a project that does not require 8.4', async () => {
+    const app = appWith('asymmetric-old', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.2', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Entity/Account.php': `<?php
+
+namespace App\\Entity;
+
+class Account
+{
+    public private(set) string $reference = '';
+
+    public protected(set) int $balance = 0;
+}
+`,
+      'src/Support/helpers.php': `<?php
+
+function acme(): string
+{
+    return 'no class here';
+}
+`,
+    });
+
+    const text = await runModule('php-asymmetric-visibility.js', app);
+
+    expect(text).toContain('reference');
+  });
+});
+
+describe('benchmark patterns', () => {
+  test('a benchmark that times itself and one that does not', async () => {
+    const app = appWith('benchmarks', {
+      'benchmarks/RoutingBench.php': `<?php
+
+namespace App\\Benchmark;
+
+class RoutingBench
+{
+    public function benchMatch(): void
+    {
+        $start = time();
+        $this->router->match('/');
+        $elapsed = time() - $start;
+    }
+
+    public function benchGenerate(): void
+    {
+        $this->router->generate('home');
+    }
+}
+`,
+      'src/Benchmark/InlineBench.php': `<?php
+
+namespace App\\Benchmark;
+
+class InlineBench
+{
+    public function benchSomething(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-benchmark-patterns.js', app);
+
+    expect(text).toContain('Bench');
+  });
+});
+
+describe('closure scope', () => {
+  test('a by-reference capture inside a loop and a plain closure', async () => {
+    const app = appWith('closure-scope', {
+      'src/Service/Closures.php': `<?php
+
+namespace App\\Service;
+
+class Closures
+{
+    public function inLoop(array $rows): array
+    {
+        $callbacks = [];
+        foreach ($rows as $row) {
+            $total = 0;
+            $callbacks[] = function () use (&$total, $row) {
+                $total += $row['amount'];
+
+                return $total;
+            };
+        }
+
+        return $callbacks;
+    }
+
+    public function plain(): callable
+    {
+        return static fn (int $a): int => $a + 1;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-closure-scope.js', app);
+
+    expect(text).toContain('Closures');
+  });
+});
