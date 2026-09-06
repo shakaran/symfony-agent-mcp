@@ -9912,3 +9912,310 @@ class MergingCaster
     expect(text).toContain('Caster');
   });
 });
+
+describe('secret vault shapes', () => {
+  test('secrets written as sodium, gpg and asc, beside the key files', async () => {
+    const app = appWith('vault-shapes', {
+      'config/secrets/prod/APP_SECRET.sodium': 'encrypted\n',
+      'config/secrets/prod/MAILER_DSN.gpg': 'encrypted\n',
+      'config/secrets/prod/DATABASE_URL.asc': 'encrypted\n',
+      'config/secrets/prod/prod.decrypt.private.php': '<?php return "key";\n',
+      'config/secrets/prod/prod.encrypt.public.php': '<?php return "key";\n',
+      'config/secrets/prod/decrypt.sodium': 'key\n',
+      'config/secrets/prod/encrypt.sodium': 'key\n',
+      'config/secrets/prod/notes.txt': 'not a secret\n',
+      'config/packages/framework.yaml': `framework:
+    secrets:
+        vault_directory: '%kernel.project_dir%/config/secrets/%kernel.environment%'
+        local_dotenv_file: '%kernel.project_dir%/.env.%kernel.environment%.local'
+`,
+    });
+
+    const text = await runModule('secrets-vault.js', app);
+
+    expect(text).toContain('APP_SECRET');
+  });
+});
+
+describe('sentinel adapters in code', () => {
+  test('a sentinel dsn assigned in a php config and an adapter built from it', async () => {
+    const app = appWith('sentinel-code', {
+      'config/services.php': `<?php
+
+$sentinel = 'redis+sentinel://cache-1:26379,cache-2:26379,cache-3:26379/mymaster';
+$plain = 'redis://cache:6379';
+
+return [
+    'sentinel' => $sentinel,
+];
+`,
+      'config/packages/cache.php': `<?php
+
+use Symfony\\Component\\Cache\\Adapter\\RedisAdapter;
+
+$connection = RedisAdapter::createConnection('redis+sentinel://cache-1:26379,cache-2:26379/mymaster', [
+    'redis_sentinel' => 'mymaster',
+]);
+`,
+    });
+
+    const text = await runModule('symfony-cache-redis-sentinel.js', app);
+
+    expect(text).toContain('sentinel');
+  });
+});
+
+describe('exception status codes', () => {
+  test('a status from a Response constant, a 5xx without logging and two classes on one code', async () => {
+    const app = appWith('exception-codes', {
+      'src/Exception/StorageException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+
+class StorageException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(Response::HTTP_SERVICE_UNAVAILABLE, 'Storage down');
+    }
+}
+`,
+      'src/Exception/GatewayException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+
+class GatewayException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(503, 'Gateway down');
+    }
+}
+`,
+      'src/Exception/LoggedException.php': `<?php
+
+namespace App\\Exception;
+
+use Psr\\Log\\LoggerInterface;
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+
+class LoggedException extends HttpException
+{
+    public function __construct(private LoggerInterface $logger)
+    {
+        $this->logger->error('failed');
+        parent::__construct(500, 'Failed');
+    }
+}
+`,
+      'config/packages/twig.yaml': `twig:
+    exception_controller: 'App\\Controller\\ExceptionController::show'
+    paths:
+        '%kernel.project_dir%/templates': ~
+`,
+    });
+
+    const text = await runModule('symfony-exception-mapping.js', app);
+
+    expect(text).toContain('StorageException');
+  });
+});
+
+describe('http client authentication', () => {
+  test('basic auth without https, an api key in the query string and options set in a loop', async () => {
+    const app = appWith('http-client-auth', {
+      'config/packages/http_client.yaml': `framework:
+    http_client:
+        scoped_clients:
+            legacy.client:
+                base_uri: 'http://legacy.example.com'
+                auth_basic: ['acme', '%env(LEGACY_PASSWORD)%']
+`,
+      'src/Client/LegacyClient.php': `<?php
+
+namespace App\\Client;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class LegacyClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(array $ids): array
+    {
+        $out = [];
+        foreach ($ids as $id) {
+            $out[] = $this->client->withOptions([
+                'auth_basic' => ['acme', 'hunter2'],
+            ])->request('GET', 'http://legacy.example.com/item/' . $id);
+        }
+
+        return $out;
+    }
+
+    public function withKey(string $id): array
+    {
+        return $this->client->request('GET', 'https://api.example.com/item?api_key=abcdef0123456789&id=' . $id)->toArray();
+    }
+}
+`,
+      'src/Controller/TokenController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class TokenController
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function index(): array
+    {
+        return $this->client->request('GET', 'https://api.example.com/me', [
+            'auth_bearer' => 'hardcoded-token-value',
+        ])->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-auth.js', app);
+
+    expect(text).toContain('LegacyClient');
+  });
+});
+
+describe('mail attachments', () => {
+  test('an attachment with no existence check, an embed nobody keeps and a variable path', async () => {
+    const app = appWith('mailer-attachments', {
+      'src/Mail/Sender.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Email;
+
+class Sender
+{
+    public function send(string $file): Email
+    {
+        $email = new Email();
+        $email->attachFromPath($file);
+        $email->embedFromPath('/srv/app/public/logo.png');
+
+        return $email;
+    }
+
+    public function guarded(string $file): Email
+    {
+        $email = new Email();
+        if (file_exists($file)) {
+            $path = realpath($file);
+            $email->attachFromPath($path);
+        }
+
+        $cid = $email->embedFromPath(basename('/srv/app/public/logo.png'));
+
+        return $email;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-mailer-attachments.js', app);
+
+    expect(text).toContain('attach');
+  });
+});
+
+describe('mail bounces', () => {
+  test('each provider transport, with no bounce listener and no webhook route', async () => {
+    const providers = [
+      ['postmark', 'postmark://KEY@default'],
+      ['sendgrid', 'sendgrid://KEY@default'],
+      ['mailgun', 'mailgun://KEY:DOMAIN@default'],
+      ['ses', 'ses+smtp://KEY:SECRET@default'],
+    ];
+
+    for (const [name, dsn] of providers) {
+      const app = appWith(`mailer-bounce-${name}`, {
+        'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '${dsn}'
+`,
+      });
+
+      const text = await runModule('symfony-mailer-bounce-handling.js', app);
+
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('mailer dsn analysis', () => {
+  test('a dsn taken from the environment, null in production and sendmail in a container', async () => {
+    const fromEnv = appWith('mailer-dsn-env', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '%env(MAILER_DSN)%'
+`,
+      '.env': `APP_ENV=prod
+MAILER_DSN=null://null
+`,
+      '.env.local': `MAILER_DSN=smtp://localhost:1025
+`,
+      'docker-compose.yml': `services:
+  app:
+    image: acme
+`,
+    });
+    const sendmail = appWith('mailer-dsn-sendmail', {
+      '.env': `APP_ENV=prod
+MAILER_DSN=sendmail://default
+`,
+      'docker-compose.yml': `services:
+  app:
+    image: acme
+`,
+    });
+
+    const one = await runModule('symfony-mailer-dsn-analysis.js', fromEnv);
+    const two = await runModule('symfony-mailer-dsn-analysis.js', sendmail);
+
+    expect(one.length).toBeGreaterThan(0);
+    expect(two).toContain('sendmail');
+  });
+});
+
+describe('consumer counts', () => {
+  test('a single worker in supervisor and a transport nobody consumes', async () => {
+    const app = appWith('competing-single', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default'
+            lonely: 'doctrine://default?queue_name=lonely'
+`,
+      'supervisord.conf': `[program:messenger-async]
+command=php /srv/app/bin/console messenger:consume async
+numprocs=1
+`,
+      'Makefile': `.PHONY: consume
+consume:
+	php bin/console messenger:consume async --limit=10
+`,
+    });
+
+    const text = await runModule('symfony-messenger-competing-consumers.js', app);
+
+    expect(text).toContain('async');
+  });
+});
