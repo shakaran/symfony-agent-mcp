@@ -66,7 +66,9 @@ function parseNeonConfig(appPath: string): NeonConfig {
 
     // Extract rules: section — lines that look like class paths
     const registeredRules: string[] = [];
-    const rulesSection = /\brules\s*:([\s\S]{0,2000}?)(?=\n\w|\nparameters|\nservices)/.exec(content);
+    // A section that ends the file has no next key to stop at, and that is
+    // where rules: usually sits.
+    const rulesSection = /\brules\s*:([\s\S]{0,2000}?)(?=\n\w|\nparameters|\nservices|$)/.exec(content);
     if (rulesSection) {
       const ruleLines = rulesSection[1].matchAll(/\s+-\s+([\w\\]{1,200})/g);
       for (const m of ruleLines) {
@@ -76,7 +78,7 @@ function parseNeonConfig(appPath: string): NeonConfig {
 
     // Extract stubFiles
     const stubFiles: string[] = [];
-    const stubSection = /\bstubFiles\s*:([\s\S]{0,1000}?)(?=\n\s*\w[^:]{0,80}:)/.exec(content);
+    const stubSection = /\bstubFiles\s*:([\s\S]{0,1000}?)(?=\n\s*\w[^:]{0,80}:|$)/.exec(content);
     if (stubSection) {
       for (const m of stubSection[1].matchAll(/\s+-\s+([^\n]{1,200})/g)) {
         stubFiles.push(m[1].trim());
@@ -85,7 +87,7 @@ function parseNeonConfig(appPath: string): NeonConfig {
 
     // Extract bootstrapFiles
     const bootstrapFiles: string[] = [];
-    const bsSection = /\bbootstrapFiles\s*:([\s\S]{0,1000}?)(?=\n\s*\w[^:]{0,80}:)/.exec(content);
+    const bsSection = /\bbootstrapFiles\s*:([\s\S]{0,1000}?)(?=\n\s*\w[^:]{0,80}:|$)/.exec(content);
     if (bsSection) {
       for (const m of bsSection[1].matchAll(/\s+-\s+([^\n]{1,200})/g)) {
         bootstrapFiles.push(m[1].trim());
@@ -94,7 +96,7 @@ function parseNeonConfig(appPath: string): NeonConfig {
 
     // Extract ignoreErrors entries — each entry may have 'message:' and/or 'path:'
     const ignoreErrors: Array<{ hasMessage: boolean; raw: string }> = [];
-    const ignoreSection = /\bignoreErrors\s*:([\s\S]{0,5000}?)(?=\n\w[^:]{0,80}:)/.exec(content);
+    const ignoreSection = /\bignoreErrors\s*:([\s\S]{0,5000}?)(?=\n\w[^:]{0,80}:|$)/.exec(content);
     if (ignoreSection) {
       // Each entry starts with '  -'
       const entries = ignoreSection[1].split(/\n\s+-\s+/);

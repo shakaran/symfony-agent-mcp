@@ -18254,3 +18254,286 @@ class Session
     expect(text).toContain('gadget');
   });
 });
+
+describe('batch 61: php.ini settings, PHP idioms and PHPStan configuration', () => {
+  test('a memory limit written in gigabytes', async () => {
+    const app = appWith('php-ini-analysis', {
+      'docker/php.ini': `[PHP]
+memory_limit = 2G
+max_execution_time = 30
+display_errors = On
+expose_php = On
+post_max_size = 8M
+upload_max_filesize = 2M
+`,
+    });
+
+    const text = await runModule('php-ini-analysis.js', app);
+
+    expect(text).toContain('display_errors');
+  });
+
+  test('the JIT switched on over a disabled opcache, with a huge buffer', async () => {
+    const app = appWith('php-jit-config', {
+      'php.ini': `[opcache]
+opcache.enable=0
+opcache.jit=tracing
+opcache.jit_buffer_size=2048M
+opcache.jit_hot_func=2
+`,
+      'docker/php.ini': `[opcache]
+opcache.enable=1
+opcache.jit=function
+`,
+    });
+
+    const text = await runModule('php-jit-config.js', app);
+
+    expect(text).toContain('jit_buffer_size');
+  });
+
+  test('a memory limit too small to run on, and the profiler left on', async () => {
+    const app = appWith('php-memory-profiling', {
+      'php.ini': `[PHP]
+memory_limit = 32M
+xdebug.mode = develop,profile
+`,
+      'docker/php.ini': `[PHP]
+memory_limit = 2G
+`,
+    });
+
+    const text = await runModule('php-memory-profiling.js', app);
+
+    expect(text).toContain('memory_limit');
+    expect(text).toContain('xdebug');
+  });
+
+  test('null coalescing piled up, and the ternary it replaces', async () => {
+    const app = appWith('php-null-coalescing', {
+      'src/Service/Defaults.php': `<?php
+
+namespace App\\Service;
+
+class Defaults
+{
+    public function pick(array $options): string
+    {
+        return $options['a'] ?? $options['b'] ?? $options['c'] ?? $options['d'] ?? 'fallback';
+    }
+
+    public function orElse(?string $value, string $fallback): string
+    {
+        $result = $value !== null ? $value : $fallback;
+
+        return $result;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-null-coalescing.js', app);
+
+    expect(text).toContain('ternary');
+  });
+
+  test('a preload file listing thousands of classes, from the dev configuration', async () => {
+    const requires = Array.from({ length: 2100 }, (_, i) => `require_once __DIR__ . '/../src/Generated/Class${i}.php';`).join('\n');
+
+    const app = appWith('php-preloading-config', {
+      'php.ini': `[opcache]
+opcache.enable=1
+opcache.preload=/app/config/preload-dev.php
+`,
+      'config/preload-dev.php': `<?php
+
+${requires}
+`,
+    });
+
+    const text = await runModule('php-preloading-config.js', app);
+
+    expect(text).toContain('preload');
+  });
+
+  test('variadics in every shape PHP refuses', async () => {
+    const app = appWith('php-splat-operator', {
+      'src/Service/Spread.php': `<?php
+
+namespace App\\Service;
+
+class Spread
+{
+    public function badOrder(string ...$parts, int $limit): string
+    {
+        return implode(',', $parts) . $limit;
+    }
+
+    public function untyped(...$args): int
+    {
+        return count($args);
+    }
+
+    public function anything(mixed ...$args): int
+    {
+        return count($args);
+    }
+
+    public function call(array $args): string
+    {
+        $collected = [...$args, 'extra'];
+
+        return $this->untyped(limit: 5, ...$collected) . implode('', $collected);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-splat-operator.js', app);
+
+    expect(text).toContain('variadic');
+  });
+
+  test('values coerced by hand in a file without strict types', async () => {
+    const app = appWith('php-type-coercion', {
+      'src/Service/Coercion.php': `<?php
+
+namespace App\\Service;
+
+class Coercion
+{
+    public function convert(array $row): array
+    {
+        $value = $row['value'];
+        settype($value, 'integer');
+
+        return [
+            'value' => $value,
+            'total' => (int) $row['total'],
+            'ratio' => (float) $row['ratio'],
+            'label' => (string) $row['label'],
+            'payload' => json_decode($row['payload'], true),
+            'same' => $row['a'] == $row['b'],
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-type-coercion.js', app);
+
+    expect(text).toContain('settype');
+  });
+
+  test('a PHPStan configuration that ignores a great deal and points at nothing', async () => {
+    const ignores = Array.from({ length: 22 }, (_, i) => `        - '#Ignored error ${i}#'`).join('\n');
+
+    const app = appWith('phpstan-custom-rules', {
+      'phpstan.neon': `parameters:
+    level: 8
+    paths:
+        - src
+    scanFiles:
+        - stubs/missing.stub
+    bootstrapFiles:
+        - tests/bootstrap-phpstan.php
+    ignoreErrors:
+${ignores}
+
+services:
+    -
+        class: App\\PHPStan\\NoDirectEntityManagerRule
+        tags:
+            - phpstan.rules.rule
+`,
+      'src/PHPStan/NoDirectEntityManagerRule.php': `<?php
+
+namespace App\\PHPStan;
+
+use PhpParser\\Node;
+use PHPStan\\Analyser\\Scope;
+use PHPStan\\Rules\\Rule;
+
+class NoDirectEntityManagerRule implements Rule
+{
+    public function getNodeType(): string
+    {
+        return Node\\Expr\\MethodCall::class;
+    }
+
+    public function processNode(Node $node, Scope $scope): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpstan-custom-rules.js', app);
+
+    expect(text).toContain('ignoreErrors');
+    expect(text).toContain('not found on disk');
+  });
+
+  test('a PHPStan configuration with nothing to report', async () => {
+    const app = appWith('phpstan-custom-rules-clean', {
+      'phpstan.neon': `parameters:
+    level: 8
+    paths:
+        - src
+
+rules:
+    - App\\PHPStan\\NoDirectEntityManagerRule
+`,
+      'src/PHPStan/NoDirectEntityManagerRule.php': `<?php
+
+namespace App\\PHPStan;
+
+use PhpParser\\Node;
+use PHPStan\\Analyser\\Scope;
+use PHPStan\\Rules\\Rule;
+use PHPStan\\Rules\\RuleErrorBuilder;
+
+class NoDirectEntityManagerRule implements Rule
+{
+    public function getNodeType(): string
+    {
+        return Node\\Expr\\MethodCall::class;
+    }
+
+    public function processNode(Node $node, Scope $scope): array
+    {
+        return [RuleErrorBuilder::message('Do not call the entity manager here.')->build()];
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpstan-custom-rules.js', app);
+
+    expect(text).toContain('No issues detected');
+  });
+
+  test('a PHPStan baseline that is listed but missing', async () => {
+    const app = appWith('phpstan-config-baseline', {
+      'phpstan.neon': `includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: 6
+    paths:
+        - src
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors:
+        -
+            message: '#Cannot call method on null#'
+            path: src/Service/Importer.php
+`,
+    });
+
+    const text = await runModule('phpstan-config.js', app);
+
+    expect(text).toContain('aseline');
+  });
+});
