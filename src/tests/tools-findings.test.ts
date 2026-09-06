@@ -24567,3 +24567,177 @@ class IbanValidator extends ConstraintValidator
     expect(text).toContain('payload');
   });
 });
+
+describe('batch 82: XLIFF, Twig globals and namespaces, webhooks, Alpine and Apache', () => {
+  test('an XLIFF 1.2 file with no state and no resname', async () => {
+    const app = appWith('translation-xliff-format', {
+      'translations/messages.en.xlf': `<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+    <file source-language="en" datatype="plaintext" original="file.ext">
+        <body>
+            <trans-unit id="1">
+                <source>home.title</source>
+                <target>Welcome</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
+`,
+      'translations/messages.fr.xlf': `<?xml version="1.0" encoding="UTF-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:2.0" version="2.0" srcLang="en" trgLang="fr">
+    <file id="messages">
+        <unit id="home.title">
+            <notes><note>The page title</note></notes>
+            <segment state="translated">
+                <source>Welcome</source>
+                <target>Bienvenue</target>
+            </segment>
+        </unit>
+    </file>
+</xliff>
+`,
+    });
+
+    const text = await runModule('translation-xliff-format.js', app);
+
+    expect(text).toContain('resname');
+  });
+
+  test('a Twig global that injects a service, and one that shadows app', async () => {
+    const app = appWith('twig-globals', {
+      'config/packages/twig.yaml': `twig:
+    globals:
+        app_config: '@App\\Service\\AppConfig'
+        app: '@App\\Service\\AppVariable'
+        api_token: '%env(ACME_API_TOKEN)%'
+        site_name: 'Acme'
+`,
+      'src/Twig/GlobalsExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Twig\\Extension\\AbstractExtension;
+use Twig\\Extension\\GlobalsInterface;
+
+class GlobalsExtension extends AbstractExtension implements GlobalsInterface
+{
+    public function getGlobals(): array
+    {
+        return [
+            'site_name' => 'Acme',
+            'api_token' => 'abcdef1234567890',
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('twig-globals.js', app);
+
+    expect(text).toContain('site_name');
+  });
+
+  test('a Twig namespace pointing at several directories', async () => {
+    const app = appWith('twig-namespace-paths', {
+      'config/packages/twig.yaml': `twig:
+    default_path: '%kernel.project_dir%/templates'
+    paths:
+        '%kernel.project_dir%/templates/email': email
+        '%kernel.project_dir%/templates/admin': admin
+        '%kernel.project_dir%/templates/legacy/admin': admin
+        '%kernel.project_dir%/templates/shared/admin': admin
+        '%kernel.project_dir%/vendor/acme/bundle/templates': admin
+`,
+      'templates/email/invoice.html.twig': '<h1>Invoice</h1>\n',
+      'templates/admin/index.html.twig': '<h1>Admin</h1>\n',
+    });
+
+    const text = await runModule('twig-namespace-paths.js', app);
+
+    expect(text).toContain('admin');
+  });
+
+  test('webhook routing with a parser and a secret', async () => {
+    const app = appWith('webhooks', {
+      'config/packages/webhook.yaml': `framework:
+    webhook:
+        routing:
+            stripe:
+                service: 'stripe.webhook.request_parser'
+                secret: '%env(STRIPE_WEBHOOK_SECRET)%'
+            mailer_mailgun:
+                service: 'mailer.webhook.request_parser.mailgun'
+                secret: '%env(MAILGUN_WEBHOOK_SECRET)%'
+            broken: ~
+`,
+      'src/Webhook/StripeWebhookHandler.php': `<?php
+
+namespace App\\Webhook;
+
+use Symfony\\Component\\RemoteEvent\\Attribute\\AsRemoteEventConsumer;
+use Symfony\\Component\\RemoteEvent\\Consumer\\ConsumerInterface;
+use Symfony\\Component\\RemoteEvent\\RemoteEvent;
+
+#[AsRemoteEventConsumer('stripe')]
+class StripeWebhookHandler implements ConsumerInterface
+{
+    public function consume(RemoteEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('webhooks.js', app);
+
+    expect(text).toContain('stripe');
+  });
+
+  test('Alpine bound to a password field, with Twig inside x-data', async () => {
+    const app = appWith('alpine-js-integration', {
+      'package.json': JSON.stringify({ dependencies: { alpinejs: '^3.0' } }, null, 4) + '\n',
+      'templates/security/login.html.twig': `<div x-data="{ user: '{{ app.user.email }}', show: false }">
+    <input type="password" x-model="password" name="password">
+    <button @click="show = !show">Show</button>
+</div>
+`,
+      'config/packages/nelmio_security.yaml': `nelmio_security:
+    csp:
+        enabled: true
+        script-src:
+            - 'self'
+            - 'unsafe-eval'
+`,
+    });
+
+    const text = await runModule('alpine-js-integration.js', app);
+
+    expect(text).toContain('unsafe-eval');
+  });
+
+  test('an Apache virtual host for the public directory', async () => {
+    const app = appWith('apache-config', {
+      'docker/apache/000-default.conf': `<VirtualHost *:80>
+    ServerName acme.example.com
+    DocumentRoot /var/www/public
+
+    <Directory /var/www/public>
+        AllowOverride All
+        Require all granted
+        Options Indexes FollowSymLinks
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/error.log
+</VirtualHost>
+`,
+      '.htaccess': `RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.*)$ index.php [QSA,L]
+`,
+    });
+
+    const text = await runModule('apache-config.js', app);
+
+    expect(text).toContain('Apache');
+  });
+});
