@@ -6083,3 +6083,182 @@ class AccountCaster
     expect(text).toContain('Caster');
   });
 });
+
+describe('the remaining branches', () => {
+  test('a named pipe under public/', async () => {
+    const app = appWith('posix-public', {
+      'src/public/tools/pipe.php': `<?php
+
+posix_mkfifo(__DIR__ . '/queue', 0666);
+// posix_mkfifo('/tmp/other', 0600);
+`,
+      'src/Service/Opener.php': `<?php
+
+namespace App\\Service;
+
+class Opener
+{
+    public function open(): void
+    {
+        $cmd = $_GET['cmd'];
+        $handle = proc_open($cmd, [], $pipes);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-posix-functions.js', app);
+
+    expect(text).toContain('posix_mkfifo');
+  });
+
+  test('a typed controller wired in a template', async () => {
+    const app = appWith('ux-typed-controller', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/ux-typed': '^2.0' },
+      }, null, 2),
+      'assets/controllers.json': JSON.stringify({
+        controllers: { '@symfony/ux-typed': { typed: { enabled: true } } },
+      }, null, 2),
+      'assets/controllers/hello_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {
+    connect() {
+    }
+}
+`,
+      'templates/home/index.html.twig': `<span data-controller="symfony--ux-typed--typed"></span>
+`,
+      'templates/home/complete.html.twig': `<span data-controller="symfony--ux-typed--typed"
+      data-symfony--ux-typed--typed-strings-value='["one","two"]'
+      data-symfony--ux-typed--typed-type-speed-value="50"
+      data-symfony--ux-typed--typed-loop-value="true"></span>
+`,
+    });
+
+    const text = await runModule('symfony-ux-typed.js', app);
+
+    expect(text).toContain('Typed');
+  });
+
+  test('a state machine written under state_machines:, with an audit trail', async () => {
+    const app = appWith('state-machines-key', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        article:
+            type: workflow
+            places: [draft, published]
+            transitions:
+                publish:
+                    from: draft
+                    to: published
+    state_machines:
+        invoice:
+            audit_trail:
+                enabled: true
+            marking_store:
+                type: method
+                property: currentPlace
+            supports:
+                - App\\Entity\\Invoice
+            places:
+                - draft
+                - review
+                - approved
+            transitions:
+                approve:
+                    from:
+                        - draft
+                        - review
+                    to: approved
+`,
+      'config/workflows/nested/order.yaml': `framework:
+    workflows:
+        order:
+            type: workflow
+            places: [new, paid]
+            transitions:
+                pay:
+                    from: new
+                    to: paid
+`,
+    });
+
+    const text = await runModule('symfony-workflow-state-machine.js', app);
+
+    expect(text).toContain('article');
+  });
+
+  test('a netlify.toml with a malformed setting and an indented values table', async () => {
+    const app = appWith('netlify-malformed', {
+      'netlify.toml': `[build]
+    = missing key
+    command = "composer install"
+
+[build.environment]
+    = also missing
+    PHP_VERSION = "8.3"
+
+[context.production.environment]
+    = nothing here either
+    APP_ENV = "prod"
+
+[[headers]]
+    for = "/*"
+    = broken
+
+[headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    = broken too
+
+[[redirects]]
+    = broken as well
+    from = "/old"
+    to = "/new"
+
+[functions]
+    = and here
+    directory = "netlify/functions"
+`,
+    });
+
+    const text = await runModule('netlify-deploy-config.js', app);
+
+    expect(text).toContain('build');
+  });
+
+  test('an api resource asked for by its full class name', async () => {
+    const app = appWith('api-platform-details', {
+      'config/packages/api_platform.yaml': `api_platform:
+    title: Acme API
+    version: 1.0.0
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Doctrine\\Orm\\Filter\\SearchFilter;
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Get;
+
+#[ApiResource(
+    description: 'A customer invoice',
+    security: "is_granted('ROLE_USER')",
+    paginationEnabled: true,
+    paginationItemsPerPage: 50,
+    operations: [new Get()],
+)]
+#[ApiFilter(SearchFilter::class, properties: ['reference' => 'exact'])]
+class Invoice
+{
+    public ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('api-platform.js', app, ['Invoice', 'App\\Entity\\Invoice']);
+
+    expect(text).toContain('Invoice');
+  });
+});

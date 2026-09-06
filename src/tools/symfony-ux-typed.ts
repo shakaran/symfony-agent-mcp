@@ -71,7 +71,11 @@ function buildUxTypedInfos(appPath: string): UxTypedInfo[] {
       let content = '';
       try { content = fs.readFileSync(file, 'utf-8'); } catch { continue; }
 
-      if (!content.includes('ux-typed') && !content.includes('symfony_ux_typed') && !content.includes("'typed'") || content.includes('"typed"')) continue;
+      // && binds tighter than ||, so a template that merely contained "typed"
+      // in double quotes was skipped instead of examined.
+      const mentionsTyped = content.includes('ux-typed') || content.includes('symfony_ux_typed') ||
+        content.includes("'typed'") || content.includes('"typed"');
+      if (!mentionsTyped) continue;
 
       const relFile = path.relative(appPath, file);
       const issues: string[] = [];
