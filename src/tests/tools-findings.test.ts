@@ -27543,3 +27543,299 @@ class BatchFetcher
     expect(text).toContain('getContent()');
   });
 });
+
+describe('batch 93: scoped clients, envelopes, workers, mime headers and passwords', () => {
+  test('a scoped client that nothing injects', async () => {
+    const app = appWith('symfony-httpclient-scopes', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        scoped_clients:
+            acme.client:
+                base_uri: 'https://api.acme.com'
+                headers:
+                    Accept: application/json
+            legacy.client:
+                base_uri: 'https://legacy.acme.com'
+`,
+      'src/Http/AcmeClient.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class AcmeClient
+{
+    public function __construct(private HttpClientInterface $acmeClient)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-scopes.js', app);
+
+    expect(text).toContain('client');
+  });
+
+  test('a stamp that is not a stamp, and a delay measured in days', async () => {
+    const app = appWith('symfony-messenger-envelope', {
+      'src/Message/Stamp/TenantStamp.php': `<?php
+
+namespace App\\Message\\Stamp;
+
+class TenantStamp
+{
+    public function __construct(public readonly string $tenant)
+    {
+    }
+}
+`,
+      'src/Service/Dispatcher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Messenger\\Envelope;
+use Symfony\\Component\\Messenger\\MessageBusInterface;
+use Symfony\\Component\\Messenger\\Stamp\\DelayStamp;
+
+class Dispatcher
+{
+    public function __construct(private MessageBusInterface $bus)
+    {
+    }
+
+    public function dispatch(object $message): void
+    {
+        $envelope = new Envelope($message, [new DelayStamp(172800000)]);
+        $this->bus->dispatch($envelope);
+    }
+
+    public function read(Envelope $envelope): mixed
+    {
+        $stamp = $envelope->last(DelayStamp::class);
+
+        return $stamp->getDelay();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-envelope.js', app);
+
+    expect(text).toContain('Stamp');
+  });
+
+  test('workers paused through supervisor alone', async () => {
+    const app = appWith('symfony-messenger-pause-resume', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default'
+# Workers are paused with supervisorctl stop messenger:*
+`,
+      'src/Messenger/PauseMiddleware.php': `<?php
+
+namespace App\\Messenger;
+
+use Symfony\\Component\\Lock\\LockInterface;
+use Symfony\\Component\\Messenger\\Envelope;
+use Symfony\\Component\\Messenger\\Middleware\\MiddlewareInterface;
+use Symfony\\Component\\Messenger\\Middleware\\StackInterface;
+
+class PauseMiddleware implements MiddlewareInterface
+{
+    public function __construct(private LockInterface $lock)
+    {
+    }
+
+    public function handle(Envelope $envelope, StackInterface $stack): Envelope
+    {
+        return $stack->next()->handle($envelope, $stack);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-pause-resume.js', app);
+
+    expect(text).toContain('supervisor');
+  });
+
+  test('a worker unit file with its consume command', async () => {
+    const app = appWith('symfony-messenger-worker', {
+      'deploy/messenger-worker.service': `[Unit]
+Description=Acme messenger worker
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+ExecStart=/usr/bin/php /var/www/bin/console messenger:consume async --time-limit=3600 --memory-limit=128M
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+`,
+      'docker/supervisord.conf': `[program:messenger]
+command=php /var/www/bin/console messenger:consume async
+numprocs=2
+autorestart=true
+`,
+    });
+
+    const text = await runModule('symfony-messenger-worker.js', app);
+
+    expect(text).toContain('systemd');
+  });
+
+  test('an email with headers set by hand', async () => {
+    const app = appWith('symfony-mime-message-headers', {
+      'src/Mailer/InvoiceMailer.php': `<?php
+
+namespace App\\Mailer;
+
+use Symfony\\Component\\Mime\\Email;
+
+class InvoiceMailer
+{
+    public function build(): Email
+    {
+        $email = new Email();
+        $headers = $email->getHeaders();
+        $headers->addTextHeader('X-Acme-Invoice', '42');
+        $headers->addTextHeader('Content-Type', 'text/html');
+        $headers->remove('From');
+
+        return $email;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-mime-message-headers.js', app);
+
+    expect(text).toContain('header');
+  });
+
+  test('notifier transports with a fallback chain', async () => {
+    const app = appWith('symfony-notifier-status', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: '%env(SLACK_DSN)%'
+        texter_transports:
+            twilio: '%env(TWILIO_DSN)%'
+        channel_policy:
+            urgent: ['chat/slack', 'sms/twilio']
+`,
+      'src/Notification/FallbackNotification.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+
+class FallbackNotification extends Notification
+{
+    public function getChannels(object $recipient): array
+    {
+        // A chained policy: chat first, then sms as fallback.
+        return ['chat/slack', 'sms/twilio'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-notifier-status.js', app);
+
+    expect(text).toContain('FailedMessageEvent');
+  });
+
+  test('a paginator that joins collections', async () => {
+    const app = appWith('symfony-paginator', {
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\ORM\\Tools\\Pagination\\Paginator;
+
+class InvoiceRepository
+{
+    public function page(int $page): Paginator
+    {
+        $query = $this->createQueryBuilder('i')
+            ->leftJoin('i.lines', 'l')
+            ->setFirstResult(($page - 1) * 20)
+            ->setMaxResults(20)
+            ->getQuery();
+
+        return new Paginator($query, fetchJoinCollection: true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-paginator.js', app);
+
+    expect(text).toContain('aginator');
+  });
+
+  test('a legacy hasher that nothing upgrades', async () => {
+    const app = appWith('symfony-password-migrator', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        App\\Entity\\User:
+            algorithm: auto
+            migrate_from:
+                - legacy_md5
+        legacy_md5:
+            algorithm: md5
+            encode_as_base64: false
+            iterations: 1
+`,
+      'src/Security/LegacyHasher.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\PasswordHasher\\Hasher\\LegacyPasswordHasherInterface;
+
+class LegacyHasher implements LegacyPasswordHasherInterface
+{
+    public function hash(string $plainPassword, ?string $salt = null): string
+    {
+        return md5($plainPassword . $salt);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-password-migrator.js', app);
+
+    expect(text).toContain('egacy');
+  });
+
+  test('a password field with no strength constraint on it', async () => {
+    const app = appWith('symfony-password-strength', {
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+#[ORM\\Entity]
+class User
+{
+    #[ORM\\Column]
+    private string $password = '';
+
+    #[Assert\\PasswordStrength(minScore: 1)]
+    private string $plainPassword = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-password-strength.js', app);
+
+    expect(text).toContain('assword');
+  });
+});
