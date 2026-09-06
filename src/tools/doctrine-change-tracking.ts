@@ -70,8 +70,10 @@ function parseChangeTrackingFile(filePath: string): DoctrineChangeTrackingInfo |
 
   let policy = 'DEFERRED_IMPLICIT';
 
-  const policyM = /#\[ChangeTrackingPolicy\s*\(\s*(?:ClassMetadata::)?([A-Z_]{1,50})\s*\)\]/.exec(content) ??
-    /#\[ORM\\ChangeTrackingPolicy\s*\(\s*(?:ClassMetadata::)?([A-Z_]{1,50})\s*\)\]/.exec(content);
+  // The attribute takes a string, #[ORM\ChangeTrackingPolicy('NOTIFY')], and
+  // the quotes were not allowed for, so only the constant form ever matched.
+  const policyM =
+    /#\[(?:\w{1,40}\\)?ChangeTrackingPolicy\s*\(\s*(?:ClassMetadata::)?['"]?([A-Z_]{1,50})['"]?\s*\)\]/.exec(content);
   if (policyM) {
     policy = policyM[1];
   } else if (content.includes('@ORM\\ChangeTrackingPolicy')) {

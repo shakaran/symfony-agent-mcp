@@ -4642,3 +4642,250 @@ ${baseline}
     expect(text).toContain('phpstan.neon');
   });
 });
+
+describe('composite primary keys', () => {
+  test('an entity with two ids, looked up with a single scalar', async () => {
+    const app = appWith('composite-pk', {
+      'src/Entity/OrderLine.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class OrderLine
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $orderId;
+
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $lineNumber;
+
+    #[ORM\\Column]
+    private string $sku = '';
+}
+`,
+      'src/Entity/LegacyLine.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ */
+class LegacyLine
+{
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $orderId;
+
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $lineNumber;
+}
+`,
+      'src/Repository/LineRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Entity\\OrderLine;
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class LineRepository
+{
+    public function __construct(private EntityManagerInterface $em)
+    {
+    }
+
+    public function byScalar(int $id): ?OrderLine
+    {
+        return $this->em->find(OrderLine::class, $id);
+    }
+
+    public function reference(int $id): object
+    {
+        return $this->em->getReference(OrderLine::class, $id);
+    }
+
+    public function byArray(array $ids): ?OrderLine
+    {
+        return $this->em->find(OrderLine::class, $ids);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-composite-primary-keys.js', app);
+
+    expect(text).toContain('OrderLine');
+  });
+});
+
+describe('doctrine metadata cache', () => {
+  test('an array driver in production and a filesystem adapter for metadata', async () => {
+    const app = appWith('metadata-cache', {
+      'config/packages/prod/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: pool
+            pool: doctrine.system_cache_pool
+        query_cache_driver:
+            type: array
+        result_cache_driver:
+            type: service
+            id: cache.adapter.filesystem
+`,
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: true
+        metadata_cache_driver:
+            type: array
+`,
+      'config/packages/dev/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: array
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-metadata-cache.js', app);
+
+    expect(text).toContain('array');
+  });
+});
+
+describe('migration rollback', () => {
+  test('down() that drops a table, one that removes a column and one that refuses', async () => {
+    const app = appWith('migration-rollback', {
+      'config/packages/doctrine_migrations.yaml': `doctrine_migrations:
+    migrations_paths:
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+    transactional: false
+    all_or_nothing: false
+`,
+      'migrations/Version20260101000001.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000001 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE audit (id INT PRIMARY KEY)');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE audit');
+        $table = $schema->getTable('audit');
+        $schema->dropTable('audit');
+    }
+}
+`,
+      'migrations/Version20260101000002.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000002 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE product ADD COLUMN legacy_price INT');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $table = $schema->getTable('product');
+        $table->dropColumn('legacy_price');
+    }
+}
+`,
+      'migrations/Version20260101000003.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000003 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('UPDATE product SET price = price * 100');
+    }
+
+    public function down(Schema $schema): void
+    {
+        throw new \\RuntimeException('This migration cannot be reverted');
+    }
+}
+`,
+      'migrations/Version20260101000004.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000004 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE INDEX idx_sku ON product (sku)');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP INDEX idx_sku');
+        $this->addSql('INSERT INTO audit SELECT * FROM product_backup');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-migration-rollback.js', app);
+
+    expect(text).toContain('down()');
+  });
+});
+
+describe('esi', () => {
+  test('esi enabled with no proxy, esi disabled, and fragments in templates', async () => {
+    const app = appWith('esi', {
+      'config/packages/framework.yaml': `framework:
+    esi:
+        enabled: true
+    fragments:
+        path: /_fragment
+`,
+      'config/packages/prod/framework.yaml': `framework:
+    esi:
+        enabled: false
+`,
+      'templates/base.html.twig': `<!doctype html>
+<html>
+    <body>
+        {{ render_esi(controller('App\\\\Controller\\\\SidebarController::recent')) }}
+        {{ render_esi(url('news_latest')) }}
+        {{ render(controller('App\\\\Controller\\\\FooterController::index')) }}
+    </body>
+</html>
+`,
+    });
+
+    const text = await runModule('symfony-esi-config.js', app);
+
+    expect(text).toContain('esi');
+  });
+});
