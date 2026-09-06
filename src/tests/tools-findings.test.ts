@@ -31632,3 +31632,324 @@ class AppKernelCache extends HttpCache
     expect(text).toContain('store_options');
   });
 });
+
+describe('batch 106: intl, kernel events, log levels, mail parts, batches and monolog', () => {
+  test('an Intl formatter fixed to English, with Twig filters and no package', async () => {
+    const app = appWith('symfony-intl-config', {
+      'src/Service/Formatter.php': `<?php
+
+namespace App\\Service;
+
+class Formatter
+{
+    public function date(\\DateTimeImmutable $when): string
+    {
+        $formatter = new \\IntlDateFormatter('en_GB', \\IntlDateFormatter::LONG, \\IntlDateFormatter::NONE);
+
+        return $formatter->format($when);
+    }
+
+    public function amount(float $value): string
+    {
+        $formatter = new \\NumberFormatter();
+
+        return $formatter->format($value);
+    }
+}
+`,
+      'templates/invoice/show.html.twig': `<span>{{ total|format_currency('EUR') }}</span>
+<span>{{ count|format_number }}</span>
+`,
+    });
+
+    const text = await runModule('symfony-intl-config.js', app);
+
+    expect(text).toContain('Intl');
+  });
+
+  test('two kernel listeners fighting over the same priority', async () => {
+    const app = appWith('symfony-kernel-events', {
+      'src/EventSubscriber/FirstSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class FirstSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::REQUEST => ['onRequest', 100]];
+    }
+
+    public function onRequest(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/SecondSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class SecondSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::REQUEST => ['onRequest', 100]];
+    }
+
+    public function onRequest(RequestEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-kernel-events.js', app);
+
+    expect(text).toContain('priority');
+  });
+
+  test('log levels used across the application', async () => {
+    const app = appWith('symfony-log-levels', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            level: debug
+        broken: ~
+`,
+      'src/Service/Importer.php': `<?php
+
+namespace App\\Service;
+
+use Psr\\Log\\LoggerInterface;
+
+class Importer
+{
+    public function __construct(private LoggerInterface $logger)
+    {
+    }
+
+    public function run(): void
+    {
+        $this->logger->debug('starting');
+        $this->logger->info('running');
+        $this->logger->error('failed');
+        $this->logger->critical('gave up');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-log-levels.js', app);
+
+    expect(text).toContain('error');
+  });
+
+  test('an email with an HTML body and no text alternative', async () => {
+    const app = appWith('symfony-mailer-html-to-text', {
+      'src/Mailer/InvoiceMailer.php': `<?php
+
+namespace App\\Mailer;
+
+use Symfony\\Bridge\\Twig\\Mime\\TemplatedEmail;
+use Symfony\\Component\\Mailer\\MailerInterface;
+use Symfony\\Component\\Mime\\Email;
+
+class InvoiceMailer
+{
+    public function __construct(private MailerInterface $mailer)
+    {
+    }
+
+    public function plain(): void
+    {
+        $email = (new Email())
+            ->subject('Your invoice')
+            ->html('<h1>Your invoice</h1>');
+
+        $this->mailer->send($email);
+    }
+
+    public function templated(): void
+    {
+        $email = (new TemplatedEmail())
+            ->subject('Your invoice')
+            ->htmlTemplate('email/invoice.html.twig');
+
+        $this->mailer->send($email);
+    }
+}
+`,
+      'templates/email/invoice.html.twig': '<h1>Your invoice</h1>\n',
+    });
+
+    const text = await runModule('symfony-mailer-html-to-text.js', app);
+
+    expect(text).toContain('text');
+  });
+
+  test('a batch handler with an enormous batch that throws on failure', async () => {
+    const app = appWith('symfony-messenger-batch-handler', {
+      'src/MessageHandler/ImportHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use Symfony\\Component\\Messenger\\Handler\\Acknowledger;
+use Symfony\\Component\\Messenger\\Handler\\BatchHandlerInterface;
+use Symfony\\Component\\Messenger\\Handler\\BatchHandlerTrait;
+
+class ImportHandler implements BatchHandlerInterface
+{
+    use BatchHandlerTrait;
+
+    public function __invoke(\\App\\Message\\ImportRow $message, ?Acknowledger $ack = null): mixed
+    {
+        return $this->handle($message, $ack);
+    }
+
+    private function getBatchSize(): int
+    {
+        return 5000;
+    }
+
+    private function acknowledgeItems(array $jobs): void
+    {
+        throw new \\RuntimeException('partial failure');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-batch-handler.js', app);
+
+    expect(text).toContain('batch');
+  });
+
+  test('a transport with nothing to catch its failures', async () => {
+    const app = appWith('symfony-messenger-graceful-shutdown', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'amqp://guest:guest@rabbit:5672/%2f/messages'
+                options:
+                    prefetch_count: 500
+`,
+    });
+
+    const text = await runModule('symfony-messenger-graceful-shutdown.js', app);
+
+    expect(text).toContain('prefetch_count');
+  });
+
+  test('a project with no Messenger monitoring at all', async () => {
+    const app = appWith('symfony-messenger-monitoring-absent', {});
+
+    const text = await runModule('symfony-messenger-monitoring.js', app);
+
+    expect(text).toContain('onitoring');
+  });
+
+  test('a doctrine transport that builds its own schema', async () => {
+    const app = appWith('symfony-messenger-transport-dsn', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'doctrine://default'
+                options:
+                    auto_setup: true
+            failed:
+                dsn: ''
+`,
+    });
+
+    const text = await runModule('symfony-messenger-transport-dsn.js', app);
+
+    expect(text).toContain('auto_setup');
+  });
+
+  test('a handler of a kind the analyser does not know', async () => {
+    const app = appWith('symfony-monolog-handler-unknown', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        odd:
+            type: acme_custom
+            level: debug
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/app.log'
+            level: info
+`,
+    });
+
+    const text = await runModule('symfony-monolog-handler.js', app);
+
+    expect(text).toContain('andler');
+  });
+
+  test('processors registered per handler and globally', async () => {
+    const app = appWith('symfony-monolog-processors', {
+      'config/packages/monolog.yaml': `monolog:
+    processors:
+        - App\\Logger\\TenantProcessor
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/app.log'
+            processors:
+                - App\\Logger\\RequestProcessor
+`,
+      'src/Logger/TenantProcessor.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\LogRecord;
+
+class TenantProcessor
+{
+    public function __invoke(LogRecord $record): LogRecord
+    {
+        return $record;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-monolog-processors.js', app);
+
+    expect(text).toContain('Processor');
+  });
+
+  test('a layout with a fixed language and no alternate links', async () => {
+    const app = appWith('symfony-multi-language-routing', {
+      'config/routes.yaml': `home:
+    path: /{_locale}/
+    controller: App\\Controller\\HomeController::index
+    requirements:
+        _locale: en|fr|de
+`,
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Acme</title>
+    </head>
+    <body>{% block body %}{% endblock %}</body>
+</html>
+`,
+    });
+
+    const text = await runModule('symfony-multi-language-routing.js', app);
+
+    expect(text).toContain('lang');
+  });
+});
