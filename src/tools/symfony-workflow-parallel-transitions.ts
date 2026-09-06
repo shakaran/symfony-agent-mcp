@@ -81,9 +81,12 @@ function extractWorkflowsFromYaml(filePath: string, base: string): WorkflowParal
   const results: WorkflowParallelInfo[] = [];
 
   // For each potential workflow section, look for parallel patterns
-  const sections = content.split(/\n(?=\s{4}\w[\w_-]*:\s*\n)/);
+  // The workflow name sits two levels under framework:, which is four spaces
+  // in the two-space style and eight in the four-space one. Anchoring on four
+  // read only half the files that exist.
+  const sections = content.split(/\n(?=\s{2,10}\w[\w_-]*:\s*\n)/);
   for (const section of sections) {
-    const nameMatch = /^ {4}(\w[\w_-]*):/m.exec(section);
+    const nameMatch = /^ {2,10}(\w[\w_-]*):/m.exec(section);
     if (!nameMatch) continue;
     const wfName = nameMatch[1];
 
@@ -107,11 +110,14 @@ function extractWorkflowsFromYaml(filePath: string, base: string): WorkflowParal
     const transContent = transSection[1];
 
     // Find each transition
-    const singleTransRegex = /^ {6,8}(\w[\w_-]*):\s*\n((?:[ \t]+[^\n]*\n)*)/gm;
+    // The body is every line indented deeper than the name itself: taking any
+    // indented line swallowed the transitions that followed, so only the first
+    // one of each workflow was ever read.
+    const singleTransRegex = /^([ \t]{4,20})(\w[\w_-]*):[ \t]*\n((?:\1[ \t]+[^\n]*\n)*)/gm;
     let transMatch: RegExpExecArray | null;
     while ((transMatch = singleTransRegex.exec(transContent)) !== null) {
-      const transName = transMatch[1];
-      const transBody = transMatch[2];
+      const transName = transMatch[2];
+      const transBody = transMatch[3];
 
       // Extract from places
       const fromMatch = /from:\s*\[([^\]]+)]/m.exec(transBody) ??

@@ -20047,3 +20047,213 @@ class AccountTest extends KernelTestCase
     expect(text).toContain('createClient');
   });
 });
+
+describe('batch 66: translations, UX bridges, validator sequences, workflows and Twig', () => {
+  test('translations with a long fallback chain and a call inside a loop', async () => {
+    const files: Record<string, string> = {
+      'config/packages/framework.yaml': `framework:
+    default_locale: en
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+        enabled_locales: [en, fr, de, es]
+        fallbacks: [en, fr, de, es]
+`,
+      'src/Service/Greeter.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Translation\\TranslatorInterface;
+
+class Greeter
+{
+    public function __construct(private TranslatorInterface $translator)
+    {
+    }
+
+    public function greetAll(array $names): array
+    {
+        $out = [];
+        foreach ($names as $name) {
+            $out[] = $this->translator->trans('greeting', ['%name%' => $name]);
+        }
+
+        return $out;
+    }
+}
+`,
+    };
+    // Eleven locales, so the count is worth reporting on its own.
+    for (const locale of ['en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'pl', 'sv', 'da', 'fi', 'cs']) {
+      files[`translations/messages.${locale}.yaml`] = 'greeting: Hello\n';
+    }
+
+    const app = appWith('symfony-translation-cache', files);
+
+    const text = await runModule('symfony-translation-cache.js', app);
+
+    expect(text).toContain('fallback');
+  });
+
+  test('a Svelte component handed a PHP object', async () => {
+    const app = appWith('symfony-ux-svelte', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-svelte': '^2.0' } }, null, 4) + '\n',
+      'package.json': JSON.stringify({ dependencies: { svelte: '^4.0' } }, null, 4) + '\n',
+      'templates/invoice/show.html.twig': `{{ svelte_component('InvoiceCard', { invoice: new Invoice(), total: 100 }) }}
+`,
+      'assets/app.js': `import { registerSvelteControllerComponents } from '@symfony/ux-svelte';
+
+registerSvelteControllerComponents(require.context('./svelte/controllers', true, /\\.svelte$/));
+`,
+      'assets/svelte/controllers/InvoiceCard.svelte': `<div class="invoice-card">
+    <h2>Invoice</h2>
+</div>
+`,
+      'assets/svelte/controllers/README.md': 'The components live here.\n',
+    });
+
+    const text = await runModule('symfony-ux-svelte.js', app);
+
+    expect(text).toContain('svelte_component');
+  });
+
+  test('a Vue component handed a PHP object, and one with no props declared', async () => {
+    const app = appWith('symfony-ux-vue', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-vue': '^2.0' } }, null, 4) + '\n',
+      'package.json': JSON.stringify({ dependencies: { vue: '^3.0' } }, null, 4) + '\n',
+      'templates/invoice/show.html.twig': `{{ vue_component('InvoiceCard', { invoice: new Invoice(), total: 100 }) }}
+`,
+      'assets/app.js': `import { registerVueControllerComponents } from '@symfony/ux-vue';
+
+registerVueControllerComponents(require.context('./vue/controllers', true, /\\.vue$/));
+`,
+      'assets/vue/controllers/InvoiceCard.vue': `<template>
+    <div class="invoice-card">Invoice</div>
+</template>
+`,
+      'assets/vue/controllers/README.md': 'The components live here.\n',
+    });
+
+    const text = await runModule('symfony-ux-vue.js', app);
+
+    expect(text).toContain('vue_component');
+  });
+
+  test('a group sequence that leaves Default out', async () => {
+    const app = appWith('symfony-validator-sequence-provider', {
+      'src/Entity/Registration.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints\\GroupSequence;
+
+class Registration
+{
+    public function sequence(): GroupSequence
+    {
+        return new GroupSequence(['Basic', 'Strict']);
+    }
+
+    public function getGroupSequence(): array
+    {
+        if ($this->type === 'company') {
+            return ['Company'];
+        }
+
+        if ($this->type === 'person') {
+            return ['Person'];
+        }
+
+        switch ($this->country) {
+            case 'ES':
+                return ['Spain'];
+            default:
+                break;
+        }
+
+        return match ($this->tier) {
+            'gold' => ['Gold'],
+            default => ['Default'],
+        };
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-sequence-provider.js', app);
+
+    expect(text).toContain('Default');
+  });
+
+  test('a workflow that splits and joins, and code that never looks at the marking', async () => {
+    const app = appWith('symfony-workflow-parallel-transitions', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        publication:
+            type: workflow
+            supports:
+                - App\\Entity\\Article
+            places:
+                - draft
+                - legal_review
+                - copy_review
+                - approved
+                - published
+            transitions:
+                start_reviews:
+                    from: draft
+                    to: [legal_review, copy_review]
+                approve:
+                    from: [legal_review, copy_review]
+                    to: approved
+                publish:
+                    from: approved
+                    to: published
+`,
+      'src/Service/Publisher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Workflow\\WorkflowInterface;
+
+class Publisher
+{
+    public function __construct(private WorkflowInterface $publicationWorkflow)
+    {
+    }
+
+    public function publish(object $article): void
+    {
+        if ($this->publicationWorkflow->can($article, 'publish')) {
+            $this->publicationWorkflow->apply($article, 'publish');
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-parallel-transitions.js', app);
+
+    expect(text).toContain('publish');
+  });
+
+  test('a template full of things Twig no longer accepts', async () => {
+    const app = appWith('twig-lint', {
+      'templates/legacy/list.html.twig': `{% spaceless %}
+<ul>
+    {% for item in items %}
+        <li>{{ item.name|raw }}</li>
+        {% if item.id is sameas(current) %}<strong>current</strong>{% endif %}
+        {% if item.id is divisibleby(3) %}<em>third</em>{% endif %}
+        {{ block('row') }}
+    {% endfor %}
+</ul>
+{{ parent() }}
+{% endspaceless %}
+`,
+    });
+
+    const text = await runModule('twig-lint.js', app, ['legacy/list.html.twig']);
+
+    expect(text).toContain('spaceless');
+  });
+});
