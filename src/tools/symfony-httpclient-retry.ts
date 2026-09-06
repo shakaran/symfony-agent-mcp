@@ -34,7 +34,9 @@ function loadYamlRetryConfigs(appPath: string): HttpClientRetryConfig[] {
     if (!raw) continue;
     const framework = (raw['framework'] ?? raw) as Record<string, unknown>;
     const httpClient = (framework['http_client'] ?? {}) as Record<string, unknown>;
-    const scopes = (httpClient['scopes'] ?? {}) as Record<string, unknown>;
+    // Symfony spells this scoped_clients; "scopes" alone matched nothing in a
+    // real framework.yaml.
+    const scopes = (httpClient['scoped_clients'] ?? httpClient['scopes'] ?? {}) as Record<string, unknown>;
     for (const [name, scopeConfig] of Object.entries(scopes)) {
       const sc = (scopeConfig ?? {}) as Record<string, unknown>;
       const retry = (sc['retry_failed'] ?? null) as Record<string, unknown> | null;

@@ -3084,3 +3084,351 @@ describe('services', () => {
     expect(text).toContain('InvoiceBuilder');
   });
 });
+
+describe('symfony cloud', () => {
+  test('an application with relationships, workers, crons and mounts', async () => {
+    const app = appWith('symfony-cloud', {
+      '.symfony.cloud.yaml': `name: app
+type: php:8.3
+
+relationships:
+    database: 'db:postgresql'
+    redis: 'cache:redis'
+
+web:
+    locations:
+        '/':
+            root: 'public'
+            passthru: '/index.php'
+
+mounts:
+    '/uploads': { source: local, source_path: uploads }
+
+workers:
+    messenger:
+        commands:
+            start: symfony console messenger:consume async
+        size: S
+        memory: 512
+    reports:
+        commands:
+            start: symfony console app:reports
+    broken: ~
+
+crons:
+    cleanup:
+        spec: '0 3 * * *'
+        cmd: symfony console app:cleanup
+    invalid: ~
+
+variables:
+    env:
+        APP_ENV: prod
+`,
+      '.platform/routes.yaml': Array.from({ length: 12 }, (_, i) => `'https://route-${i}.example.com/':\n    type: upstream\n    upstream: 'app:http'\n`).join('\n'),
+      '.platform/services.yaml': `db:
+    type: postgresql:16
+    disk: 2048
+
+cache:
+    type: redis:7.0
+`,
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.2', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+    });
+
+    const text = await runModule('symfony-cli.js', app);
+
+    expect(text).toContain('messenger');
+    expect(text).toContain('Relationships');
+  });
+});
+
+describe('di factories', () => {
+  test('factories written as an array, as a string and without a method', async () => {
+    const app = appWith('di-factories', {
+      'config/services.yaml': `services:
+    App\\Service\\PdfRenderer:
+        factory: ['@App\\Factory\\RendererFactory', 'create']
+
+    App\\Service\\StaticRenderer:
+        factory: 'App\\Factory\\RendererFactory::createStatic'
+
+    App\\Service\\InvokableRenderer:
+        factory: '@App\\Factory\\InvokableFactory'
+
+    App\\Service\\Plain:
+        class: App\\Service\\Plain
+`,
+      'src/Factory/RendererFactory.php': `<?php
+
+namespace App\\Factory;
+
+class RendererFactory
+{
+    public function create(): object
+    {
+        return new \\stdClass();
+    }
+
+    public static function createStatic(): object
+    {
+        return new \\stdClass();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-di-factories.js', app);
+
+    expect(text).toContain('RendererFactory');
+  });
+});
+
+describe('http client retries', () => {
+  test('scoped clients that retry too often and retry on an authorisation failure', async () => {
+    const app = appWith('httpclient-retry', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        default_options:
+            retry_failed:
+                max_retries: 3
+                delay: 1000
+                multiplier: 2
+                retry_on_status: [429, 500, 502, 503]
+        scoped_clients:
+            acme.client:
+                base_uri: 'https://api.example.com'
+                retry_failed:
+                    max_retries: 9
+                    retry_on_status: [401, 403, 500]
+            plain.client:
+                base_uri: 'https://plain.example.com'
+`,
+    });
+
+    const inPhp = appWith('httpclient-retry-php', {
+      'src/HttpClient/RetryingClient.php': `<?php
+
+namespace App\\HttpClient;
+
+use Symfony\\Component\\HttpClient\\RetryableHttpClient;
+use Symfony\\Component\\HttpClient\\Retry\\GenericRetryStrategy;
+
+class RetryingClient
+{
+    public function build($client): RetryableHttpClient
+    {
+        $strategy = new GenericRetryStrategy([429, 500], 1000, 2.0);
+
+        return new RetryableHttpClient($client, $strategy, maxRetries: 4);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-retry.js', app);
+    const phpText = await runModule('symfony-httpclient-retry.js', inPhp);
+
+    expect(phpText).toContain('RetryingClient');
+    expect(text).toContain('max_retries');
+  });
+});
+
+describe('rate limiter storage', () => {
+  test('limiters on the shared cache, on apcu and on redis', async () => {
+    const app = appWith('rate-limiter', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.redis
+        pools:
+            limiter.pool:
+                adapter: cache.adapter.apcu
+            files.pool:
+                adapter: cache.adapter.filesystem
+            db.pool:
+                adapter: cache.adapter.pdo
+            memcached.pool:
+                adapter: cache.adapter.memcached
+            cache.redis:
+                adapter: cache.adapter.redis
+`,
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        anonymous_api:
+            policy: 'sliding_window'
+            limit: 100
+            interval: '60 minutes'
+            cache_pool: 'cache.app'
+        login:
+            policy: 'token_bucket'
+            limit: 5
+            rate: { interval: '15 minutes', amount: 5 }
+            cache_pool: 'limiter.pool'
+        uploads:
+            policy: 'fixed_window'
+            limit: 20
+            interval: '1 hour'
+            cache_pool: 'files.pool'
+        reports:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '1 hour'
+            cache_pool: 'db.pool'
+        exports:
+            policy: 'sliding_window'
+            limit: 2
+            interval: '1 day'
+        webhooks:
+            policy: 'fixed_window'
+            limit: 50
+            interval: '1 minute'
+            cache_pool: 'cache.redis'
+        locks:
+            policy: 'token_bucket'
+            limit: 3
+            rate: { interval: '1 minute', amount: 3 }
+            lock_factory: 'lock.default.factory'
+`,
+    });
+
+    const unconfigured = appWith('rate-limiter-unconfigured', {
+      'src/Security/LoginLimiter.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\RateLimiter\\RateLimiterFactory;
+
+class LoginLimiter
+{
+    public function __construct(private RateLimiterFactory $anonymousApiLimiter)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-storage.js', app);
+    const unconfiguredText = await runModule('symfony-rate-limiter-storage.js', unconfigured);
+
+    expect(text).toContain('login');
+    expect(unconfiguredText).toContain('RateLimiterFactory');
+  });
+});
+
+describe('translation catalogues', () => {
+  test('plurals with the wrong number of forms, and a catalogue that is not valid', async () => {
+    const app = appWith('translation-lint', {
+      'translations/messages.en.yaml': `app:
+    apples: 'There is one apple|There are %count% apples'
+    pears: 'one pear|two pears|many pears'
+    title: 'Dashboard'
+`,
+      'translations/messages.pl.yaml': `app:
+    apples: 'Jest jedno jablko|Sa %count% jablka'
+    title: 'Panel'
+`,
+      'translations/messages.ja.yaml': `app:
+    apples: 'ringo ga arimasu|ringo ga takusan arimasu'
+    title: 'Dashboard'
+`,
+      'translations/validators.en.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+    <file source-language="en" datatype="plaintext" original="file.ext">
+        <body>
+            <trans-unit id="1">
+                <source>subscription.plan_required</source>
+                <target>Choose a plan</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
+`,
+      'translations/broken.en.yaml': `app:
+    unbalanced: "one
+`,
+    });
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('events', () => {
+  test('listeners registered by attribute, by subscriber and by service tag', async () => {
+    const app = appWith('events', {
+      'config/services.yaml': `services:
+    App\\EventListener\\LegacyListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.request, method: onKernelRequest, priority: 250 }
+            - { name: kernel.event_listener, event: kernel.response }
+            - 'app.other'
+`,
+      'src/EventListener/RequestListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+#[AsEventListener(event: 'kernel.request', priority: 100)]
+class RequestListener
+{
+    public function __invoke(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/AuditSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\ResponseEvent;
+
+class AuditSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'kernel.response' => ['onResponse', -10],
+            'kernel.terminate' => 'onTerminate',
+        ];
+    }
+
+    public function onResponse(ResponseEvent $event): void
+    {
+    }
+
+    public function onTerminate(): void
+    {
+    }
+}
+`,
+      'src/Service/DispatchingService.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface;
+
+class DispatchingService
+{
+    public function __construct(private EventDispatcherInterface $dispatcher)
+    {
+    }
+
+    public function run(): void
+    {
+        $this->dispatcher->dispatch(new \\App\\Event\\InvoicePaid(), 'invoice.paid');
+    }
+}
+`,
+    });
+
+    const text = await runModule('events.js', app, ['kernel.request', 'kernel.response']);
+
+    expect(text).toContain('kernel.request');
+  });
+});
