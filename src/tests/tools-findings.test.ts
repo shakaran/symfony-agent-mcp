@@ -29341,3 +29341,324 @@ class Batch
     expect(text).toContain('flush');
   });
 });
+
+describe('batch 99: upserts, FrankenPHP, GitHub, GrumPHP, HTMX, caches and Kafka', () => {
+  test('an upsert without a transaction, and a fetch-then-persist loop', async () => {
+    const app = appWith('doctrine-upsert-patterns', {
+      'src/Import/Upserter.php': `<?php
+
+namespace App\\Import;
+
+use Doctrine\\DBAL\\Connection;
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class Upserter
+{
+    public function __construct(
+        private Connection $connection,
+        private EntityManagerInterface $entityManager,
+    ) {
+    }
+
+    public function upsert(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->connection->executeStatement(
+                'INSERT INTO invoice (number, total) VALUES (?, ?) ON CONFLICT (number) DO UPDATE SET total = EXCLUDED.total',
+                [$row['number'], $row['total']],
+            );
+        }
+    }
+
+    public function merge(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $invoice = $this->entityManager->getRepository(\\App\\Entity\\Invoice::class)->findOneBy(['number' => $row['number']]);
+            $this->entityManager->persist($invoice ?? new \\App\\Entity\\Invoice());
+        }
+
+        $this->entityManager->flush();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-upsert-patterns.js', app);
+
+    expect(text).toContain('upsert');
+  });
+
+  test('FrankenPHP in worker mode over HTTP/3', async () => {
+    const app = appWith('frankenphp-config', {
+      'Caddyfile': `{
+    frankenphp {
+        worker ./public/index.php
+    }
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+acme.example.com {
+    root * public/
+    encode zstd br gzip
+    tls acme@example.com
+    php_server
+
+    # http3 and quic are enabled by the protocols above.
+    mercure {
+        publisher_jwt {env.MERCURE_PUBLISHER_JWT_KEY}
+    }
+}
+`,
+      'docker-compose.yml': `services:
+    php:
+        image: dunglas/frankenphp
+        environment:
+            FRANKENPHP_WORKER: 'true'
+            FRANKENPHP_CONFIG: 'worker ./public/index.php'
+`,
+    });
+
+    const text = await runModule('frankenphp-config.js', app);
+
+    expect(text).toContain('FRANKENPHP_WORKER');
+  });
+
+  test('a GitHub token used from the code', async () => {
+    const app = appWith('github-api-integration', {
+      'composer.json': JSON.stringify({ require: { 'knplabs/github-api': '^3.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nGITHUB_TOKEN=ghp\x5fabcdefghijklmnopqrstuvwxyz0123456789\n',
+      'src/Vcs/GithubClient.php': `<?php
+
+namespace App\\Vcs;
+
+use Github\\Client;
+
+class GithubClient
+{
+    public function client(): Client
+    {
+        $client = new Client();
+        $client->authenticate($_ENV['GITHUB_TOKEN'], null, Client::AUTH_ACCESS_TOKEN);
+
+        return $client;
+    }
+}
+`,
+    });
+
+    const text = await runModule('github-api-integration.js', app);
+
+    expect(text).toContain('GITHUB');
+  });
+
+  test('Dependabot watching two ecosystems, and a project without it', async () => {
+    const app = appWith('github-dependabot-config', {
+      '.github/dependabot.yml': `version: 2
+updates:
+    - package-ecosystem: composer
+      directory: /
+      schedule:
+          interval: weekly
+    - package-ecosystem: npm
+      directory: /
+      schedule:
+          interval: monthly
+`,
+    });
+
+    const text = await runModule('github-dependabot-config.js', app);
+
+    expect(text).toContain('composer');
+  });
+
+  test('a project with no Dependabot configuration', async () => {
+    const app = appWith('github-dependabot-absent', {});
+
+    const text = await runModule('github-dependabot-config.js', app);
+
+    expect(text).toContain('Dependabot');
+  });
+
+  test('GrumPHP hooked on push with nothing to run', async () => {
+    const app = appWith('grumphp-config', {
+      'grumphp.yml': `grumphp:
+    hooks_dir: ~
+    git_hook_variables:
+        EXEC_GRUMPHP_COMMAND: php
+    tasks:
+        composer: ~
+        jsonlint: ~
+`,
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpro/grumphp': '^2.0' } }, null, 4) + '\n',
+    });
+
+    const text = await runModule('grumphp-config.js', app);
+
+    expect(text).toContain('phpunit');
+  });
+
+  test('a Helm chart with its values', async () => {
+    const app = appWith('helm-charts-config-values', {
+      'helm/acme/Chart.yaml': `apiVersion: v2
+name: acme
+description: The Acme application
+version: 1.2.3
+appVersion: '1.0'
+`,
+      'helm/acme/values.yaml': `replicaCount: 1
+
+image:
+    repository: acme/app
+    tag: latest
+    pullPolicy: Always
+
+resources: {}
+
+ingress:
+    enabled: true
+    hosts:
+        - host: acme.example.com
+`,
+      'helm/acme/templates/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: {{ include "acme.fullname" . }}
+spec:
+    replicas: {{ .Values.replicaCount }}
+`,
+    });
+
+    const text = await runModule('helm-charts-config.js', app);
+
+    expect(text).toContain('acme');
+  });
+
+  test('HTMX boosting links and returning whole pages', async () => {
+    const app = appWith('htmx-integration', {
+      'templates/base.html.twig': `<body hx-boost="true">
+    <div hx-get="/invoices" hx-target="#list" hx-swap="innerHTML"></div>
+</body>
+`,
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceController extends AbstractController
+{
+    public function list(Request $request): Response
+    {
+        if ($request->headers->has('HX-Request')) {
+            return $this->render('base.html.twig', []);
+        }
+
+        return $this->render('base.html.twig', []);
+    }
+}
+`,
+    });
+
+    const text = await runModule('htmx-integration.js', app);
+
+    expect(text).toContain('hx-');
+  });
+
+  test('a named HTTP client used from a service', async () => {
+    const app = appWith('http-client-named', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        default_options:
+            timeout: 5
+            max_redirects: 3
+        scoped_clients:
+            acme.client:
+                base_uri: 'https://api.acme.com'
+`,
+      'src/Http/AcmeApi.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class AcmeApi
+{
+    public function __construct(private HttpClientInterface $acmeClient)
+    {
+    }
+
+    public function invoices(): array
+    {
+        return $this->acmeClient->request('GET', '/invoices', ['timeout' => 10])->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('http-client.js', app);
+
+    expect(text).toContain('client');
+  });
+
+  test('a response that varies on everything', async () => {
+    const app = appWith('http-response-cache', {
+      'src/Controller/ReportController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ReportController
+{
+    public function show(): Response
+    {
+        $response = new Response('');
+        $response->setPublic();
+        $response->setMaxAge(3600);
+        $response->setVary('*');
+
+        return $response;
+    }
+}
+`,
+    });
+
+    const text = await runModule('http-response-cache.js', app);
+
+    expect(text).toContain('Vary');
+  });
+
+  test('a Kafka producer serialising by hand, without acknowledgements', async () => {
+    const app = appWith('kafka-integration', {
+      'composer.json': JSON.stringify({ require: { 'kwn/php-rdkafka-bundle': '^3.0' } }, null, 4) + '\n',
+      'src/Kafka/InvoiceProducer.php': `<?php
+
+namespace App\\Kafka;
+
+use RdKafka\\Producer;
+
+class InvoiceProducer
+{
+    public function publish(array $invoice): void
+    {
+        $conf = new \\RdKafka\\Conf();
+        $conf->set('metadata.broker.list', 'kafka:9092');
+
+        $producer = new Producer($conf);
+        $topic = $producer->newTopic('invoices');
+        $topic->produce(RD_KAFKA_PARTITION_UA, 0, json_encode($invoice));
+        $producer->flush(1000);
+    }
+}
+`,
+    });
+
+    const text = await runModule('kafka-integration.js', app);
+
+    expect(text).toContain('Kafka');
+  });
+});
