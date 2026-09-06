@@ -7704,3 +7704,186 @@ class RoleFixtures extends Fixture
     expect(text).toContain('UserFixtures');
   });
 });
+
+describe('log files', () => {
+  test('a log read, searched and summarised', async () => {
+    const lines = Array.from({ length: 40 }, (_, i) =>
+      `[2026-09-0${(i % 9) + 1}T10:0${i % 10}:00+00:00] app.${i % 4 === 0 ? 'ERROR' : 'INFO'}: Message ${i} {"user":"acme"} []`,
+    ).join('\n');
+    const app = appWith('logs', {
+      'var/log/prod.log': lines + '\n',
+      'var/log/dev.log': `[2026-09-01T10:00:00+00:00] app.CRITICAL: Boom {"exception":"RuntimeException"} []\n`,
+      'var/log/notes.txt': 'not a log\n',
+    });
+
+    const text = await runModule('logs.js', app, ['prod.log', 'prod', 'ERROR']);
+
+    expect(text).toContain('prod.log');
+  });
+});
+
+describe('frankenphp', () => {
+  test('a Caddyfile with self-signed tls, http3 and mercure, and worker settings in compose', async () => {
+    const app = appWith('frankenphp', {
+      'Caddyfile': `{
+    frankenphp
+    order php_server before file_server
+}
+
+acme.example.com {
+    tls internal
+    root * public/
+    encode zstd br gzip
+    php_server
+    mercure {
+        publisher_jwt {env.MERCURE_PUBLISHER_JWT_KEY}
+    }
+    protocols h3 h2 h1
+}
+`,
+      'docker-compose.yml': `services:
+  php:
+    image: dunglas/frankenphp
+    environment:
+      FRANKENPHP_CONFIG: "worker ./public/index.php"
+      APP_WORKER_COUNT: 8
+      SERVER_NAME: acme.example.com
+`,
+      'Dockerfile': `FROM dunglas/frankenphp:latest
+
+COPY . /app
+`,
+    });
+
+    const text = await runModule('frankenphp-config.js', app);
+
+    expect(text).toContain('FrankenPHP');
+  });
+});
+
+describe('nginx and php-fpm', () => {
+  test('a body size limit, access log off, hsts, and an fpm pool', async () => {
+    const app = appWith('nginx-fpm', {
+      'docker/nginx/default.conf': `server {
+    listen 80;
+    server_name acme.example.com;
+    root /srv/app/public;
+
+    client_max_body_size 512m;
+    access_log off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff;
+
+    location ~ ^/index\\.php(/|$) {
+        fastcgi_pass php:9000;
+    }
+}
+`,
+      'docker/php/www.conf': `[www]
+user = www-data
+pm = ondemand
+pm.max_children = 500
+pm.start_servers = 2
+request_terminate_timeout = 0
+catch_workers_output = yes
+`,
+    });
+
+    const text = await runModule('nginx-php-fpm.js', app);
+
+    expect(text).toContain('client_max_body_size');
+  });
+});
+
+describe('opcache and apcu', () => {
+  test('opcache off in one file and on without preload in another', async () => {
+    const off = appWith('opcache-off', {
+      'docker/php/php.ini': `opcache.enable = 0
+opcache.validate_timestamps = 1
+`,
+    });
+    const on = appWith('opcache-on', {
+      'docker/php.ini': `opcache.enable = 1
+opcache.validate_timestamps = 0
+opcache.memory_consumption = 256
+extension = apcu
+apcu.enable = 1
+`,
+    });
+
+    const one = await runModule('opcache-apcu-config.js', off);
+    const two = await runModule('opcache-apcu-config.js', on);
+
+    expect(one).toContain('OPcache');
+    expect(two).toContain('OPcache');
+  });
+});
+
+describe('openai', () => {
+  test('an api key in .env, one hardcoded in code and a prompt built from user input', async () => {
+    const app = appWith('openai', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'openai-php/client': '^0.10' },
+      }, null, 2),
+      '.env': `OPENAI_API_KEY=sk-proj-0123456789abcdef0123456789abcdef
+OPENAI_MODEL=gpt-4o
+`,
+      'src/Ai/Assistant.php': `<?php
+
+namespace App\\Ai;
+
+use OpenAI;
+
+class Assistant
+{
+    public function ask(string $question): string
+    {
+        $client = OpenAI::client('sk-proj-abcdef0123456789abcdef0123456789');
+
+        $response = $client->chat()->create([
+            'model' => 'gpt-4o',
+            'messages' => [
+                ['role' => 'user', 'content' => $_GET['prompt']],
+            ],
+        ]);
+
+        return $response->choices[0]->message->content;
+    }
+}
+`,
+    });
+
+    const text = await runModule('openai-integration.js', app);
+
+    expect(text).toContain('OPENAI_API_KEY');
+    expect(text).not.toContain('sk-proj-0123456789abcdef0123456789abcdef');
+  });
+});
+
+describe('translation plurals', () => {
+  test('catalogues in languages with one, three and four plural forms', async () => {
+    const app = appWith('translation-plurals', {
+      'translations/messages.ja.yaml': `app:
+    apples: 'ringo'
+`,
+      'translations/messages.pl.yaml': `app:
+    apples: 'jablko|jablka|jablek'
+`,
+      'translations/messages.cy.yaml': `app:
+    apples: 'afal|afalau|afalau|afalau'
+`,
+      'translations/messages.en.yaml': `app:
+    apples: 'one apple|%count% apples'
+    single: 'no bar here'
+`,
+      'translations/messages.fr.yaml': `app:
+    apples: 'une pomme'
+`,
+    });
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
