@@ -30677,3 +30677,303 @@ class LegacyClient
     expect(text).toContain('WSDL');
   });
 });
+
+describe('batch 103: sodium, interpolation, weak maps, architecture and integrations', () => {
+  test('a secretbox with a nonce that is not random', async () => {
+    const app = appWith('php-sodium-crypto', {
+      'src/Crypto/SodiumCipher.php': `<?php
+
+namespace App\\Crypto;
+
+class SodiumCipher
+{
+    private const NONCE = '123456789012345678901234';
+
+    public function encrypt(string $plain, string $key): string
+    {
+        return sodium_crypto_secretbox($plain, self::NONCE, $key);
+    }
+
+    public function legacy(string $plain, string $key): string
+    {
+        return (string) openssl_encrypt($plain, 'AES-128-CBC', $key);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-sodium-crypto.js', app);
+
+    expect(text).toContain('sodium');
+  });
+
+  test('user input interpolated into a command and a query', async () => {
+    const app = appWith('php-string-interpolation-security', {
+      'src/Service/Interpolator.php': `<?php
+
+namespace App\\Service;
+
+class Interpolator
+{
+    public function query(string $status): string
+    {
+        return "SELECT * FROM invoice WHERE status = '{$status}'";
+    }
+
+    public function command(string $path): string
+    {
+        return "tar -czf backup.tgz {$path}";
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-string-interpolation-security.js', app);
+
+    expect(text).toContain('nterpolat');
+  });
+
+  test('a WeakMap used to track objects', async () => {
+    const app = appWith('php-weak-map', {
+      'src/Service/Tracker.php': `<?php
+
+namespace App\\Service;
+
+class Tracker
+{
+    private \\WeakMap $seen;
+
+    public function __construct()
+    {
+        $this->seen = new \\WeakMap();
+    }
+
+    public function track(object $entity): void
+    {
+        $this->seen[$entity] = microtime(true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-weak-map.js', app);
+
+    expect(text).toContain('WeakMap');
+  });
+
+  test('object storage where a weak map would do', async () => {
+    const app = appWith('php-weak-references', {
+      'src/Service/Registry.php': `<?php
+
+namespace App\\Service;
+
+class Registry
+{
+    private \\SplObjectStorage $storage;
+
+    private \\WeakMap $meta;
+
+    public function __construct()
+    {
+        $this->storage = new \\SplObjectStorage();
+        $this->meta = new \\WeakMap();
+    }
+
+    public function add(object $entity, string $key): void
+    {
+        $this->storage->attach($entity);
+        $this->meta[$key] = $entity;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-weak-references.js', app);
+
+    expect(text).toContain('WeakMap');
+  });
+
+  test('an architecture ruleset checked in the pipeline', async () => {
+    const app = appWith('phparkitect-config', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phparkitect/phparkitect': '^0.3' } }, null, 4) + '\n',
+      'phparkitect.php': `<?php
+
+declare(strict_types=1);
+
+use Arkitect\\ClassSet;
+use Arkitect\\CLI\\Config;
+use Arkitect\\Expression\\ForClasses\\HaveNameMatching;
+use Arkitect\\Rules\\Rule;
+
+return static function (Config $config): void {
+    $classSet = ClassSet::fromDir(__DIR__ . '/src');
+
+    $rules[] = Rule::allClasses()
+        ->that(new HaveNameMatching('*Controller'))
+        ->should(new HaveNameMatching('*Controller'))
+        ->because('controllers are named that way');
+
+    $config->add($classSet, ...$rules);
+};
+`,
+      '.gitlab-ci.yml': `stages: [lint]
+
+architecture:
+    stage: lint
+    script:
+        - vendor/bin/phparkitect check
+`,
+    });
+
+    const text = await runModule('phparkitect-config.js', app);
+
+    expect(text).toContain('rkitect');
+  });
+
+  test('tests grouped as technical debt', async () => {
+    const app = appWith('phpunit-test-groups', {
+      'tests/Unit/LegacyTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\Group;
+use PHPUnit\\Framework\\TestCase;
+
+#[Group('legacy')]
+#[Group('slow')]
+class LegacyTest extends TestCase
+{
+    /**
+     * @group skipped
+     */
+    public function testOld(): void
+    {
+        $this->markTestSkipped('legacy');
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-groups.js', app);
+
+    expect(text).toContain('legacy');
+  });
+
+  test('SendGrid with its key in the DSN and in the code', async () => {
+    const app = appWith('sendgrid-integration', {
+      'composer.json': JSON.stringify({ require: { 'symfony/sendgrid-mailer': '^7.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nMAILER_DSN=sendgrid+api://SG\x2eabcdefghijklmnopqrstuv.0123456789abcdefghijklmnopqrstuvwxyz@default\n',
+      'src/Mailer/SendgridClient.php': `<?php
+
+namespace App\\Mailer;
+
+class SendgridClient
+{
+    private const API_KEY = 'SG\x2eabcdefghijklmnopqrstuv.0123456789abcdefghijklmnopqrstuvwxyz';
+
+    public function send(array $payload): void
+    {
+        $sendgrid = new \\SendGrid(self::API_KEY);
+        $sendgrid->send($payload);
+    }
+}
+`,
+    });
+
+    const text = await runModule('sendgrid-integration.js', app);
+
+    expect(text).toContain('endGrid');
+  });
+
+  test('a Shopify token used from the code', async () => {
+    const app = appWith('shopify-integration', {
+      '.env': 'APP_ENV=prod\nSHOPIFY_SHOP=acme.myshopify.com\nSHOPIFY_ACCESS_TOKEN=shpat_abcdefghijklmnopqrstuvwxyz0123\nSHOPIFY_WEBHOOK_SECRET=abcdef1234567890\n',
+      'src/Shop/ShopifyClient.php': `<?php
+
+namespace App\\Shop;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class ShopifyClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function orders(): array
+    {
+        return $this->client->request('GET', 'https://acme.myshopify.com/admin/api/2026-01/orders.json', [
+            'headers' => ['X-Shopify-Access-Token' => $_ENV['SHOPIFY_ACCESS_TOKEN']],
+        ])->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('shopify-integration.js', app);
+
+    expect(text).toContain('SHOPIFY');
+  });
+
+  test('a SonarQube project with its properties', async () => {
+    const app = appWith('sonarqube-config', {
+      'sonar-project.properties': `sonar.projectKey=acme
+sonar.projectName=Acme
+sonar.sources=src
+sonar.tests=tests
+sonar.php.coverage.reportPaths=var/coverage/clover.xml
+sonar.exclusions=src/Migrations/**
+`,
+      '.gitlab-ci.yml': `stages: [analysis]
+
+sonar:
+    stage: analysis
+    script:
+        - sonar-scanner
+`,
+    });
+
+    const text = await runModule('sonarqube-config.js', app);
+
+    expect(text).toContain('sonar');
+  });
+
+  test('a FIFO queue without a deduplication id', async () => {
+    const app = appWith('sqs-fifo-queues', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            orders:
+                dsn: 'https://sqs.eu-west-1.amazonaws.com/123456789012/orders.fifo'
+                options:
+                    message_group_id: orders
+`,
+      'src/Queue/OrderPublisher.php': `<?php
+
+namespace App\\Queue;
+
+use Aws\\Sqs\\SqsClient;
+
+class OrderPublisher
+{
+    public function __construct(private SqsClient $client)
+    {
+    }
+
+    public function publish(array $order): void
+    {
+        $this->client->sendMessage([
+            'QueueUrl' => 'https://sqs.eu-west-1.amazonaws.com/123456789012/orders.fifo',
+            'MessageBody' => json_encode($order),
+            'MessageGroupId' => 'orders',
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('sqs-fifo-queues.js', app);
+
+    expect(text).toContain('FIFO');
+  });
+});
