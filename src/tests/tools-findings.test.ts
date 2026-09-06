@@ -6262,3 +6262,331 @@ class Invoice
     expect(text).toContain('Invoice');
   });
 });
+
+describe('docker security', () => {
+  test('a Dockerfile with a secret in ENV and a compose file with the hardening switches', async () => {
+    const app = appWith('docker-security', {
+      'Dockerfile': `FROM php:8.3-fpm
+
+ENV APP_ENV=prod
+ENV DATABASE_PASSWORD=hunter2
+
+USER root
+
+COPY . /srv/app
+`,
+      'docker/Dockerfile.prod': `FROM php:latest
+
+RUN apt-get update && apt-get install -y git
+
+USER www-data
+`,
+      'docker-compose.yml': `services:
+  app:
+    image: registry.example.com/acme:1.2.3
+    privileged: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./var:/srv/app/var
+
+  worker:
+    image: registry.example.com/acme:1.2.3
+    volumes:
+      - /etc/passwd:/etc/passwd:ro
+`,
+    });
+
+    const text = await runModule('docker-security-config.js', app);
+
+    expect(text).toContain('Dockerfile');
+  });
+});
+
+describe('entity proxies', () => {
+  test('a proxy namespace that collides, entities with a private constructor and generated proxies', async () => {
+    const app = appWith('entity-proxy', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: true
+        proxy_dir: '%kernel.cache_dir%/doctrine/orm/Proxies'
+        proxy_namespace: App\\Entity\\Proxies
+`,
+      'config/packages/prod/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: false
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    private function __construct()
+    {
+    }
+
+    public static function create(): self
+    {
+        return new self();
+    }
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Customer
+{
+    public function __construct(private string $name)
+    {
+    }
+}
+`,
+      'var/cache/prod/doctrine/orm/Proxies/__CG__AppEntityInvoice.php': '<?php // proxy\n',
+      'var/cache/prod/doctrine/orm/Proxies/nested/__CG__AppEntityCustomer.php': '<?php // proxy\n',
+    });
+
+    const text = await runModule('doctrine-entity-proxy.js', app);
+
+    expect(text).toContain('proxy');
+  });
+});
+
+describe('migration history', () => {
+  test('migrations with a gap of years between them', async () => {
+    const migration = (version: string): string => `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version${version} extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+}
+`;
+
+    const app = appWith('migration-history', {
+      'config/packages/doctrine_migrations.yaml': `doctrine_migrations:
+    migrations_paths:
+        - '%kernel.project_dir%/migrations'
+        - '%kernel.project_dir%/src/Migrations'
+    all_or_nothing: false
+    transactional: true
+`,
+      'migrations/Version20200101000000.php': migration('20200101000000'),
+      'migrations/Version20200102000000.php': migration('20200102000000'),
+      'migrations/Version20260101000000.php': migration('20260101000000'),
+    });
+
+    const text = await runModule('doctrine-migration-history.js', app);
+
+    expect(text).toContain('Version20260101000000');
+  });
+});
+
+describe('sequence generators', () => {
+  test('the platform taken from the driver, the platform key and the database url', async () => {
+    const platforms = [
+      ['pgsql', `doctrine:\n    dbal:\n        driver: pdo_pgsql\n`],
+      ['sqlite', `doctrine:\n    dbal:\n        driver: pdo_sqlite\n`],
+      ['mssql', `doctrine:\n    dbal:\n        driver: pdo_sqlsrv\n`],
+      ['platform-postgres', `doctrine:\n    dbal:\n        server_version: '16'\n        platform_service: postgresql_platform\n`],
+      ['platform-mysql', `doctrine:\n    dbal:\n        platform_service: mysql_platform\n`],
+      ['platform-sqlite', `doctrine:\n    dbal:\n        platform_service: sqlite_platform\n`],
+    ];
+
+    for (const [name, doctrine] of platforms) {
+      const app = appWith(`sequence-${name}`, {
+        'config/packages/doctrine.yaml': doctrine,
+        'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    #[ORM\\SequenceGenerator(sequenceName: 'invoice_seq', allocationSize: 1)]
+    private ?int $id = null;
+}
+`,
+      });
+
+      const text = await runModule('doctrine-sequence-generator.js', app);
+
+      expect(text.length).toBeGreaterThan(0);
+    }
+
+    const fromEnv = appWith('sequence-env', {
+      '.env': `DATABASE_URL=postgresql://app:pass@db:5432/acme
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'AUTO')]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const envText = await runModule('doctrine-sequence-generator.js', fromEnv);
+
+    expect(envText.length).toBeGreaterThan(0);
+  });
+});
+
+describe('interface segregation', () => {
+  test('a wide interface, a partial implementation and a file with neither', async () => {
+    const app = appWith('interface-segregation', {
+      'src/Contract/RepositoryInterface.php': `<?php
+
+namespace App\\Contract;
+
+interface RepositoryInterface
+{
+    public function find(int $id): ?object;
+
+    public function findAll(): iterable;
+
+    public function save(object $entity): void;
+
+    public function remove(object $entity): void;
+
+    public function flush(): void;
+
+    public function beginTransaction(): void;
+
+    public function commit(): void;
+
+    public function rollback(): void;
+}
+`,
+      'src/Repository/PartialRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Contract\\RepositoryInterface;
+
+class PartialRepository implements RepositoryInterface
+{
+    public function find(int $id): ?object
+    {
+        return null;
+    }
+
+    public function findAll(): iterable
+    {
+        return [];
+    }
+
+    public function save(object $entity): void
+    {
+        throw new \\BadMethodCallException('not supported');
+    }
+
+    public function remove(object $entity): void
+    {
+        throw new \\BadMethodCallException('not supported');
+    }
+
+    public function flush(): void
+    {
+    }
+
+    public function beginTransaction(): void
+    {
+    }
+
+    public function commit(): void
+    {
+    }
+
+    public function rollback(): void
+    {
+    }
+}
+`,
+      'src/Support/helpers.php': `<?php
+
+function acme_helper(): string
+{
+    return 'no class and no interface here';
+}
+`,
+    });
+
+    const text = await runModule('php-interface-segregation.js', app);
+
+    expect(text).toContain('RepositoryInterface');
+  });
+});
+
+describe('var dumper casters', () => {
+  test('dump calls left in the code and a caster that replaces the default casters', async () => {
+    const app = appWith('var-dumper-dumps', {
+      'src/Controller/DebugController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\VarDumper\\Cloner\\AbstractCloner;
+
+class DebugController
+{
+    public function index(): void
+    {
+        dump($this->request);
+        dd($this->response);
+    }
+
+    public function boot(): void
+    {
+        AbstractCloner::$defaultCasters = [
+            'App\\Entity\\Invoice' => ['App\\Caster\\InvoiceCaster', 'cast'],
+        ];
+    }
+
+    public function cut(): void
+    {
+        $cloner = new \\Symfony\\Component\\VarDumper\\Cloner\\VarCloner();
+        $cloner->setMaxItems(10);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('dump');
+  });
+});
