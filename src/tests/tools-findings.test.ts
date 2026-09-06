@@ -29961,3 +29961,419 @@ trait LimitsTrait
     expect(text).toContain('MAX_ROWS');
   });
 });
+
+describe('batch 101: duplication, curl, attributes, intervals, inclusion and generators', () => {
+  test('two files that hold the same long method', async () => {
+    const app = appWith('php-copy-paste-detector', {
+      'src/Service/FirstReport.php': `<?php
+
+namespace App\\Service;
+
+class FirstReport
+{
+    public function build(): array
+    {
+        $step0 = 0;
+        $step1 = 1;
+        $step2 = 2;
+        $step3 = 3;
+        $step4 = 4;
+        $step5 = 5;
+        $step6 = 6;
+        $step7 = 7;
+        $step8 = 8;
+        $step9 = 9;
+        $step10 = 10;
+        $step11 = 11;
+        $step12 = 12;
+        $step13 = 13;
+        $step14 = 14;
+        $step15 = 15;
+        $step16 = 16;
+        $step17 = 17;
+        $step18 = 18;
+        $step19 = 19;
+        $step20 = 20;
+        $step21 = 21;
+        $step22 = 22;
+        $step23 = 23;
+        $step24 = 24;
+        $step25 = 25;
+        $step26 = 26;
+        $step27 = 27;
+        $step28 = 28;
+        $step29 = 29;
+        $step30 = 30;
+        $step31 = 31;
+        $step32 = 32;
+        $step33 = 33;
+        $step34 = 34;
+        $step35 = 35;
+        $step36 = 36;
+        $step37 = 37;
+        $step38 = 38;
+        $step39 = 39;
+        $step40 = 40;
+        $step41 = 41;
+        $step42 = 42;
+        $step43 = 43;
+        $step44 = 44;
+        $step45 = 45;
+        $step46 = 46;
+        $step47 = 47;
+        $step48 = 48;
+        $step49 = 49;
+        $step50 = 50;
+        $step51 = 51;
+        $step52 = 52;
+        $step53 = 53;
+        $step54 = 54;
+        $step55 = 55;
+        $step56 = 56;
+        $step57 = 57;
+        $step58 = 58;
+        $step59 = 59;
+
+        return [];
+    }
+}
+`,
+      'src/Service/SecondReport.php': `<?php
+
+namespace App\\Service;
+
+class SecondReport
+{
+    public function build(): array
+    {
+        $step0 = 0;
+        $step1 = 1;
+        $step2 = 2;
+        $step3 = 3;
+        $step4 = 4;
+        $step5 = 5;
+        $step6 = 6;
+        $step7 = 7;
+        $step8 = 8;
+        $step9 = 9;
+        $step10 = 10;
+        $step11 = 11;
+        $step12 = 12;
+        $step13 = 13;
+        $step14 = 14;
+        $step15 = 15;
+        $step16 = 16;
+        $step17 = 17;
+        $step18 = 18;
+        $step19 = 19;
+        $step20 = 20;
+        $step21 = 21;
+        $step22 = 22;
+        $step23 = 23;
+        $step24 = 24;
+        $step25 = 25;
+        $step26 = 26;
+        $step27 = 27;
+        $step28 = 28;
+        $step29 = 29;
+        $step30 = 30;
+        $step31 = 31;
+        $step32 = 32;
+        $step33 = 33;
+        $step34 = 34;
+        $step35 = 35;
+        $step36 = 36;
+        $step37 = 37;
+        $step38 = 38;
+        $step39 = 39;
+        $step40 = 40;
+        $step41 = 41;
+        $step42 = 42;
+        $step43 = 43;
+        $step44 = 44;
+        $step45 = 45;
+        $step46 = 46;
+        $step47 = 47;
+        $step48 = 48;
+        $step49 = 49;
+        $step50 = 50;
+        $step51 = 51;
+        $step52 = 52;
+        $step53 = 53;
+        $step54 = 54;
+        $step55 = 55;
+        $step56 = 56;
+        $step57 = 57;
+        $step58 = 58;
+        $step59 = 59;
+
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-copy-paste-detector.js', app);
+
+    expect(text).toContain('Report');
+  });
+
+  test('curl with verification switched off', async () => {
+    const app = appWith('php-curl-security', {
+      'src/Http/CurlClient.php': `<?php
+
+namespace App\\Http;
+
+class CurlClient
+{
+    public function fetch(string $url): string
+    {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        return (string) curl_exec($ch);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-curl-security.js', app);
+
+    expect(text).toContain('VERIFY');
+  });
+
+  test('a custom attribute that nothing reads', async () => {
+    const app = appWith('php-custom-attributes', {
+      'src/Attribute/AuditLog.php': `<?php
+
+namespace App\\Attribute;
+
+#[\\Attribute(\\Attribute::TARGET_METHOD | \\Attribute::TARGET_CLASS)]
+class AuditLog
+{
+    public function __construct(public readonly string $action)
+    {
+    }
+}
+`,
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Attribute\\AuditLog;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceController
+{
+    #[AuditLog('invoice.view')]
+    public function show(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-custom-attributes.js', app);
+
+    expect(text).toContain('AuditLog');
+  });
+
+  test('intervals built from strings and added to dates', async () => {
+    const app = appWith('php-date-interval', {
+      'src/Service/Terms.php': `<?php
+
+namespace App\\Service;
+
+class Terms
+{
+    public function due(\\DateTimeImmutable $from): \\DateTimeImmutable
+    {
+        return $from->add(new \\DateInterval('P30D'));
+    }
+
+    public function monthly(\\DateTimeImmutable $from): \\DateTimeImmutable
+    {
+        return $from->add(new \\DateInterval('P1M'));
+    }
+
+    public function diff(\\DateTimeImmutable $a, \\DateTimeImmutable $b): int
+    {
+        return $a->diff($b)->days;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-date-interval.js', app);
+
+    expect(text).toContain('DateInterval');
+  });
+
+  test('a union type written the PHP 8.2 way', async () => {
+    const app = appWith('php-dnf-types', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.2' } }, null, 4) + '\n',
+      'src/Service/Resolver.php': `<?php
+
+namespace App\\Service;
+
+use Countable;
+use IteratorAggregate;
+
+class Resolver
+{
+    public function resolve((Countable&IteratorAggregate)|null $collection): ?int
+    {
+        return $collection?->count();
+    }
+
+    public function widen(Countable|IteratorAggregate|null $value): bool
+    {
+        return $value !== null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-dnf-types.js', app);
+
+    expect(text).toContain('Resolver');
+  });
+
+  test('an XPath query built from a variable', async () => {
+    const app = appWith('php-dom-xpath', {
+      'src/Scraper/XPathScraper.php': `<?php
+
+namespace App\\Scraper;
+
+class XPathScraper
+{
+    public function find(string $html, string $needle): array
+    {
+        $document = new \\DOMDocument();
+        $document->loadHTML($html);
+
+        $xpath = new \\DOMXPath($document);
+        $nodes = $xpath->query("//div[@class='" . $needle . "']");
+
+        return iterator_to_array($nodes);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-dom-xpath.js', app);
+
+    expect(text).toContain('XPath');
+  });
+
+  test('a file included from a variable path', async () => {
+    const app = appWith('php-file-inclusion-security', {
+      'src/Legacy/Loader.php': `<?php
+
+namespace App\\Legacy;
+
+class Loader
+{
+    public function load(string $module): void
+    {
+        include __DIR__ . '/modules/' . $module . '.php';
+    }
+
+    public function loadFromRequest(): void
+    {
+        require $_GET['page'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-file-inclusion-security.js', app);
+
+    expect(text).toContain('nclu');
+  });
+
+  test('garbage collection switched off in the ini', async () => {
+    const app = appWith('php-gc-config', {
+      'docker/php/php.ini': `[PHP]
+session.gc_probability = 0
+session.gc_divisor = 1000
+session.gc_maxlifetime = 1440
+zend.enable_gc = 0
+`,
+    });
+
+    const text = await runModule('php-gc-config.js', app);
+
+    expect(text).toContain('gc_');
+  });
+
+  test('a generator with a return value and a key', async () => {
+    const app = appWith('php-generators', {
+      'src/Service/RowReader.php': `<?php
+
+namespace App\\Service;
+
+class RowReader
+{
+    public function rows(string $path): \\Generator
+    {
+        $handle = fopen($path, 'r');
+        $count = 0;
+        while (($line = fgets($handle)) !== false) {
+            yield $count++ => trim($line);
+        }
+        fclose($handle);
+
+        return $count;
+    }
+
+    public function all(string $path): array
+    {
+        return iterator_to_array($this->rows($path));
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-generators.js', app);
+
+    expect(text).toContain('enerator');
+  });
+
+  test('a value object cloned without copying its collection', async () => {
+    const app = appWith('php-immutable-value-objects', {
+      'src/Money/Basket.php': `<?php
+
+namespace App\\Money;
+
+final class Basket
+{
+    private array $lines = [];
+
+    public function __construct(public readonly int $total)
+    {
+    }
+
+    public function withTotal(int $total): self
+    {
+        $clone = clone $this;
+
+        return $clone;
+    }
+
+    public function __clone(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-immutable-value-objects.js', app);
+
+    expect(text).toContain('Basket');
+  });
+});
