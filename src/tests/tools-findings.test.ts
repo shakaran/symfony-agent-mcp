@@ -13916,3 +13916,641 @@ class Closures
     expect(text).toContain('Closures');
   });
 });
+
+describe('batch 48: asset pipeline, AWS, Behat, Cypress, Doctrine proxies, Google, Messenger', () => {
+  test('an importmap that cannot be read leaves the pipeline empty', async () => {
+    // A directory where the file should be: it exists, so the pipeline is
+    // asset_mapper, and every read of it fails.
+    const app = appWith('asset-mapper-unreadable', {
+      'importmap.php/placeholder.txt': 'not a file\n',
+    });
+
+    const text = await runModule('asset-mapper.js', app);
+
+    expect(text).toContain('Asset');
+  });
+
+  test('a webpack config that cannot be read, with no package.json either', async () => {
+    const app = appWith('asset-mapper-webpack-unreadable', {
+      'webpack.config.js/placeholder.txt': 'not a file\n',
+    });
+
+    const text = await runModule('asset-mapper.js', app);
+
+    expect(text).toContain('Encore');
+  });
+
+  test('style entries and more than twenty packages are both reported', async () => {
+    const deps: Record<string, string> = {};
+    for (let i = 0; i < 25; i++) deps[`@acme/package-${i}`] = '^1.0.0';
+
+    const app = appWith('asset-mapper-encore', {
+      'webpack.config.js': `const Encore = require('@symfony/webpack-encore');
+
+Encore
+    .setOutputPath('public/build/')
+    .setPublicPath('/build')
+    .addEntry('app', './assets/app.js')
+    .addStyleEntry('theme', './assets/styles/theme.scss')
+;
+
+module.exports = Encore.getWebpackConfig();
+`,
+      'package.json': JSON.stringify({ dependencies: deps }, null, 4) + '\n',
+    });
+
+    const text = await runModule('asset-mapper.js', app);
+
+    expect(text).toContain('theme (CSS)');
+    expect(text).toContain('and 5 more');
+  });
+
+  test('a hardcoded SSM parameter name and a SecureString with no key of its own', async () => {
+    const app = appWith('aws-parameter-store-hardcoded', {
+      'src/Ssm/ParameterReader.php': `<?php
+
+namespace App\\Ssm;
+
+use Aws\\Ssm\\SsmClient;
+
+class ParameterReader
+{
+    public function __construct(private SsmClient $client)
+    {
+    }
+
+    public function databasePassword(): string
+    {
+        $result = $this->client->getParameter(['Name' => '/acme/production/database_password', 'WithDecryption' => true]);
+
+        return $result['Parameter']['Value'];
+    }
+
+    public function write(string $value): void
+    {
+        $this->client->putParameter([
+            'Name' => '/acme/production/database_password',
+            'Type' => 'SecureString',
+            'Value' => $value,
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-parameter-store.js', app);
+
+    expect(text).toContain('hardcoded parameter name');
+    expect(text).toContain('SecureString');
+  });
+
+  test('a step annotation with nothing but quotes defines no step', async () => {
+    const app = appWith('behat-empty-annotation', {
+      'features/home.feature': `Feature: Home
+
+    Scenario: Visiting the home page
+        Given I am on the home page
+`,
+      'features/bootstrap/FeatureContext.php': `<?php
+
+class FeatureContext
+{
+    /**
+     * @Given ""
+     */
+    public function nothing(): void
+    {
+    }
+
+    /**
+     * @Given I am on the home page
+     */
+    public function home(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('behat-step-coverage.js', app);
+
+    // One definition, not two: the empty annotation is not one.
+    expect(text).toContain('Definitions: 1');
+  });
+
+  test('a step pattern too long to compile is matched by its opening words', async () => {
+    const long = `I am on the checkout page ${'and the basket holds a great many different items '.repeat(6)}`.trim();
+
+    const app = appWith('behat-long-pattern', {
+      'features/checkout.feature': `Feature: Checkout
+
+    Scenario: A long step
+        Given ${long}
+`,
+      'features/bootstrap/CheckoutContext.php': `<?php
+
+class CheckoutContext
+{
+    /**
+     * @Given ${long}
+     */
+    public function longStep(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('behat-step-coverage.js', app);
+
+    expect(text).toContain('Step');
+  });
+
+  test('a features directory with no feature file in it', async () => {
+    const app = appWith('behat-no-features', {
+      'features/README.md': '# Acceptance tests\n\nNothing here yet.\n',
+    });
+
+    const text = await runModule('behat-step-coverage.js', app);
+
+    expect(text).toContain('No .feature files');
+  });
+
+  test('the AWS SDK without CloudWatch, alarms, retention and X-Ray', async () => {
+    const app = appWith('cloudwatch-full', {
+      'composer.json': JSON.stringify({ require: { 'aws/aws-sdk-php': '^3.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nAWS_DEFAULT_REGION=eu-west-1\nAWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nXRAY_DAEMON_ADDRESS=127.0.0.1:2000\n',
+      'terraform/logs.tf': `resource "aws_cloudwatch_metric_alarm" "errors" {
+  alarm_name          = "acme-errors"
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 5
+}
+
+resource "aws_cloudwatch_log_group" "app" {
+  name              = "/acme/app"
+  retention_in_days = 30
+}
+`,
+    });
+
+    const text = await runModule('cloudwatch-integration.js', app);
+
+    expect(text).toContain('aws/aws-sdk-php found');
+    expect(text).toContain('alarm');
+    expect(text).toContain('X-Ray');
+  });
+
+  test('a Cypress configuration whose only problem is the missing base URL', async () => {
+    const app = appWith('cypress-baseurl', {
+      'cypress.config.js': `module.exports = {
+    e2e: {
+        specPattern: 'cypress/e2e/**/*.cy.js',
+        retries: { runMode: 2, openMode: 0 },
+        video: false,
+    },
+};
+`,
+      'cypress/e2e/login.cy.js': 'describe("login", () => { it("works", () => { cy.visit("/login"); }); });\n',
+      'cypress/fixtures/user.json': '{"email":"user@example.com"}\n',
+    });
+
+    const text = await runModule('cypress-e2e-config.js', app);
+
+    expect(text).toContain('baseUrl');
+  });
+
+  test('a Cypress configuration with nothing to report', async () => {
+    const app = appWith('cypress-clean', {
+      'cypress.config.js': `module.exports = {
+    e2e: {
+        baseUrl: 'http://localhost:8000',
+        specPattern: 'cypress/e2e/**/*.cy.js',
+        retries: { runMode: 2, openMode: 0 },
+        video: false,
+        chromeWebSecurity: true,
+    },
+};
+`,
+      'cypress/e2e/login.cy.js': 'describe("login", () => { it("works", () => { cy.visit("/login"); }); });\n',
+      'cypress/fixtures/user.json': '{"email":"user@example.com"}\n',
+    });
+
+    const text = await runModule('cypress-e2e-config.js', app);
+
+    expect(text).toContain('Cypress');
+  });
+
+  test('proxies counted through subdirectories, in a namespace that collides', async () => {
+    const app = appWith('doctrine-entity-proxy-collision', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: true
+        proxy_dir: '%kernel.cache_dir%/doctrine/orm/Proxies'
+        proxy_namespace: 'App\\Proxies'
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+
+class Kernel
+{
+    use MicroKernelTrait;
+}
+`,
+      'var/cache/prod/doctrine/orm/Proxies/__CG__AppEntityUser.php': '<?php\n\nclass Proxy {}\n',
+      'var/cache/prod/doctrine/orm/Proxies/nested/__CG__AppEntityOrder.php': '<?php\n\nclass Proxy {}\n',
+    });
+
+    const text = await runModule('doctrine-entity-proxy.js', app);
+
+    expect(text).toContain('proxy_namespace');
+  });
+
+  test('a Google API key held in an unexpected variable, a hardcoded secret and default credentials', async () => {
+    const app = appWith('google-oauth-full', {
+      'composer.json': JSON.stringify({ require: { 'google/apiclient': '^2.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nGOOGLE_MAPS_API_KEY=AIzaSyD1234567890abcdefghijklmnop\n',
+      'src/Google/Auth.php': `<?php
+
+namespace App\\Google;
+
+use Google\\Client;
+
+class Auth
+{
+    public function client(): Client
+    {
+        $client = new Google\\Client();
+        $client->setClientId('1234567890-acme.apps.googleusercontent.com');
+        $client->setClientSecret('GOCSPX-abcdefghijklmnop');
+        $client->useApplicationDefaultCredentials();
+
+        return $client;
+    }
+}
+`,
+    });
+
+    const text = await runModule('google-oauth-integration.js', app);
+
+    expect(text).toContain('GOOGLE_MAPS_API_KEY');
+    expect(text).toContain('setClientSecret');
+    expect(text).toContain('useApplicationDefaultCredentials');
+  });
+
+  test('messenger with no transports section at all', async () => {
+    const app = appWith('messenger-no-transports', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        default_bus: command.bus
+`,
+    });
+
+    const text = await runModule('messenger.js', app);
+
+    expect(text).toContain('transports');
+  });
+
+  test('messenger with an empty transports section', async () => {
+    const app = appWith('messenger-empty-transports', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports: {}
+`,
+    });
+
+    const text = await runModule('messenger.js', app);
+
+    expect(text).toContain('No transports configured');
+  });
+
+  test('a DSN that is not a URL is still masked, and a message with no class in it', async () => {
+    const app = appWith('messenger-odd-dsn', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'amqp user:s3cr3t@rabbit:5672/%2f/messages'
+                failure_transport: failed
+            failed: 'doctrine://default?queue_name=failed'
+`,
+      'src/Message/README.php': `<?php
+
+// The directory holds a note as well as the messages themselves.
+`,
+      'src/Message/SendInvoice.php': `<?php
+
+namespace App\\Message;
+
+class SendInvoice
+{
+    public function __construct(public readonly int $invoiceId)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('messenger.js', app);
+
+    expect(text).toContain('async');
+    expect(text).toContain('***');
+  });
+});
+
+describe('batch 49: OWASP, interfaces, Rector, PHPSpec, PHPUnit, Prometheus, exceptions, mailer', () => {
+  test('a dependency-check report older than a month', async () => {
+    const app = appWith('owasp-stale-report', {
+      'dependency-check.xml': `<?xml version="1.0"?>
+<analysis>
+    <projectInfo>
+        <name>acme</name>
+        <reportDate>2020-01-15T09:00:00Z</reportDate>
+    </projectInfo>
+</analysis>
+`,
+      '.dependency-check/config.properties': 'odc.autoupdate=false\n',
+      'odc-reports/report.html': '<html></html>\n',
+      '.github/workflows/security.yml': `name: security
+on: [push]
+jobs:
+    scan:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: dependency-check/Dependency-Check_Action@main
+              continue-on-error: true
+            - run: npm audit --audit-level=none
+            - run: composer audit
+            - run: npx retire
+`,
+    });
+
+    const text = await runModule('owasp-dependency-check.js', app);
+
+    expect(text).toContain('days old');
+    expect(text).toContain('continue-on-error');
+  });
+
+  test('a marker interface, and files that mention a class or an interface but declare neither', async () => {
+    const app = appWith('interface-segregation-marker', {
+      'src/Contract/Marker.php': `<?php
+
+namespace App\\Contract;
+
+interface Marker
+{
+}
+`,
+      'src/Contract/notes.php': `<?php
+
+// The interface (the contract) and the class - if one is ever written - both
+// live somewhere else.
+`,
+      'src/Contract/Payment.php': `<?php
+
+namespace App\\Contract;
+
+interface Payment
+{
+    public function charge(int $amount): void;
+}
+`,
+    });
+
+    const text = await runModule('php-interface-segregation.js', app);
+
+    expect(text).toContain('Marker');
+  });
+
+  test('withSets with a PHP set, a dead-code set and an ordinary one', async () => {
+    const app = appWith('rector-with-sets', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\SetList;
+use Rector\\DeadCode\\Set\\DeadCodeSetList;
+
+return RectorConfig::configure()
+    ->withPaths([__DIR__ . '/src'])
+    ->withSets([
+        SetList::PHP_82,
+        SetList::CODE_QUALITY,
+        DeadCodeSetList::DEAD_CODE,
+    ]);
+`,
+    });
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('SetList::PHP_82');
+    expect(text).toContain('DEAD_CODE');
+    expect(text).toContain('CODE_QUALITY');
+  });
+
+  test('a spec with a constructor, a helper method and test doubles', async () => {
+    const app = appWith('phpspec-spec-file', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpspec/phpspec': '^7.0' } }, null, 4) + '\n',
+      'phpspec.yml': 'suites:\n    main:\n        namespace: App\n',
+      'spec/InvoiceSpec.php': `<?php
+
+namespace spec\\App;
+
+use PhpSpec\\ObjectBehavior;
+
+class InvoiceSpec extends ObjectBehavior
+{
+    public function let(): void
+    {
+        $this->beConstructedWith(100);
+    }
+
+    public function letGo(): void
+    {
+    }
+
+    public function getMatchers(): array
+    {
+        return [];
+    }
+
+    public function it_totals_the_lines($calculator): void
+    {
+        $calculator->total()->willReturn(100);
+        $this->total()->shouldBeCalled();
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpspec-config.js', app);
+
+    expect(text).toContain('beConstructedWith');
+    expect(text).toContain('test-double-usage');
+  });
+
+  test('a project with no PHPSpec at all', async () => {
+    const app = appWith('phpspec-absent', {});
+
+    const text = await runModule('phpspec-config.js', app);
+
+    expect(text).toContain('missing-config');
+  });
+
+  test('coverage thresholds of every kind in phpunit.xml', async () => {
+    const app = appWith('phpunit-thresholds', {
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage lines="90" methods="85" classes="80" branches="70">
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+        <exclude>
+            <directory>src/Migrations</directory>
+        </exclude>
+    </coverage>
+
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <env name="DATABASE_URL" value="sqlite:///:memory:"/>
+    </php>
+</phpunit>
+`,
+    });
+
+    const text = await runModule('phpunit-config.js', app);
+
+    expect(text).toContain('Min lines:    90%');
+    expect(text).toContain('Min branches: 70%');
+  });
+
+  test('an alerting file with a recording rule and a topk without a limit', async () => {
+    const app = appWith('prometheus-topk', {
+      'monitoring/rules/acme.rules.yml': `groups:
+    - name: acme.rules
+      rules:
+          - record: job:http_requests:rate5m
+            expr: sum(rate(http_requests_total[5m])) by (job)
+
+          - alert: HighErrorRate
+            expr: topk(error_budget_slots, rate(http_errors_total[5m])) > 0.05
+            labels:
+                severity: page
+            annotations:
+                summary: Too many errors
+                description: The error rate is above five per cent
+
+          - alert: slow_responses
+            expr: histogram_quantile(0.99, rate(http_duration_seconds_bucket[5m])) > 2
+            for: 10m
+            labels:
+                severity: warning
+            annotations:
+                summary: Slow responses
+                description: The ninety-ninth percentile is above two seconds
+`,
+    });
+
+    const text = await runModule('prometheus-alerting-rules.js', app);
+
+    expect(text).toContain('topk');
+    expect(text).toContain('PascalCase');
+  });
+
+  test('two exceptions that both claim the same 5xx status, and neither logs', async () => {
+    const app = appWith('exception-mapping-duplicate', {
+      'src/Exception/ServiceUnavailableException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface;
+
+class ServiceUnavailableException extends \\RuntimeException implements HttpExceptionInterface
+{
+    private const HTTP_SERVICE_UNAVAILABLE = 503;
+
+    public function getStatusCode(): int
+    {
+        return self::HTTP_SERVICE_UNAVAILABLE;
+    }
+
+    public function getHeaders(): array
+    {
+        return ['Retry-After' => '30'];
+    }
+}
+`,
+      'src/Exception/BackendDownException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface;
+
+class BackendDownException extends \\RuntimeException implements HttpExceptionInterface
+{
+    private const HTTP_SERVICE_UNAVAILABLE = 503;
+
+    public function getStatusCode(): int
+    {
+        return self::HTTP_SERVICE_UNAVAILABLE;
+    }
+
+    public function getHeaders(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-exception-mapping.js', app);
+
+    expect(text).toContain('503');
+    expect(text).toContain('Duplicate HTTP status codes');
+  });
+
+  test('a mailer DSN that is only ever a placeholder', async () => {
+    const app = appWith('mailer-placeholder', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        transports:
+            main: '%env(MAILER_DSN)%'
+`,
+    });
+
+    const text = await runModule('symfony-mailer-dsn-analysis.js', app);
+
+    expect(text).toContain('placeholder');
+  });
+
+  test('a placeholder that resolves to another placeholder in .env.local', async () => {
+    const app = appWith('mailer-placeholder-local', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '%env(MAILER_DSN)%'
+`,
+      '.env.local': 'MAILER_DSN=%env(SMTP_DSN)%\n',
+    });
+
+    const text = await runModule('symfony-mailer-dsn-analysis.js', app);
+
+    expect(text).toContain('Mailer');
+  });
+
+  test('a null transport in production drops the mail silently', async () => {
+    const app = appWith('mailer-null-prod', {
+      '.env': 'APP_ENV=prod\nMAILER_DSN=null://null\n',
+    });
+
+    const text = await runModule('symfony-mailer-dsn-analysis.js', app);
+
+    expect(text).toContain('silently dropped');
+  });
+});

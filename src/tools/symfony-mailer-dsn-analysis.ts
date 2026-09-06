@@ -88,8 +88,11 @@ function loadMailerDsnConfig(appPath: string): MailerDsnInfo | null {
   const envPath = path.join(appPath, '.env');
   const envContent = readFileSafe(envPath);
   const envDsn = extractDsnFromEnv(envContent, 'MAILER_DSN');
-  if (envDsn && !envDsn.startsWith('null://') && !envDsn.includes('%env(')) {
-    isCommittedToEnv = true;
+  if (envDsn) {
+    // A null:// transport or a placeholder carries nothing worth hiding, but
+    // it is still the DSN the application runs with: skipping it left the
+    // whole file reported as having no mailer configuration at all.
+    isCommittedToEnv = !envDsn.startsWith('null://') && !envDsn.includes('%env(');
     if (!dsn) dsn = envDsn;
   }
 

@@ -92,11 +92,14 @@ function parseExceptionFile(filePath: string): ExceptionMappingInfo | null {
   if (!content.includes('Exception') && !content.includes('Error')) return null;
   if (!content.includes('class ')) return null;
 
-  const classM = /class\s+(\w{1,100})\s+extends\s+(\w{1,100})/.exec(content);
+  // "extends \\RuntimeException" is how a class in a namespace reaches a
+  // global exception, and it was not being read at all: the parent has to be
+  // allowed to carry its namespace.
+  const classM = /class\s+(\w{1,100})\s+extends\s+\\?([\w\\]{1,100})/.exec(content);
   if (!classM) return null;
 
   const className = classM[1];
-  const parentName = classM[2];
+  const parentName = classM[2].split('\\').pop() ?? classM[2];
 
   const isHttpParent = HTTP_EXCEPTION_PARENTS.some((p) => parentName === p || parentName.includes(p));
   const implementsHttpException =

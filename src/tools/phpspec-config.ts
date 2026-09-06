@@ -196,10 +196,9 @@ function buildPhpspecConfigInfos(appPath: string): PhpspecConfigInfo[] {
 
 export function listPhpspecConfig(appPath: string): McpToolResult {
   try {
+    // A project without PHPSpec is itself a finding, so the list is never
+    // empty.
     const infos = buildPhpspecConfigInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No PHPSpec configuration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `PHPSpec Configuration Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {

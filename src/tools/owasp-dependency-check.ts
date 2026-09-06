@@ -70,7 +70,10 @@ function buildOwaspDependencyCheckInfos(appPath: string): OwaspDependencyCheckIn
     const issues: string[] = [];
     if (content) {
       // Check report date freshness (look for reportDate or generated attribute)
-      const dateM = /reportDate['":\s]+([0-9]{4}-[0-9]{2}-[0-9]{2})/.exec(content);
+      // The XML report writes <reportDate>2026-01-15T…</reportDate>, so the
+      // closing angle bracket has to be one of the characters allowed between
+      // the name and the date.
+      const dateM = /reportDate['":>\s]+([0-9]{4}-[0-9]{2}-[0-9]{2})/.exec(content);
       if (dateM) {
         const reportDate = new Date(dateM[1]);
         const now = new Date();
@@ -176,10 +179,9 @@ function buildOwaspDependencyCheckInfos(appPath: string): OwaspDependencyCheckIn
 
 export function listOwaspDependencyCheck(appPath: string): McpToolResult {
   try {
+    // The CI check reports either what it found or that it found nothing, so
+    // there is always at least one finding to print.
     const infos = buildOwaspDependencyCheckInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No OWASP dependency check configuration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `OWASP Dependency Check Analysis\n${'='.repeat(55)}\n\nFindings: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {

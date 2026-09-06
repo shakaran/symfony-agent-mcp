@@ -27,11 +27,12 @@ const PHP_VERSION_ORDER: Record<string, number> = {
   PHP_80: 80, PHP_81: 81, PHP_82: 82, PHP_83: 83, PHP_84: 84,
 };
 
-function normalizePhpVersion(raw: string): string | null {
-  // Normalize php82 / PHP_82 / PHP82 → "8.2"
+function normalizePhpVersion(raw: string): string {
+  // Normalize php82 / PHP_82 / PHP82 → "8.2". Both callers read the name out
+  // of a pattern that already required the digits, so the fallback is only
+  // there to keep the function total.
   const m = /(?:php[_]?)([0-9])([0-9]+)/i.exec(raw.toLowerCase().replace(/_/g, ''));
-  if (m) return `${m[1]}.${m[2]}`;
-  return null;
+  return m ? `${m[1]}.${m[2]}` : raw;
 }
 
 function buildPhpRectorUpgradeSetsInfos(appPath: string): PhpRectorUpgradeSetsInfo[] {
@@ -66,7 +67,7 @@ function buildPhpRectorUpgradeSetsInfos(appPath: string): PhpRectorUpgradeSetsIn
 
     for (const vm of phpVersionMatches) {
       const key = vm[1];
-      const displayVersion = normalizePhpVersion(key) ?? key;
+      const displayVersion = normalizePhpVersion(key);
       enabledVersions.push(key);
 
       const versionNum = PHP_VERSION_ORDER[key] ?? PHP_VERSION_ORDER[key.toLowerCase()] ?? 0;
@@ -140,7 +141,7 @@ function buildPhpRectorUpgradeSetsInfos(appPath: string): PhpRectorUpgradeSetsIn
     const setListPhpMatches = [...setsBlock.matchAll(/SetList::PHP_([0-9]{2,3})/g)];
     for (const sm of setListPhpMatches) {
       const versionKey = `PHP_${sm[1]}`;
-      const displayVersion = normalizePhpVersion(versionKey) ?? versionKey;
+      const displayVersion = normalizePhpVersion(versionKey);
       const versionNum = PHP_VERSION_ORDER[versionKey] ?? 0;
       results.push({
         category: 'withSets(SetList)',

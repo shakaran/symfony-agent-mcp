@@ -87,11 +87,17 @@ export function listDoctrineEntityProxies(appPath: string): McpToolResult {
     let proxyNamespace = 'Proxies\\__CG__';
     let autoGenerate = false;
 
+    // Both values are usually quoted, and the quotes were being kept: a quoted
+    // proxy_dir resolved to a path that does not exist, so no proxy was ever
+    // counted, and a quoted proxy_namespace never started with "App\\", so the
+    // collision was never reported.
+    const unquote = (value: string): string => value.trim().replace(/^["']|["']$/g, '').trim();
+
     const proxyDirM = /proxy_dir\s*:\s*(.{1,200})/.exec(yamlContent);
-    if (proxyDirM) proxyDir = proxyDirM[1].trim();
+    if (proxyDirM) proxyDir = unquote(proxyDirM[1]);
 
     const proxyNsM = /proxy_namespace\s*:\s*(.{1,200})/.exec(yamlContent);
-    if (proxyNsM) proxyNamespace = proxyNsM[1].trim();
+    if (proxyNsM) proxyNamespace = unquote(proxyNsM[1]);
 
     const autoGenM = /auto_generate_proxy_classes\s*:\s*(true|false|1|0|'true'|'false')/i.exec(yamlContent);
     if (autoGenM) {
@@ -127,7 +133,9 @@ export function listDoctrineEntityProxies(appPath: string): McpToolResult {
 
     if (proxyNamespace && proxyNamespace.length > 0) {
       // Check namespace collision — proxy namespace should not match entity namespace
-      const appNsM = /namespace\s+App\\/.exec(readFileOr(path.join(srcDir, 'Kernel.php'), ''));
+      // Kernel.php sits in App itself, so its declaration is "namespace App;":
+      // asking for a backslash after it meant the collision was never found.
+      const appNsM = /namespace\s+App\s*[;\\]/.exec(readFileOr(path.join(srcDir, 'Kernel.php'), ''));
       if (appNsM && proxyNamespace.startsWith('App\\')) {
         issues.push(`proxy_namespace "${proxyNamespace}" collides with actual App\\ namespace — proxies may shadow real classes`);
       }

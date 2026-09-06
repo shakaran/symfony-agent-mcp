@@ -159,10 +159,9 @@ function buildCloudwatchIntegrationInfos(appPath: string): CloudwatchIntegration
 
 export function listCloudwatchIntegration(appPath: string): McpToolResult {
   try {
+    // The builder always describes something, if only that there is no
+    // CloudWatch integration here, so the list is never empty.
     const infos = buildCloudwatchIntegrationInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No CloudWatch integration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `CloudWatch Integration Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {
