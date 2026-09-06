@@ -3432,3 +3432,368 @@ class DispatchingService
     expect(text).toContain('kernel.request');
   });
 });
+
+describe('security firewalls and access control', () => {
+  test('a firewall of every authenticator, and access control with host, methods and an expression', async () => {
+    const app = appWith('security-firewalls', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER]
+        ROLE_SUPER_ADMIN: [ROLE_ADMIN]
+    firewalls:
+        api:
+            pattern: ^/api
+            stateless: true
+            jwt:
+                authenticator: lexik_jwt_authentication.security.jwt_authenticator
+            entry_point: App\\Security\\ApiEntryPoint
+        oauth:
+            oauth2: true
+        basic:
+            http_basic:
+                realm: Acme
+        main:
+            lazy: true
+            form_login:
+                login_path: app_login
+            custom_authenticators:
+                - App\\Security\\ApiTokenAuthenticator
+        broken: ~
+    access_control:
+        - { path: ^/admin, roles: ROLE_ADMIN, host: admin.example.com, methods: [GET, POST] }
+        - { path: ^/reports, allow_if: "is_granted('ROLE_USER') and user.isActive()" }
+        - { path: ^/public, roles: PUBLIC_ACCESS }
+`,
+      'src/Security/InvoiceVoter.php': `<?php
+
+namespace App\\Security;
+
+use App\\Entity\\Invoice;
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class InvoiceVoter extends Voter
+{
+    public const VIEW = 'INVOICE_VIEW';
+    public const EDIT = 'INVOICE_EDIT';
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, ['INVOICE_VIEW', 'INVOICE_EDIT'], true)
+            && $subject instanceof Invoice;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return match ($attribute) {
+            self::VIEW => true,
+            self::EDIT => false,
+            default => false,
+        };
+    }
+}
+`,
+    });
+
+    const text = await runModule('security-voters.js', app);
+
+    expect(text).toContain('InvoiceVoter');
+    expect(text).toContain('ROLE_ADMIN');
+  });
+});
+
+describe('data pipelines', () => {
+  test('an extract-transform-load service that accumulates everything in an array', async () => {
+    const app = appWith('data-pipeline', {
+      'src/Pipeline/ImportPipeline.php': `<?php
+
+namespace App\\Pipeline;
+
+class ImportPipeline
+{
+    public function extract(string $file): array
+    {
+        $rows = [];
+        $handle = fopen($file, 'r');
+        while (($line = fgets($handle)) !== false) {
+            $rows[] = $line;
+        }
+        fclose($handle);
+
+        return $rows;
+    }
+
+    public function transform(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = strtoupper($row);
+        }
+
+        return $out;
+    }
+
+    public function load(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->em->persist($this->toEntity($row));
+        }
+        $this->em->flush();
+    }
+}
+`,
+      'src/Pipeline/SplPipeline.php': `<?php
+
+namespace App\\Pipeline;
+
+class SplPipeline
+{
+    public function readAll(string $file): array
+    {
+        $rows = [];
+        $spl = new \\SplFileObject($file);
+        foreach ($spl as $line) {
+            $rows[] = $line;
+        }
+
+        return $rows;
+    }
+
+    public function piped(iterable $rows): iterable
+    {
+        return $this->collection->pipe($rows);
+    }
+}
+`,
+    });
+
+    const etl = appWith('data-pipeline-etl', {
+      'src/Pipeline/EtlPipeline.php': `<?php
+
+namespace App\\Pipeline;
+
+class EtlPipeline
+{
+    public function run(array $source): void
+    {
+        $extracted = $this->extract($source);
+        $transformed = $this->transform($extracted);
+        $this->load($transformed);
+    }
+
+    public function extract(array $source): array
+    {
+        return $source;
+    }
+
+    public function transform(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    public function load(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->em->persist($row);
+        }
+        $this->em->flush();
+    }
+}
+`,
+      'src/Pipeline/ExportService.php': `<?php
+
+namespace App\\Pipeline;
+
+class ExportService
+{
+    public function export(iterable $rows): \\Generator
+    {
+        foreach ($rows as $row) {
+            yield $this->toCsvLine($row);
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-data-pipeline-patterns.js', app);
+    const etlText = await runModule('symfony-data-pipeline-patterns.js', etl);
+
+    expect(etlText).toContain('EtlPipeline');
+    expect(text).toContain('ImportPipeline');
+  });
+});
+
+describe('svelte components', () => {
+  test('components without typescript and a twig call passing an object', async () => {
+    const app = appWith('ux-svelte', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/ux-svelte': '^2.0' },
+      }, null, 2),
+      'package.json': JSON.stringify({
+        devDependencies: { svelte: '^4.0.0', '@symfony/ux-svelte': '^2.0.0' },
+      }, null, 2),
+      'assets/svelte/controllers/Counter.svelte': `<script>
+    export let count = 0;
+</script>
+
+<button on:click={() => count++}>{count}</button>
+`,
+      'assets/svelte/controllers/Typed.svelte': `<script lang="ts">
+    export let label: string;
+</script>
+
+<span>{label}</span>
+`,
+      'assets/svelte/controllers/README.md': 'Not a component\n',
+      'templates/home/index.html.twig': `{{ svelte_component('Counter', { count: 1 }) }}
+{{ svelte_component('Typed', { label: invoice }) }}
+`,
+    });
+
+    const text = await runModule('symfony-ux-svelte.js', app);
+
+    expect(text).toContain('Svelte');
+    expect(text).toContain('not TypeScript');
+  });
+});
+
+describe('codeception', () => {
+  test('suites with and without an app path, and a cleanup setting', async () => {
+    const app = appWith('codeception', {
+      'codeception.yml': `namespace: App\\Tests
+support_namespace: Support
+paths:
+    tests: tests
+    output: var/codeception
+settings:
+    shuffle: false
+    lint: true
+coverage:
+    enabled: true
+`,
+      'tests/acceptance.suite.yml': `actor: AcceptanceTester
+modules:
+    enabled:
+        - WebDriver:
+              url: http://localhost
+              browser: chrome
+`,
+      'tests/functional.suite.yml': `actor: FunctionalTester
+modules:
+    enabled:
+        - Symfony:
+              app_path: src
+              environment: test
+        - Doctrine2:
+              depends: Symfony
+              cleanup: true
+`,
+      'tests/unit.suite.yml': `actor: UnitTester
+modules:
+    enabled:
+        - Asserts
+        - Db:
+              cleanup: false
+`,
+    });
+
+    const text = await runModule('codeception-config.js', app);
+
+    expect(text).toContain('acceptance');
+  });
+});
+
+describe('docker swarm', () => {
+  test('services with resource blocks, update order and published ports', async () => {
+    const app = appWith('docker-swarm', {
+      'docker-compose.prod.yml': `version: "3.8"
+
+services:
+  app:
+    image: registry.example.com/acme:latest
+    deploy:
+      replicas: 4
+      resources:
+        reservations:
+          cpus: "0.25"
+      update_config:
+        parallelism: 2
+        order: stop-first
+      restart_policy:
+        condition: none
+      rollback_config:
+        delay: 5s
+    ports:
+      - "8080:8080"
+
+  worker:
+    image: registry.example.com/acme:latest
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+      update_config:
+        order: start-first
+      restart_policy:
+        condition: on-failure
+      rollback_config:
+        parallelism: 1
+    ports:
+      - target: 9000
+        published: 9000
+        mode: host
+`,
+    });
+
+    const text = await runModule('docker-swarm-config.js', app);
+
+    expect(text).toContain('app');
+  });
+});
+
+describe('gitlab ci', () => {
+  test('a pipeline with a secret in variables and artifacts that carry the environment', async () => {
+    const app = appWith('gitlab-ci', {
+      '.gitlab-ci.yml': `stages:
+    - test
+    - deploy
+
+variables:
+    COMPOSER_CACHE_DIR: .composer
+    DEPLOY_TOKEN: glpat-0123456789abcdef
+    APP_ENV: test
+
+test:
+    stage: test
+    image: php:8.3
+    script:
+        - composer install
+        - vendor/bin/phpunit
+    artifacts:
+        paths:
+            - .env
+            - var/log/
+            - config/
+
+deploy:
+    stage: deploy
+    script:
+        - bin/deploy
+    only:
+        - main
+`,
+    });
+
+    const text = await runModule('gitlab-ci-config.js', app);
+
+    expect(text).toContain('hardcoded secret');
+    expect(text).not.toContain('glpat-0123456789abcdef');
+  });
+});
