@@ -25800,3 +25800,327 @@ newrelic.distributed_tracing_enabled = false
     expect(text).toContain('HTTP');
   });
 });
+
+describe('batch 87: OAuth2 server, PDF, PHP array, bcmath, sniffer, contracts and enums', () => {
+  test('an OAuth2 server with long-lived tokens', async () => {
+    const app = appWith('oauth2-server-config', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-server': '^8.0', 'league/oauth2-server-bundle': '^0.8' } }, null, 4) + '\n',
+      'src/OAuth/ServerFactory.php': `<?php
+
+namespace App\\OAuth;
+
+use League\\OAuth2\\Server\\AuthorizationServer;
+use League\\OAuth2\\Server\\CryptKey;
+use League\\OAuth2\\Server\\Grant\\PasswordGrant;
+use League\\OAuth2\\Server\\Grant\\RefreshTokenGrant;
+
+class ServerFactory
+{
+    public function server(): AuthorizationServer
+    {
+        $server = new AuthorizationServer(
+            $this->clients,
+            $this->tokens,
+            $this->scopes,
+            new CryptKey('/var/oauth/private.key'),
+            'abcdef1234567890abcdef1234567890',
+        );
+
+        $server->enableGrantType(new PasswordGrant($this->users, $this->refreshTokens));
+        $server->enableGrantType(new RefreshTokenGrant($this->refreshTokens));
+
+        return $server;
+    }
+}
+`,
+      'config/packages/league_oauth2_server.yaml': `league_oauth2_server:
+    authorization_server:
+        private_key: '%env(OAUTH_PRIVATE_KEY)%'
+        encryption_key: '%env(OAUTH_ENCRYPTION_KEY)%'
+        access_token_ttl: P30D
+        refresh_token_ttl: P90D
+    resource_server:
+        public_key: '%env(OAUTH_PUBLIC_KEY)%'
+`,
+    });
+
+    const text = await runModule('oauth2-server-config.js', app);
+
+    expect(text).toContain('PasswordGrant');
+  });
+
+  test('a project generating PDFs with TCPDF', async () => {
+    const app = appWith('pdf-generation', {
+      'composer.json': JSON.stringify({ require: { 'tecnickcom/tcpdf': '^6.6' } }, null, 4) + '\n',
+      'src/Export/InvoicePdf.php': `<?php
+
+namespace App\\Export;
+
+class InvoicePdf
+{
+    public function render(array $invoice): string
+    {
+        $pdf = new \\TCPDF();
+        $pdf->AddPage();
+        $pdf->writeHTML('<h1>' . $invoice['number'] . '</h1>');
+
+        return $pdf->Output('invoice.pdf', 'S');
+    }
+}
+`,
+    });
+
+    const text = await runModule('pdf-generation.js', app);
+
+    expect(text).toContain('tcpdf');
+  });
+
+  test('array functions used in the ways that surprise people', async () => {
+    const app = appWith('php-array-functions', {
+      'src/Service/Arrays.php': `<?php
+
+namespace App\\Service;
+
+class Arrays
+{
+    public function zip(array $a, array $b): array
+    {
+        return array_map(null, $a, $b);
+    }
+
+    public function nested(array $rows): array
+    {
+        return array_map(static fn (array $row): array => array_map('trim', $row), $rows);
+    }
+
+    public function compact(array $rows): array
+    {
+        return array_values(array_filter($rows));
+    }
+
+    public function walk(array $rows): array
+    {
+        array_walk($rows, static function ($value, $key) {
+            return $value;
+        });
+
+        return $rows;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-array-functions.js', app);
+
+    expect(text).toContain('array_');
+  });
+
+  test('a backtrace taken in production code', async () => {
+    const app = appWith('php-backtrace-debug', {
+      'src/Service/Tracer.php': `<?php
+
+namespace App\\Service;
+
+class Tracer
+{
+    public function trace(): array
+    {
+        // debug_backtrace() is called on the hot path here.
+        return debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5);
+    }
+
+    public function dump(): void
+    {
+        $trace = (new \\Exception())->getTraceAsString();
+        error_log($trace);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-backtrace-debug.js', app);
+
+    expect(text).toContain('backtrace');
+  });
+
+  test('bcmath dividing without checking, at absurd precision', async () => {
+    const app = appWith('php-bcmath-patterns', {
+      'src/Money/Calculator.php': `<?php
+
+namespace App\\Money;
+
+class Calculator
+{
+    public function share(string $total, string $count): string
+    {
+        return bcdiv($total, $count, 2);
+    }
+
+    public function precise(): void
+    {
+        bcscale(40);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-bcmath-patterns.js', app);
+
+    expect(text).toContain('bc');
+  });
+
+  test('a CodeSniffer ruleset, and a project without one', async () => {
+    const app = appWith('php-codesniffer-config', {
+      'phpcs.xml.dist': `<?xml version="1.0"?>
+<ruleset name="Acme">
+    <file>src</file>
+    <file>tests</file>
+
+    <rule ref="PSR12"/>
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="120"/>
+        </properties>
+    </rule>
+
+    <exclude-pattern>src/Migrations/*</exclude-pattern>
+</ruleset>
+`,
+    });
+
+    const text = await runModule('php-codesniffer-config.js', app);
+
+    expect(text).toContain('vendor exclusion');
+  });
+
+  test('an interface with several implementations and no contract test', async () => {
+    const files: Record<string, string> = {
+      'src/Export/ExporterInterface.php': `<?php
+
+namespace App\\Export;
+
+interface ExporterInterface
+{
+    public function export(array $rows): string;
+}
+`,
+    };
+    for (const name of ['Csv', 'Json', 'Xml', 'Pdf']) {
+      files[`src/Export/${name}Exporter.php`] = `<?php
+
+namespace App\\Export;
+
+class ${name}Exporter implements ExporterInterface
+{
+    public function export(array $rows): string
+    {
+        return '';
+    }
+}
+`;
+    }
+
+    const app = appWith('php-contract-tests', files);
+
+    const text = await runModule('php-contract-tests.js', app);
+
+    expect(text).toContain('ExporterInterface');
+  });
+
+  test('dates built from the global timezone', async () => {
+    const app = appWith('php-date-timezone', {
+      'src/Service/Clock.php': `<?php
+
+namespace App\\Service;
+
+class Clock
+{
+    public function boot(): void
+    {
+        date_default_timezone_set('Europe/Madrid');
+    }
+
+    public function today(): string
+    {
+        return date('Y-m-d');
+    }
+
+    public function stamp(): int
+    {
+        return mktime(0, 0, 0, 1, 1, 2026);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-date-timezone.js', app);
+
+    expect(text).toContain('timezone');
+  });
+
+  test('an enum with many cases, switched on rather than matched', async () => {
+    const app = appWith('php-enums-large', {
+      'src/Enum/Country.php': `<?php
+
+namespace App\\Enum;
+
+enum Country: string
+{
+    case Case0 = 'case_0';
+    case Case1 = 'case_1';
+    case Case2 = 'case_2';
+    case Case3 = 'case_3';
+    case Case4 = 'case_4';
+    case Case5 = 'case_5';
+    case Case6 = 'case_6';
+    case Case7 = 'case_7';
+    case Case8 = 'case_8';
+    case Case9 = 'case_9';
+    case Case10 = 'case_10';
+    case Case11 = 'case_11';
+    case Case12 = 'case_12';
+    case Case13 = 'case_13';
+    case Case14 = 'case_14';
+    case Case15 = 'case_15';
+    case Case16 = 'case_16';
+    case Case17 = 'case_17';
+    case Case18 = 'case_18';
+    case Case19 = 'case_19';
+    case Case20 = 'case_20';
+    case Case21 = 'case_21';
+    case Case22 = 'case_22';
+    case Case23 = 'case_23';
+    case Case24 = 'case_24';
+    case Case25 = 'case_25';
+    case Case26 = 'case_26';
+    case Case27 = 'case_27';
+    case Case28 = 'case_28';
+    case Case29 = 'case_29';
+}
+`,
+      'src/Service/CountryLabel.php': `<?php
+
+namespace App\\Service;
+
+use App\\Enum\\Country;
+
+class CountryLabel
+{
+    public function label(Country $country): string
+    {
+        switch ($country) {
+            case Country::Case0:
+                return 'First';
+            default:
+                return 'Other';
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-enums.js', app);
+
+    expect(text).toContain('Country');
+  });
+});

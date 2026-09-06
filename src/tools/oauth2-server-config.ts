@@ -77,7 +77,9 @@ function buildOauth2ServerConfigInfos(appPath: string): Oauth2ServerConfigInfo[]
     if (req['league/oauth2-server'] === undefined) return results;
   } catch { return results; }
 
-  if (!hasOauth2Server) return results;
+  // Reaching here means the package is there: the check above returns
+  // otherwise.
+  void hasOauth2Server;
 
   const srcDir = path.join(appPath, 'src');
 
