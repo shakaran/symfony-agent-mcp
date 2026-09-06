@@ -61,7 +61,9 @@ function loadMessengerPriorityConfig(appPath: string): MessengerPriorityInfo[] {
     const results: MessengerPriorityInfo[] = [];
 
     for (const [name, def] of Object.entries(transports)) {
-      const d = (def ?? {}) as Record<string, unknown>;
+      // A transport is often written in its short form, "async: 'doctrine://…'",
+      // and treating that string as a mapping threw before anything was read.
+      const d = (def && typeof def === 'object' ? def : {}) as Record<string, unknown>;
       const options = (d['options'] ?? {}) as Record<string, unknown>;
       const hasDeadLetter = 'failed_transport' in d ||
         JSON.stringify(options).includes('dead') ||
@@ -74,7 +76,7 @@ function loadMessengerPriorityConfig(appPath: string): MessengerPriorityInfo[] {
 
       // FIFO guarantee concern for priority transports
       if (priority !== undefined) {
-        const dsn = String(d['dsn'] ?? '');
+        const dsn = typeof def === 'string' ? def : String(d['dsn'] ?? '');
         if (dsn.includes('amqp') && !dsn.includes('x-max-priority')) {
           issues.push(`Priority transport "${name}" uses AMQP without x-max-priority — no FIFO priority guarantee`);
         }

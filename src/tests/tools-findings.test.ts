@@ -23813,3 +23813,246 @@ class InvoiceMailer
     expect(text).toContain('synchronously');
   });
 });
+
+describe('batch 79: mailer transports, maker, messenger, monolog, notifiers and runtime', () => {
+  test('a mailer DSN with the password written into it', async () => {
+    const app = appWith('symfony-mailer-transport', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'smtp://acme:hunter2@smtp.acme.com:587'
+        headers:
+            from: 'noreply@acme.example.com'
+            bcc: 'audit@acme.example.com'
+`,
+    });
+
+    const text = await runModule('symfony-mailer-transport.js', app);
+
+    expect(text).toContain('Credentials hardcoded');
+  });
+
+  test('maker configuration with generated code beside it', async () => {
+    const app = appWith('symfony-maker-config', {
+      'config/packages/maker.yaml': `maker:
+    root_namespace: 'App'
+    generate_final_classes: false
+    generate_final_entities: false
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+
+class InvoiceRepository extends ServiceEntityRepository
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-maker-config.js', app);
+
+    expect(text).toContain('maker');
+  });
+
+  test('an in-memory transport configured outside the test environment', async () => {
+    const app = appWith('symfony-messenger-in-memory', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'in-memory://'
+`,
+      'config/packages/test/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'in-memory://'
+`,
+      'tests/Unit/MessageTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+use Symfony\\Component\\Messenger\\Transport\\InMemory\\InMemoryTransport;
+
+class MessageTest extends TestCase
+{
+    public function testItDispatches(): void
+    {
+        $transport = new InMemoryTransport();
+        $this->assertCount(0, $transport->getSent());
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-in-memory.js', app);
+
+    expect(text).toContain('in-memory');
+  });
+
+  test('transports that are all the same priority', async () => {
+    const app = appWith('symfony-messenger-priority', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default?queue_name=async'
+            events: 'doctrine://default?queue_name=events'
+        routing:
+            'App\\Message\\SendInvoice': async
+            'App\\Message\\RebuildIndex': events
+`,
+    });
+
+    const text = await runModule('symfony-messenger-priority.js', app);
+
+    expect(text).toContain('priority');
+  });
+
+  test('a JSON formatter that escapes unicode, and a line formatter with traces', async () => {
+    const app = appWith('symfony-monolog-formatter', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            formatter: monolog.formatter.json
+`,
+      'config/packages/prod/monolog.yaml': "monolog:\n    handlers:\n        main:\n            type: stream\n",
+      'src/Logger/Formatters.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Formatter\\JsonFormatter;
+use Monolog\\Formatter\\LineFormatter;
+
+class Formatters
+{
+    public function json(): JsonFormatter
+    {
+        return new JsonFormatter();
+    }
+
+    public function line(): LineFormatter
+    {
+        $formatter = new LineFormatter(null, new \\DateTimeZone('Europe/Madrid'));
+        $formatter->includeStacktraces = true;
+
+        return $formatter;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-monolog-formatter.js', app);
+
+    expect(text).toContain('Formatter');
+  });
+
+  test('an admin notification with no recipients configured', async () => {
+    const app = appWith('symfony-notifier-admin', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: '%env(SLACK_DSN)%'
+`,
+      'src/Notification/DiskFullNotification.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+use Symfony\\Component\\Notifier\\Recipient\\RecipientInterface;
+
+class DiskFullNotification extends Notification implements NotificationInterface
+{
+    public function getChannels(RecipientInterface $recipient): array
+    {
+        return ['chat'];
+    }
+}
+`,
+      'src/Notifier/AdminNotifier.php': `<?php
+
+namespace App\\Notifier;
+
+use Symfony\\Component\\Notifier\\NotifierInterface;
+
+class AdminNotifier
+{
+    public function __construct(private NotifierInterface $notifier)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-notifier-admin.js', app);
+
+    expect(text).toContain('admin');
+  });
+
+  test('a custom property extractor that may not be tagged', async () => {
+    const app = appWith('symfony-property-info', {
+      'src/PropertyInfo/LegacyExtractor.php': `<?php
+
+namespace App\\PropertyInfo;
+
+use Symfony\\Component\\PropertyInfo\\PropertyTypeExtractorInterface;
+use Symfony\\Component\\PropertyInfo\\Type;
+
+class LegacyExtractor implements PropertyTypeExtractorInterface
+{
+    public function getTypes(string $class, string $property, array $context = []): ?array
+    {
+        return [new Type(Type::BUILTIN_TYPE_STRING)];
+    }
+}
+`,
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+`,
+    });
+
+    const text = await runModule('symfony-property-info.js', app);
+
+    expect(text).toContain('Extractor');
+  });
+
+  test('a runtime configured through the environment', async () => {
+    const app = appWith('symfony-runtime-env', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/runtime': '^7.0' },
+        extra: { 'runtime': { 'class': 'Runtime\\FrankenPhpSymfony\\Runtime' } },
+      }, null, 4) + '\n',
+      'public/index.php': `<?php
+
+use App\\Kernel;
+
+require_once dirname(__DIR__) . '/vendor/autoload_runtime.php';
+
+return static function (array $context): Kernel {
+    return new Kernel($context['APP_ENV'], (bool) $context['APP_DEBUG']);
+};
+`,
+      '.env': 'APP_ENV=prod\nAPP_DEBUG=0\nAPP_RUNTIME_ENV=prod\n',
+    });
+
+    const text = await runModule('symfony-runtime-env.js', app);
+
+    expect(text).toContain('runtime');
+  });
+});
