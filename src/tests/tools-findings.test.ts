@@ -5795,3 +5795,291 @@ class LooseLoader extends Loader
     expect(text).toContain('ExtraLoader');
   });
 });
+
+describe('docker compose health', () => {
+  test('services with and without a health check, and depends_on with no condition', async () => {
+    const app = appWith('compose-health', {
+      'docker-compose.yml': `services:
+  app:
+    image: registry.example.com/acme:latest
+    restart: unless-stopped
+    depends_on:
+      - database
+    deploy:
+      replicas: 2
+
+  database:
+    image: postgres:16
+    restart: always
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 10s
+
+  cache:
+    build: ./docker/redis
+    depends_on:
+      database:
+        condition: service_healthy
+`,
+      'docker-compose.prod.yml': `services:
+  app:
+    image: registry.example.com/acme:1.2.3
+`,
+    });
+
+    const text = await runModule('docker-compose-health.js', app);
+
+    expect(text).toContain('cache');
+  });
+});
+
+describe('netlify sections', () => {
+  test('sections with comments and blank lines between the settings', async () => {
+    const app = appWith('netlify-comments', {
+      'netlify.toml': `# Acme deployment
+
+[build]
+    # what to run
+    command = "composer install"
+
+    publish = "public"
+
+[build.environment]
+    # the php version to build with
+    PHP_VERSION = "8.3"
+
+    APP_SECRET = "0123456789abcdef0123456789abcdef"
+
+[context.production.environment]
+    # production only
+
+    APP_ENV = "prod"
+
+[[headers]]
+    # every path
+    for = "/*"
+
+    [headers.values]
+        # security headers
+        X-Frame-Options = "SAMEORIGIN"
+
+[[redirects]]
+    # the old path
+    from = "/old"
+
+    to = "/new"
+
+[functions]
+    # bundling
+    directory = "netlify/functions"
+`,
+    });
+
+    const text = await runModule('netlify-deploy-config.js', app);
+
+    expect(text).toContain('build');
+  });
+});
+
+describe('scheduler expressions', () => {
+  test('periodic tasks written in every interval shape', async () => {
+    const app = appWith('scheduler-intervals', {
+      'src/Scheduler/PeriodicTasks.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsPeriodicTask;
+
+#[AsPeriodicTask('PT30S')]
+class EverySecondsTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+
+#[AsPeriodicTask('PT15M')]
+class EveryMinutesTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+
+#[AsPeriodicTask('PT6H')]
+class EveryHoursTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+
+#[AsPeriodicTask('900')]
+class EveryRawSecondsTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+
+#[AsCronTask('not a cron expression')]
+class BrokenCronTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+`,
+      'config/packages/scheduler.yaml': `framework:
+    scheduler:
+        schedules:
+            default:
+                transport: 'doctrine://default'
+                tasks:
+                    - id: ReportSchedule
+                      expression: 'nonsense'
+                    - id: CleanupSchedule
+                      frequency: '@daily'
+            broken: ~
+`,
+    });
+
+    const text = await runModule('symfony-scheduler-tasks.js', app);
+
+    expect(text).toContain('EverySecondsTask');
+  });
+});
+
+describe('voter attributes', () => {
+  test('attributes declared in a constant, supported but not handled, and the other way round', async () => {
+    const app = appWith('voter-attributes', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/invoice, roles: [INVOICE_VIEW] }
+        - { path: ^/report, roles: REPORT_RUN }
+`,
+      'src/Security/Voter/InvoiceVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class InvoiceVoter extends Voter
+{
+    public const ATTRIBUTES = ['INVOICE_VIEW', 'INVOICE_EDIT', 'INVOICE_DELETE'];
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, self::ATTRIBUTES, true);
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return match ($attribute) {
+            'INVOICE_VIEW' => true,
+            'INVOICE_EDIT' => false,
+            'INVOICE_ARCHIVE' => false,
+            default => false,
+        };
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-custom-voter.js', app);
+
+    expect(text).toContain('INVOICE_VIEW');
+  });
+});
+
+describe('translation extractors', () => {
+  test('keys used in templates and in php against the catalogues', async () => {
+    const app = appWith('translation-extractors', {
+      'translations/messages.en.yaml': `app:
+    title: 'Dashboard'
+    subtitle: 'Everything at a glance'
+`,
+      'translations/messages+intl-icu.en.yaml': `app:
+    count: '{count, plural, one {# item} other {# items}}'
+`,
+      'templates/home/index.html.twig': `<h1>{{ 'app.title'|trans }}</h1>
+<p>{{ 'app.missing'|trans }}</p>
+{% trans %}app.subtitle{% endtrans %}
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Contracts\\Translation\\TranslatorInterface;
+
+class HomeController
+{
+    public function index(TranslatorInterface $translator): string
+    {
+        $translator->trans('app.title');
+        $translator->trans('app.absent', [], 'messages');
+
+        return 'ok';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-translation-extractors.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('var dumper casters', () => {
+  test('a caster that builds an array by hand, one with no stub and one exposing private state', async () => {
+    const app = appWith('var-dumper-casters', {
+      'src/Caster/InvoiceCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class InvoiceCaster
+{
+    public static function cast($invoice, array $a, Stub $stub, bool $isNested): array
+    {
+        $a = [
+            'reference' => $invoice->reference,
+            'total' => $invoice->total,
+        ];
+
+        return $a;
+    }
+}
+`,
+      'src/Caster/AccountCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class AccountCaster
+{
+    protected $secret;
+
+    private $token;
+
+    public static function cast($account, array $a, Stub $stub, bool $isNested)
+    {
+        $a['password'] = $account->password;
+
+        return $a;
+    }
+}
+`,
+      'config/packages/debug.yaml': `debug:
+    dump_destination: 'tcp://%env(VAR_DUMPER_SERVER)%'
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('Caster');
+  });
+});

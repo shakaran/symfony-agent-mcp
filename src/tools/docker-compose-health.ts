@@ -31,13 +31,18 @@ function parseDockerCompose(filePath: string): Record<string, unknown> | null {
     let currentService = '';
     const lines = content.split('\n');
     const svcIndent = indentUnder(content, 'services');
+    let inServices = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (/^services\s*:/.test(line)) { inServices = true; continue; }
+      if (/^[a-zA-Z0-9_-]+\s*:/.test(line)) inServices = false;
       const serviceMatch = new RegExp(`^ {${svcIndent}}(?! )([a-zA-Z0-9_-]+):\\s*$`).exec(line);
       if (serviceMatch && i > 0) {
-        const prevLine = lines[i - 1] ?? '';
-        if (prevLine.includes('services:')) {
+        // Requiring "services:" on the previous line meant only the first
+        // service in the file was ever registered; the rest follow a blank
+        // line or the end of the service before them.
+        if (inServices) {
           currentService = serviceMatch[1];
           services[currentService] = {};
           continue;
