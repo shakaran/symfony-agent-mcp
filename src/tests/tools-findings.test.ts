@@ -24741,3 +24741,268 @@ RewriteRule ^(.*)$ index.php [QSA,L]
     expect(text).toContain('Apache');
   });
 });
+
+describe('batch 83: API Platform contexts, Behat configuration, Braintree and cache pools', () => {
+  test('a JSON-LD context that points at schema.org over plain HTTP', async () => {
+    const app = appWith('api-json-ld-context', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiProperty;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(types: ['http://schema.org/Invoice'])]
+class Invoice
+{
+    #[ApiProperty(iris: ['http://schema.org/identifier'])]
+    private string $number = '';
+
+    #[ApiProperty(iris: ['https://schema.org/totalPaymentDue'])]
+    private int $total = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-json-ld-context.js', app);
+
+    expect(text).toContain('schema.org');
+  });
+
+  test('an API with its own error normalizer', async () => {
+    const app = appWith('api-platform-error-handling', {
+      'config/packages/api_platform.yaml': `api_platform:
+    title: Acme
+    exception_to_status:
+        Symfony\\Component\\Serializer\\Exception\\ExceptionInterface: 400
+        App\\Exception\\NotFoundException: 404
+`,
+      'src/Serializer/ErrorNormalizer.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Normalizer\\NormalizerInterface;
+
+class ErrorNormalizer implements NormalizerInterface
+{
+    public function normalize(mixed $object, ?string $format = null, array $context = []): array
+    {
+        return ['error' => 'something went wrong'];
+    }
+
+    public function supportsNormalization(mixed $data, ?string $format = null, array $context = []): bool
+    {
+        return $data instanceof \\Throwable;
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-platform-error-handling.js', app);
+
+    expect(text).toContain('ormalizer');
+  });
+
+  test('a POST protected without checking the object after denormalization', async () => {
+    const app = appWith('api-platform-security-post', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Get;
+use ApiPlatform\\Metadata\\Post;
+
+#[ApiResource(operations: [
+    new Get(security: "is_granted('ROLE_USER')"),
+    new Post(security: "is_granted('ROLE_USER')"),
+])]
+class Invoice
+{
+    private int $id = 0;
+}
+`,
+    });
+
+    const text = await runModule('api-platform-security.js', app);
+
+    expect(text).toContain('securityPostDenormalize');
+  });
+
+  test('a resource normalized without groups on the properties', async () => {
+    const app = appWith('api-platform-serialization-context', {
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(
+    normalizationContext: ['groups' => ['customer:read']],
+    denormalizationContext: ['groups' => ['customer:write']],
+)]
+class Customer
+{
+    private int $id = 0;
+
+    private string $name = '';
+}
+`,
+    });
+
+    const text = await runModule('api-platform-serialization-context.js', app);
+
+    expect(text).toContain('normalizationContext');
+  });
+
+  test('Behat suites that point outside the application', async () => {
+    const app = appWith('behat-config', {
+      'behat.yaml': `default:
+    suites:
+        default:
+            paths: ['%paths.base%/features']
+            contexts:
+                - App\\Tests\\Behat\\FeatureContext
+        legacy:
+            paths: ['/var/legacy/features']
+            contexts:
+                - App\\Tests\\Behat\\LegacyContext
+
+    extensions:
+        Behat\\MinkExtension:
+            base_url: 'http://localhost:8000'
+`,
+      'features/home.feature': `Feature: Home
+
+    @smoke
+    Scenario: The home page
+        Given I am on the home page
+`,
+      'tests/Behat/FeatureContext.php': `<?php
+
+namespace App\\Tests\\Behat;
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+    /**
+     * @Given I am on the home page
+     */
+    public function home(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('behat-config.js', app);
+
+    expect(text).toContain('default');
+  });
+
+  test('Behat contexts, one of them shared between suites', async () => {
+    const app = appWith('behat-contexts', {
+      'behat.yaml': `default:
+    suites:
+        default:
+            contexts:
+                - App\\Tests\\Behat\\FeatureContext
+                - App\\Tests\\Behat\\ApiContext
+        api:
+            contexts:
+                - App\\Tests\\Behat\\ApiContext
+`,
+      'tests/Behat/FeatureContext.php': `<?php
+
+namespace App\\Tests\\Behat;
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+    /**
+     * @Given I am on the home page
+     */
+    public function home(): void
+    {
+    }
+}
+`,
+      'tests/Behat/ApiContext.php': `<?php
+
+namespace App\\Tests\\Behat;
+
+use Behat\\Behat\\Context\\Context;
+
+class ApiContext implements Context
+{
+    /**
+     * @When I request :path
+     */
+    public function request(string $path): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('behat-contexts.js', app);
+
+    expect(text).toContain('Context');
+  });
+
+  test('Braintree left in its sandbox', async () => {
+    const app = appWith('braintree-integration', {
+      'composer.json': JSON.stringify({ require: { 'braintree/braintree_php': '^6.0' } }, null, 4) + '\n',
+      '.env': `APP_ENV=prod
+BRAINTREE_ENVIRONMENT=sandbox
+BRAINTREE_MERCHANT_ID=abcdefghijklmnop
+BRAINTREE_PRIVATE_KEY=0123456789abcdef0123456789abcdef
+`,
+      'src/Payment/BraintreeGateway.php': `<?php
+
+namespace App\\Payment;
+
+use Braintree\\Gateway;
+
+class BraintreeGateway
+{
+    public function gateway(): Gateway
+    {
+        return new Gateway([
+            'environment' => 'sandbox',
+            'merchantId' => $_ENV['BRAINTREE_MERCHANT_ID'],
+            'privateKey' => $_ENV['BRAINTREE_PRIVATE_KEY'],
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('braintree-integration.js', app);
+
+    expect(text).toContain('sandbox');
+  });
+
+  test('cache pools with a prefix seed', async () => {
+    const app = appWith('cache-pools', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        prefix_seed: acme/prod
+        app: cache.adapter.redis
+        default_redis_provider: 'redis://redis:6379'
+        pools:
+            app.invoice_pool:
+                adapter: cache.app
+                default_lifetime: 3600
+            app.session_pool:
+                adapter: cache.adapter.redis
+`,
+    });
+
+    const text = await runModule('cache-pools.js', app);
+
+    expect(text).toContain('Prefix seed');
+  });
+});

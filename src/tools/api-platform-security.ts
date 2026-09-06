@@ -81,8 +81,13 @@ function parseResourceSecurity(filePath: string): ApiResourceSecurity | null {
   const allOps = [...WRITE_OPERATIONS, ...READ_OPERATIONS];
 
   for (const op of allOps) {
-    const pattern = new RegExp(`#\\[${op}[^\\]]*?(?:\\]|security[^\\]]*\\])`, 'gs');
-    for (const m of content.matchAll(pattern)) {
+    // Operations are declared either as their own attribute, #[Get(...)], or
+    // inside #[ApiResource(operations: [new Get(...)])]; only the first
+    // spelling was read, so a resource written the second way looked as
+    // though it had no operations at all.
+    const attrPattern = new RegExp(`#\\[${op}[^\\]]*?(?:\\]|security[^\\]]*\\])`, 'gs');
+    const ctorPattern = new RegExp(`new\\s+${op}\\s*\\([\\s\\S]{0,400}?\\)(?=\\s*[,\\]])`, 'gs');
+    for (const m of [...content.matchAll(attrPattern), ...content.matchAll(ctorPattern)]) {
       const block = m[0];
       const securityM       = /security\s*:\s*['"]([^'"]+)['"]/.exec(block);
       const postDenormM     = /securityPostDenormalize\s*:\s*['"]([^'"]+)['"]/.exec(block);
