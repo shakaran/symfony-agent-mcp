@@ -24056,3 +24056,311 @@ return static function (array $context): Kernel {
     expect(text).toContain('runtime');
   });
 });
+
+describe('batch 80: schedulers, security entry points, passports and serializers', () => {
+  test('a scheduler transport written inline', async () => {
+    const app = appWith('symfony-scheduler-transport-config', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            scheduler_default: 'schedule://default'
+            async: 'doctrine://default'
+        routing:
+            'Symfony\\Component\\Scheduler\\Messenger\\ScheduledStamp': scheduler_default
+`,
+      'src/Scheduler/MainSchedule.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsSchedule;
+use Symfony\\Component\\Scheduler\\RecurringMessage;
+use Symfony\\Component\\Scheduler\\Schedule;
+use Symfony\\Component\\Scheduler\\ScheduleProviderInterface;
+
+#[AsSchedule('default')]
+class MainSchedule implements ScheduleProviderInterface
+{
+    public function getSchedule(): Schedule
+    {
+        return (new Schedule())->add(RecurringMessage::every('1 hour', new SendReports()));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-scheduler-transport-config.js', app);
+
+    expect(text).toContain('schedule');
+  });
+
+  test('a firewall with two authenticators and no entry point', async () => {
+    const app = appWith('symfony-security-entry-point', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            lazy: true
+            custom_authenticators:
+                - App\\Security\\LoginFormAuthenticator
+                - App\\Security\\ApiTokenAuthenticator
+`,
+      'src/Security/LoginFormAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\HttpFoundation\\RedirectResponse;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Security\\Http\\EntryPoint\\AuthenticationEntryPointInterface;
+
+class LoginFormAuthenticator implements AuthenticationEntryPointInterface
+{
+    public function start(Request $request, ?\\Throwable $authException = null): Response
+    {
+        return new RedirectResponse('/login');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-entry-point.js', app);
+
+    expect(text).toContain('entry_point');
+  });
+
+  test('impersonation allowed with nothing listening for it', async () => {
+    const app = appWith('symfony-security-impersonation', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER, ROLE_ALLOWED_TO_SWITCH]
+
+    firewalls:
+        main:
+            switch_user: true
+`,
+      'src/Controller/AdminController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+class AdminController
+{
+    #[IsGranted('ROLE_ALLOWED_TO_SWITCH')]
+    public function impersonate(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-impersonation.js', app);
+
+    expect(text).toContain('impersonation');
+  });
+
+  test('a stateless authenticator carrying a password badge', async () => {
+    const app = appWith('symfony-security-passport', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        api:
+            stateless: true
+            custom_authenticators:
+                - App\\Security\\ApiAuthenticator
+`,
+      'src/Security/ApiAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractAuthenticator;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Badge\\PasswordCredentials;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Badge\\UserBadge;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Passport;
+
+class ApiAuthenticator extends AbstractAuthenticator
+{
+    public function supports(Request $request): ?bool
+    {
+        return true;
+    }
+
+    public function authenticate(Request $request): Passport
+    {
+        return new Passport(
+            new UserBadge((string) $request->headers->get('X-Api-User')),
+            new PasswordCredentials((string) $request->headers->get('X-Api-Password')),
+        );
+    }
+}
+`,
+      'src/Security/Badge/TenantBadge.php': `<?php
+
+namespace App\\Security\\Badge;
+
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Badge\\BadgeInterface;
+
+class TenantBadge implements BadgeInterface
+{
+    public function isResolved(): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-passport.js', app);
+
+    expect(text).toContain('PasswordCredentials');
+  });
+
+  test('remember-me without a secret of its own', async () => {
+    const app = appWith('symfony-security-remember-me', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            remember_me:
+                lifetime: 604800
+                path: /
+                always_remember_me: true
+`,
+    });
+
+    const text = await runModule('symfony-security-remember-me.js', app);
+
+    expect(text).toContain('remember_me');
+  });
+
+  test('entities that point at each other, serialized without a handler', async () => {
+    const app = appWith('symfony-serializer-circular-reference', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: 'invoice')]
+    private Collection $lines;
+}
+`,
+      'src/Entity/Line.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Line
+{
+    #[ORM\\ManyToOne(targetEntity: Invoice::class, inversedBy: 'lines')]
+    private ?Invoice $invoice = null;
+}
+`,
+      'src/Service/Exporter.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Serializer\\SerializerInterface;
+
+class Exporter
+{
+    public function __construct(private SerializerInterface $serializer)
+    {
+    }
+
+    public function export(object $invoice): string
+    {
+        return $this->serializer->serialize($invoice, 'json');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-circular-reference.js', app);
+
+    expect(text).toContain('circular');
+  });
+
+  test('a discriminator map that names a field the class already has', async () => {
+    const app = appWith('symfony-serializer-discriminator', {
+      'src/Entity/Payment.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Serializer\\Annotation\\DiscriminatorMap;
+
+#[DiscriminatorMap(typeProperty: 'type', mapping: [
+    'card' => CardPayment::class,
+    'transfer' => TransferPayment::class,
+])]
+abstract class Payment
+{
+    protected string $type = '';
+}
+`,
+      'src/Entity/CardPayment.php': `<?php
+
+namespace App\\Entity;
+
+class CardPayment extends Payment
+{
+}
+`,
+      'src/Entity/TransferPayment.php': `<?php
+
+namespace App\\Entity;
+
+class TransferPayment extends Payment
+{
+}
+`,
+      'src/Entity/CashPayment.php': `<?php
+
+namespace App\\Entity;
+
+class CashPayment extends Payment
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-discriminator.js', app);
+
+    expect(text).toContain('iscriminator');
+  });
+
+  test('a sub-request rendered inside a loop', async () => {
+    const app = appWith('symfony-subrequest', {
+      'templates/invoice/list.html.twig': `<ul>
+    {% for invoice in invoices %}
+        <li>{{ render(controller('App\\\\Controller\\\\InvoiceController::row', { id: invoice.id })) }}</li>
+    {% endfor %}
+</ul>
+`,
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class InvoiceController
+{
+    public function row(int $id): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-subrequest.js', app);
+
+    expect(text).toContain('sub-request');
+  });
+});
