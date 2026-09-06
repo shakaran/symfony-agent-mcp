@@ -122,7 +122,9 @@ function analyzeFile(filePath: string, base: string): HttpKernelTestInfo[] {
   }
 
   // Pattern 2: Static $client property reused without reset
-  if (/static\s+(?:protected|private|public)\s+\$client\b/.test(content)) {
+  // PHP writes "private static $client" as often as "static private";
+  // demanding one order meant the usual spelling was never seen.
+  if (/(?:static\s+(?:protected|private|public)|(?:protected|private|public)\s+static)\s+\$client\b/.test(content)) {
     // Check if there is a tearDown/setUp that resets $client
     const hasTearDownReset = /tearDown\s*\(\s*\)[\s\S]{0,500}client\s*=\s*null/.test(content);
     const hasSetUpReset = /setUp\s*\(\s*\)[\s\S]{0,500}client\s*=\s*null/.test(content);
