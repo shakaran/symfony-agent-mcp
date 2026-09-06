@@ -12122,3 +12122,343 @@ ${baseline}
     expect(text).toContain('psalm');
   });
 });
+
+describe('asset versioning', () => {
+  test('a static version, a manifest that is not there and a cdn over http', async () => {
+    const app = appWith('assets-versioning', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version: 'v1'
+        version_format: '%%s?v=%%s'
+        packages:
+            cdn:
+                base_url: 'http://cdn.example.com'
+                version: 'v2'
+            built:
+                json_manifest_path: '%kernel.project_dir%/public/build/missing.json'
+                base_path: /build
+`,
+    });
+
+    const text = await runModule('symfony-assets-versioning.js', app);
+
+    expect(text).toContain('version');
+  });
+});
+
+describe('emoji', () => {
+  test('a slugger without the transliterator, emoji in an email and twig filters', async () => {
+    const app = appWith('emoji', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/string': '^7.0' },
+      }, null, 2),
+      'src/Service/Slugs.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\String\\Slugger\\AsciiSlugger;
+
+class Slugs
+{
+    public function slug(string $title): string
+    {
+        $slugger = new AsciiSlugger();
+
+        return (string) $slugger->slug($title);
+    }
+}
+`,
+      'src/Mail/Welcome.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Email;
+
+class Welcome
+{
+    public function build(): Email
+    {
+        return (new Email())
+            ->subject('Bienvenido 🎉')
+            ->text('Gracias por registrarte 🚀');
+    }
+}
+`,
+      'templates/home/index.html.twig': `<p>{{ title|emojify }}</p>
+<p>{{ title|slug }}</p>
+`,
+    });
+
+    const text = await runModule('symfony-emoji.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('error controller', () => {
+  test('an error controller named in the config that does not exist, and an exception with no translation', async () => {
+    const app = appWith('error-controller', {
+      'config/packages/framework.yaml': `framework:
+    error_controller: 'App\\Controller\\MissingErrorController::show'
+`,
+      'src/Exception/PaymentException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+
+class PaymentException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(402, 'Payment required');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-error-controller.js', app);
+
+    expect(text).toContain('error_controller');
+  });
+});
+
+describe('expression language', () => {
+  test('access control with allow_if, a Security attribute and a long expression', async () => {
+    const long = "is_granted('ROLE_ADMIN') and user.isActive() and user.getOrganisation().isEnabled() and object.isOwnedBy(user)";
+    const app = appWith('expression-language', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/admin, allow_if: "${long}" }
+        - { path: ^/reports, allow_if: "is_granted('ROLE_USER')" }
+`,
+      'src/Controller/ReportController.php': `<?php
+
+namespace App\\Controller;
+
+use Sensio\\Bundle\\FrameworkExtraBundle\\Configuration\\Security;
+use Symfony\\Component\\ExpressionLanguage\\ExpressionLanguage;
+
+class ReportController
+{
+    /**
+     * @Security("${long}")
+     */
+    public function index(): void
+    {
+        $language = new ExpressionLanguage();
+        $language->evaluate('1 + 1');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-expression-language.js', app);
+
+    expect(text).toContain('access_control');
+  });
+});
+
+describe('compound form types', () => {
+  test('a form with many fields that embeds another form deeply', async () => {
+    const fields = Array.from({ length: 26 }, (_, i) => `            ->add('field${i}', TextType::class)`).join('\n');
+    const app = appWith('compound-forms', {
+      'src/Form/OrderType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class OrderType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+${fields}
+            ->add('customer', CustomerType::class);
+    }
+}
+`,
+      'src/Form/CustomerType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class CustomerType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('name', TextType::class)
+            ->add('address', AddressType::class);
+    }
+}
+`,
+      'src/Form/AddressType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class AddressType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('street', TextType::class);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-compound-types.js', app);
+
+    expect(text).toContain('OrderType');
+  });
+});
+
+describe('pre set data listeners', () => {
+  test('a listener that checks for null, one that does not and fields added conditionally', async () => {
+    const app = appWith('pre-set-data', {
+      'src/Form/InvoiceType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\Form\\FormEvent;
+use Symfony\\Component\\Form\\FormEvents;
+
+class InvoiceType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event): void {
+            $invoice = $event->getData();
+            $form = $event->getForm();
+
+            if (null === $invoice) {
+                return;
+            }
+
+            if ($invoice->isDraft()) {
+                $form->add('reference', TextType::class);
+            } else {
+                $form->add('reference', TextType::class, ['disabled' => true]);
+            }
+        });
+
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event): void {
+            $invoice = $event->getData();
+            $event->getForm()->add('total', TextType::class, [
+                'data' => $invoice->getTotal(),
+            ]);
+        });
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-pre-set-data.js', app);
+
+    expect(text).toContain('InvoiceType');
+  });
+});
+
+describe('repeated fields', () => {
+  test('a repeated password on the wrong type and a manual comparison', async () => {
+    const app = appWith('form-repeated', {
+      'src/Form/RegistrationType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\RepeatedType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class RegistrationType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('password', RepeatedType::class, [
+            'type' => TextType::class,
+            'first_options' => ['label' => 'Password'],
+            'second_options' => ['label' => 'Repeat password'],
+        ]);
+    }
+}
+`,
+      'src/Security/PasswordChecker.php': `<?php
+
+namespace App\\Security;
+
+class PasswordChecker
+{
+    public function check(string $first, string $second): bool
+    {
+        return $first === $second;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-repeated.js', app);
+
+    expect(text).toContain('RepeatedType');
+  });
+});
+
+describe('http client decorators', () => {
+  test('a decorator with request() but no withOptions(), and a mock factory in the test config', async () => {
+    const app = appWith('http-client-events', {
+      'config/packages/test/framework.yaml': `framework:
+    http_client:
+        mock_response_factory: 'App\\Tests\\MockResponseFactory'
+`,
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        default_options:
+            timeout: 10
+`,
+      'src/Client/LoggingClient.php': `<?php
+
+namespace App\\Client;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+use Symfony\\Contracts\\HttpClient\\ResponseInterface;
+
+class LoggingClient implements HttpClientInterface
+{
+    public function __construct(private HttpClientInterface $inner)
+    {
+    }
+
+    public function request(string $method, string $url, array $options = []): ResponseInterface
+    {
+        $response = $this->inner->request($method, $url, $options);
+        $this->logger->info('called', ['url' => $url]);
+
+        return $response;
+    }
+
+    public function stream($responses, ?float $timeout = null): \\Generator
+    {
+        yield from $this->inner->stream($responses, $timeout);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-events.js', app);
+
+    expect(text).toContain('mock_response_factory');
+  });
+});
