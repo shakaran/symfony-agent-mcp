@@ -28995,3 +28995,349 @@ USER www-data
     expect(text).toContain('privileged');
   });
 });
+
+describe('batch 98: Doctrine associations, migrations, dialects and timestamps', () => {
+  test('associations fetched every way, from both attribute styles', async () => {
+    const app = appWith('doctrine-association-fetch-styles', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Order
+{
+    #[ORM\\ManyToOne(targetEntity: Customer::class)]
+    private ?Customer $customer = null;
+
+    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: 'order', fetch: 'EAGER')]
+    private Collection $lines;
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-association-fetch.js', app);
+
+    expect(text).toContain('EAGER');
+  });
+
+  test('a cascade that deletes the children with the parent', async () => {
+    const app = appWith('doctrine-cascade-config', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\OneToMany(targetEntity: Line::class, mappedBy: 'invoice', cascade: ['all'])]
+    private Collection $lines;
+
+    #[ORM\\ManyToOne(targetEntity: Customer::class, cascade: ['persist'])]
+    private ?Customer $customer = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-cascade-config.js', app);
+
+    expect(text).toContain('cascade');
+  });
+
+  test('a migration that drops a column and adds another', async () => {
+    const app = appWith('doctrine-dbal-schema-diff', {
+      'migrations/Version20260301000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260301000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE invoice DROP COLUMN reference');
+        $this->addSql('ALTER TABLE invoice ADD COLUMN external_reference VARCHAR(64) NOT NULL');
+        $this->addSql('ALTER TABLE invoice CHANGE COLUMN total total BIGINT NOT NULL');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE invoice DROP COLUMN external_reference');
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-schema-diff.js', app);
+
+    expect(text).toContain('COLUMN');
+  });
+
+  test('a Doctrine subscriber declared the old way', async () => {
+    const app = appWith('doctrine-event-subscribers', {
+      'src/EventSubscriber/InvoiceSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Doctrine\\Bundle\\DoctrineBundle\\EventSubscriber\\EventSubscriberInterface;
+use Doctrine\\ORM\\Event\\LifecycleEventArgs;
+use Doctrine\\ORM\\Events;
+
+class InvoiceSubscriber implements EventSubscriberInterface
+{
+    public function getSubscribedEvents(): array
+    {
+        return [Events::prePersist, Events::postUpdate];
+    }
+
+    public function prePersist(LifecycleEventArgs $args): void
+    {
+    }
+
+    public function postUpdate(LifecycleEventArgs $args): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-event-subscribers.js', app);
+
+    expect(text).toContain('ubscriber');
+  });
+
+  test('migrations organised into subdirectories', async () => {
+    const app = appWith('doctrine-migrations-config', {
+      'config/packages/doctrine_migrations.yaml': `doctrine_migrations:
+    migrations_paths:
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+    organize_migrations: BY_YEAR_AND_MONTH
+    enable_profiler: false
+    transactional: true
+`,
+      'migrations/2026/01/Version20260101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('SELECT 1');
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-migrations-config.js', app);
+
+    expect(text).toContain('organize_migrations');
+  });
+
+  test('several entity managers, one of them empty', async () => {
+    const app = appWith('doctrine-orm-config', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                url: '%env(resolve:DATABASE_URL)%'
+            reporting: ~
+    orm:
+        default_entity_manager: default
+        entity_managers:
+            default:
+                connection: default
+                auto_mapping: true
+            reporting: ~
+`,
+    });
+
+    const text = await runModule('doctrine-orm-config.js', app);
+
+    expect(text).toContain('Entity Manager');
+  });
+
+  test('a Postgres sequence that asks the database on every insert', async () => {
+    const app = appWith('doctrine-postgres-specific', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        driver: pdo_pgsql
+        url: '%env(resolve:DATABASE_URL)%'
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    #[ORM\\SequenceGenerator(sequenceName: 'invoice_id_seq', allocationSize: 1)]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column(type: 'json')]
+    private array $payload = [];
+}
+`,
+    });
+
+    const text = await runModule('doctrine-postgres-specific.js', app);
+
+    expect(text).toContain('allocationSize');
+  });
+
+  test('a result set mapping with entities and no fields', async () => {
+    const app = appWith('doctrine-result-set-mapping', {
+      'src/Repository/ReportRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\ORM\\Query\\ResultSetMapping;
+
+class ReportRepository
+{
+    public function totals(): array
+    {
+        $rsm = new ResultSetMapping();
+        $rsm->addEntityResult(\\App\\Entity\\Invoice::class, 'i');
+        $rsm->addJoinedEntityResult(\\App\\Entity\\Line::class, 'l', 'i', 'lines');
+
+        return $this->entityManager->createNativeQuery('SELECT * FROM invoice i JOIN line l ON l.invoice_id = i.id', $rsm)->getResult();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-result-set-mapping.js', app);
+
+    expect(text).toContain('RSM');
+  });
+
+  test('timestamps kept by a trait in one entity and by hand in another', async () => {
+    const app = appWith('doctrine-timestamps', {
+      'src/Entity/Trait/TimestampableTrait.php': `<?php
+
+namespace App\\Entity\\Trait;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+trait TimestampableTrait
+{
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private \\DateTimeImmutable $createdAt;
+
+    #[ORM\\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\\DateTimeImmutable $updatedAt = null;
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use App\\Entity\\Trait\\TimestampableTrait;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    use TimestampableTrait;
+
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\HasLifecycleCallbacks]
+class Customer
+{
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private \\DateTimeImmutable $createdAt;
+
+    #[ORM\\PrePersist]
+    public function onPrePersist(): void
+    {
+        $this->createdAt = new \\DateTimeImmutable();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-timestamps.js', app);
+
+    expect(text).toContain('imestamp');
+  });
+
+  test('a flush called inside the loop that fills the unit of work', async () => {
+    const app = appWith('doctrine-uow-flush', {
+      'src/Service/Batch.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class Batch
+{
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function run(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $entity = new \\App\\Entity\\Invoice();
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-uow-flush.js', app);
+
+    expect(text).toContain('flush');
+  });
+});
