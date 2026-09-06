@@ -31,14 +31,6 @@ function extractYamlValue(block: string, key: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-function extractYamlBool(block: string, key: string): boolean | null {
-  const val = extractYamlValue(block, key);
-  if (val === null) return null;
-  if (val === 'true') return true;
-  if (val === 'false') return false;
-  return null;
-}
-
 function extractServiceBlock(content: string, serviceName: string): string {
   const indent = indentUnder(content, 'services');
   const serviceRe = new RegExp(`^( {${indent}}${serviceName}\\s*:)`, 'm');
@@ -132,8 +124,9 @@ function parseSwarmServices(content: string): DockerSwarmInfo[] {
       }
     }
 
-    const hasEqualSign = extractYamlBool(block, 'ports');
-    if (hasEqualSign !== null && block.includes('ports:') && deployBlock.includes('replicas') && replicas !== null && replicas > 1) {
+    // A published port is written as a list under "ports:", never as a boolean,
+    // so asking for one meant this was never reported.
+    if (block.includes('ports:') && deployBlock.includes('replicas') && replicas !== null && replicas > 1) {
       const portMode = extractYamlValue(block, 'mode');
       if (portMode !== 'host' && !block.includes('ingress')) {
         issues.push(`Service "${serviceName}" with ${replicas} replicas publishes ports — consider using ingress load balancing mode explicitly`);

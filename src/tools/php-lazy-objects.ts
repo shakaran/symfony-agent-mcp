@@ -69,8 +69,11 @@ function getMinPhpVersion(appPath: string): string | null {
 }
 
 const LAZY_PATTERNS: Array<{ re: RegExp; label: string }> = [
-  { re: /ReflectionClass\s*::\s*newLazyGhost\s*\(/,          label: 'ReflectionClass::newLazyGhost(' },
-  { re: /ReflectionClass\s*::\s*newLazyProxy\s*\(/,          label: 'ReflectionClass::newLazyProxy(' },
+  // newLazyGhost() and newLazyProxy() are instance methods of a reflector, so
+  // the call is written "$ref->newLazyGhost(", and only the static spelling,
+  // which no working code uses, was being matched.
+  { re: /(?:ReflectionClass\s*::|->)\s*newLazyGhost\s*\(/,   label: 'ReflectionClass::newLazyGhost(' },
+  { re: /(?:ReflectionClass\s*::|->)\s*newLazyProxy\s*\(/,   label: 'ReflectionClass::newLazyProxy(' },
   { re: /->initializeLazyObject\s*\(/,                        label: '->initializeLazyObject(' },
   { re: /->isUninitializedLazyObject\s*\(/,                   label: '->isUninitializedLazyObject(' },
   { re: /->markLazyObjectAsInitialized\s*\(/,                 label: '->markLazyObjectAsInitialized(' },

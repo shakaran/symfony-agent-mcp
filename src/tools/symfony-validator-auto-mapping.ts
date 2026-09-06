@@ -69,7 +69,10 @@ function extractAutoMappedNamespaces(content: string): string[] {
 
   const block = blockM[1];
   // Each entry: "    App\Entity\: []" or "    App\: ~"
-  const nsRe = /^[ \t]+([A-Z][\w\\]{1,120}[\\]?):/gm;
+  // A namespace ending in a backslash has to be quoted in YAML, which is how
+  // the documentation writes it, and the quotes were keeping every entry from
+  // being read.
+  const nsRe = /^[ \t]+['"]?([A-Z][\w\\]{1,120}[\\]?)['"]?\s*:/gm;
   let m: RegExpExecArray | null;
   while ((m = nsRe.exec(block)) !== null) {
     namespaces.push(m[1].trim());

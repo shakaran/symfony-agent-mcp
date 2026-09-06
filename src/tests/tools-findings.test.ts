@@ -14554,3 +14554,562 @@ class BackendDownException extends \\RuntimeException implements HttpExceptionIn
     expect(text).toContain('silently dropped');
   });
 });
+
+describe('batch 50: workers, rate limiters, validators, Terraform, SES, cache, Consul', () => {
+  test('workers counted from supervisor, compose and the environment', async () => {
+    const app = appWith('messenger-competing-consumers', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: async
+            failed: 'doctrine://default?queue_name=failed'
+`,
+      // The one at the root runs the scheduler, not a worker.
+      'supervisord.conf': `[program:scheduler]
+command=php bin/console app:schedule
+numprocs=1
+`,
+      'docker/supervisord.conf': `[program:messenger-consume]
+command=php bin/console messenger:consume async --time-limit=3600
+numprocs=4
+autostart=true
+`,
+      'docker-compose.yml': `services:
+    php:
+        image: acme/php:8.3
+`,
+      'docker/docker-compose.yml': `services:
+    worker:
+        image: acme/php:8.3
+        command: php bin/console messenger:consume async
+        deploy:
+            replicas: 2
+`,
+      '.env': 'APP_ENV=prod\nMESSENGER_TRANSPORT_DSN=amqp://guest:guest@rabbit:5672/%2f/messages\n',
+      '.env.local': 'WORKER_COUNT=3\n',
+      // A directory where an env file would be, so reading it fails.
+      '.env.dist/placeholder.txt': 'not a file\n',
+    });
+
+    const text = await runModule('symfony-messenger-competing-consumers.js', app);
+
+    expect(text).toContain('async');
+  });
+
+  test('an empty rate limiter file, and a section the next key closes', async () => {
+    const app = appWith('rate-limiter-algorithms', {
+      'config/packages/rate_limiter.yaml': '',
+      'config/rate_limiter.yaml': `framework:
+    rate_limiter:
+        login:
+            policy: sliding_window
+            limit: 5
+            interval: '15 minutes'
+
+        api:
+            policy: token_bucket
+            limit: 100
+            rate:
+                interval: '1 minute'
+                amount: 10
+
+services:
+    _defaults:
+        autowire: true
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-algorithms.js', app);
+
+    expect(text).toContain('login');
+    expect(text).toContain('api');
+  });
+
+  test('policies that give away too much, too little, or nothing at all', async () => {
+    const app = appWith('rate-limiter-policy-shapes', {
+      // Not valid YAML, so the loader moves on to the next candidate.
+      'config/packages/rate_limiter.yaml': "framework:\n  rate_limiter:\n    login: [unclosed\n",
+      'config/packages/framework.yaml': `framework:
+    rate_limiter:
+        login:
+            policy: sliding_window
+            limit: 1
+            interval: '5 minutes'
+        anonymous:
+            policy: no_limit
+        firehose:
+            policy: token_bucket
+            limit: 50000
+            rate:
+                interval: '1 second'
+                amount: 1000
+        hourly:
+            policy: fixed_window
+            limit: 1000
+            interval: PT2H
+        quarter:
+            policy: fixed_window
+            limit: 100
+            interval: PT10M
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-policy.js', app);
+
+    expect(text).toContain('no_limit');
+    expect(text).toContain('sliding_window with limit=1');
+    expect(text).toContain('very high');
+  });
+
+  test('more auto-mapped classes than the report prints', async () => {
+    const files: Record<string, string> = {
+      'config/packages/validator.yaml': `framework:
+    validation:
+        auto_mapping:
+            'App\\Entity\\': []
+`,
+    };
+    for (let i = 0; i < 22; i++) {
+      files[`src/Entity/Thing${i}.php`] = `<?php
+
+namespace App\\Entity;
+
+class Thing${i}
+{
+    private ?int $id = null;
+
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
+}
+`;
+    }
+
+    const app = appWith('validator-auto-mapping-many', files);
+
+    const text = await runModule('symfony-validator-auto-mapping.js', app);
+
+    expect(text).toContain('Auto-mapped only (22)');
+    expect(text).toContain('and 2 more');
+  });
+
+  test('a Terraform resource with the password written into it', async () => {
+    const app = appWith('terraform-secret', {
+      'terraform/rds.tf': `resource "aws_db_instance" "main" {
+  identifier = "acme-prod"
+  engine     = "postgres"
+  username   = "acme"
+  password   = "sup3rs3cr3tpassw0rdf0racme"
+}
+
+resource "aws_s3_bucket" "assets" {
+  bucket = "acme-assets"
+}
+`,
+    });
+
+    const text = await runModule('terraform-config.js', app);
+
+    expect(text).toContain('hardcoded secret');
+  });
+
+  test('SES in production, its keys, and the same keys again in PHP', async () => {
+    const app = appWith('aws-ses-integration', {
+      '.env': `APP_ENV=prod
+# mailer.dsn: ses+api://AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY@default
+AWS_SES_REGION=eu-west-1
+AWS_SES_CONFIGURATION_SET=acme-prod
+SNS_TOPIC_ARN=arn:aws:sns:eu-west-1:123456789012:ses-bounces
+`,
+      'src/Mailer/SesClientFactory.php': `<?php
+
+namespace App\\Mailer;
+
+use Aws\\SesV2\\SesV2Client;
+
+class SesClientFactory
+{
+    public function create(): SesV2Client
+    {
+        return new SesV2Client([
+            'region' => 'eu-west-1',
+            'credentials' => [
+                'AWS_ACCESS_KEY_ID' => 'AKIAIOSFODNN7EXAMPLE',
+                'AWS_SECRET_ACCESS_KEY' => 'wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY',
+            ],
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-ses-integration.js', app);
+
+    expect(text).toContain('AWS_SES_REGION');
+    expect(text).toContain('Hardcoded AWS access key');
+    expect(text).toContain('Hardcoded AWS secret key');
+  });
+
+  test('a cache pool with a default lifetime', async () => {
+    const app = appWith('cache-default-lifetime', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.redis
+        system: cache.adapter.system
+        directory: '%kernel.cache_dir%/pools'
+        default_lifetime: 3600
+        pools:
+            doctrine.result_cache_pool:
+                adapter: cache.app
+                default_lifetime: 600
+`,
+    });
+
+    const text = await runModule('cache-inspector.js', app);
+
+    expect(text).toContain('Default TTL:    3600s');
+  });
+
+  test('Consul native integration with no proxy, on a random port', async () => {
+    const app = appWith('consul-native', {
+      'consul.json': `{
+    "service": {
+        "name": "acme",
+        "port": 0,
+        "connect": {
+            "native_integration": true
+        }
+    }
+}
+`,
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+`,
+    });
+
+    const text = await runModule('consul-service-discovery.js', app);
+
+    expect(text).toContain('native integration');
+    expect(text).toContain('port to 0');
+  });
+});
+
+describe('batch 51: parameters, Swarm, and the PHP analysers', () => {
+  test('a short secret, and a parameter half the application reads', async () => {
+    const files: Record<string, string> = {
+      'config/services.yaml': `parameters:
+    app.api_token: 'ab'
+    app.upload_dir: '%kernel.project_dir%/var/uploads'
+
+services:
+    _defaults:
+        autowire: true
+`,
+    };
+    for (let i = 0; i < 6; i++) {
+      files[`src/Service/Uploader${i}.php`] = `<?php
+
+namespace App\\Service;
+
+class Uploader${i}
+{
+    public function __construct(private string $dir = '%app.upload_dir%')
+    {
+    }
+}
+`;
+    }
+
+    const app = appWith('di-parameters-usage', files);
+
+    const text = await runModule('di-parameters.js', app, ['app.upload_dir']);
+
+    expect(text).toContain('app.upload_dir');
+  });
+
+  test('parameters in a project with no source directory', async () => {
+    const app = appWith('di-parameters-no-src', {
+      'config/services.yaml': "parameters:\n    app.name: 'acme'\n",
+    });
+
+    const text = await runModule('di-parameters.js', app, ['app.name']);
+
+    expect(text).toContain('app.name');
+  });
+
+  test('a Swarm service that publishes ports across several replicas', async () => {
+    const app = appWith('docker-swarm-ports', {
+      'docker-compose.prod.yml': `services:
+    web:
+        image: acme/php:8.3
+        ports:
+            - "8080:80"
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost/health"]
+        deploy:
+            replicas: 3
+            resources:
+                limits:
+                    cpus: '1.0'
+                    memory: 512M
+            restart_policy:
+                condition: on-failure
+            update_config:
+                order: start-first
+                failure_action: rollback
+            rollback_config:
+                parallelism: 1
+`,
+    });
+
+    const text = await runModule('docker-swarm-config.js', app);
+
+    expect(text).toContain('publishes ports');
+  });
+
+  test('asymmetric visibility on a project that predates it', async () => {
+    const app = appWith('php-asymmetric-visibility', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.2' } }, null, 4) + '\n',
+      'src/Model/Money.php': `<?php
+
+namespace App\\Model;
+
+final class Money
+{
+    public private(set) int $amount;
+
+    public protected(set) string $currency;
+
+    public function __construct(int $amount, string $currency)
+    {
+        $this->amount = $amount;
+        $this->currency = $currency;
+    }
+}
+`,
+      'src/Model/notes.php': "<?php\n\n// No declaration here, only a note.\n",
+    });
+
+    const text = await runModule('php-asymmetric-visibility.js', app);
+
+    expect(text).toContain('Money');
+  });
+
+  test('a method that branches every way there is', async () => {
+    const app = appWith('php-cognitive-complexity', {
+      'src/Service/Router.php': `<?php
+
+namespace App\\Service;
+
+class Router
+{
+    public function route(array $request): string
+    {
+        if ($request['method'] === 'GET') {
+            $path = $request['path'];
+            while (str_ends_with($path, '/')) {
+                $path = substr($path, 0, -1);
+            }
+
+            return $path;
+        } elseif ($request['method'] === 'POST') {
+            return 'create';
+        } else {
+            return 'unknown';
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-cognitive-complexity.js', app);
+
+    expect(text).toContain('route');
+  });
+
+  test('three ways of locking a file', async () => {
+    const app = appWith('php-file-locking', {
+      'src/Storage/FileStore.php': `<?php
+
+namespace App\\Storage;
+
+class FileStore
+{
+    public function append(string $path, string $line): void
+    {
+        $handle = fopen($path, 'a');
+        flock($handle, LOCK_EX);
+        fwrite($handle, $line);
+        fclose($handle);
+    }
+
+    public function write(string $path, string $data): void
+    {
+        file_put_contents($path, $data, LOCK_EX);
+    }
+
+    public function claim(string $path): bool
+    {
+        // A lock file, claimed by creating it.
+        $lock = $path . '.lock';
+        touch($lock);
+
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-file-locking.js', app);
+
+    expect(text).toContain('flock');
+  });
+
+  test('IMAP calls with values that come from the message itself', async () => {
+    const app = appWith('php-imap-patterns', {
+      'src/Mail/Inbox.php': `<?php
+
+namespace App\\Mail;
+
+class Inbox
+{
+    public function save($stream, int $messageNumber, string $target): void
+    {
+        imap_savebody($stream, $target, $messageNumber, '1');
+    }
+
+    public function search($stream, string $criteria): array
+    {
+        return imap_search($stream, $criteria) ?: [];
+    }
+
+    public function body(string $raw): string
+    {
+        return quoted_printable_decode($raw);
+    }
+
+    public function safeBody(string $raw): string
+    {
+        $decoded = quoted_printable_decode($raw);
+
+        return htmlspecialchars($decoded, ENT_QUOTES);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-imap-patterns.js', app);
+
+    expect(text).toContain('imap_savebody');
+    expect(text).toContain('imap_search');
+  });
+
+  test('lazy ghosts and proxies on a project that can have them', async () => {
+    const app = appWith('php-lazy-objects', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.4' } }, null, 4) + '\n',
+      'src/Service/Loader.php': `<?php
+
+namespace App\\Service;
+
+class Loader
+{
+    public function __construct(private \\PDO $connection)
+    {
+        $this->connection->exec('SET NAMES utf8mb4');
+        $this->connection->beginTransaction();
+    }
+
+    public function ghost(): object
+    {
+        $reflector = new \\ReflectionClass(self::class);
+
+        return $reflector->newLazyGhost(static function (): void {
+        });
+    }
+
+    public function proxy(): object
+    {
+        $reflector = new \\ReflectionClass(self::class);
+
+        return $reflector->newLazyProxy(static fn (): object => new self(new \\PDO('sqlite::memory:')));
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-lazy-objects.js', app);
+
+    expect(text).toContain('Lazy ghost');
+    expect(text).toContain('Lazy proxy');
+  });
+
+  test('a composer.json with no require section at all', async () => {
+    const app = appWith('php-lazy-objects-no-require', {
+      'composer.json': JSON.stringify({ name: 'acme/app' }, null, 4) + '\n',
+      'src/Service/Ghosts.php': `<?php
+
+namespace App\\Service;
+
+class Ghosts
+{
+    public function make(\\ReflectionClass $reflector): object
+    {
+        return $reflector->newLazyGhost(static function (): void {
+        });
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-lazy-objects.js', app);
+
+    expect(text).toContain('composer.json');
+  });
+
+  test('nullsafe chains, and a file the analyser skips', async () => {
+    const calls = Array.from({ length: 32 }, (_, i) => `        $total${i} = $this->order?->getCustomer()?->getAddress()?->getCity();`).join('\n');
+
+    const app = appWith('php-nullsafe-patterns', {
+      'src/Service/Deep.php': `<?php
+
+namespace App\\Service;
+
+class Deep
+{
+    private ?object $order = null;
+
+    public function city(): ?string
+    {
+        return $this->order?->getCustomer()?->getAddress()?->getCountry()?->getName();
+    }
+
+    public function many(): void
+    {
+${calls}
+    }
+}
+`,
+      // A copy of a framework class, which is not the application's code.
+      'src/Vendored/Request.php': `<?php
+
+namespace Symfony\\Component\\HttpFoundation;
+
+class Request
+{
+    public function host(): ?string
+    {
+        return $this->server?->get('HTTP_HOST');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-nullsafe-patterns.js', app);
+
+    expect(text).toContain('Deep');
+  });
+});
