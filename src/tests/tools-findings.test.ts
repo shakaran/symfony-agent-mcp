@@ -21747,3 +21747,1354 @@ class SessionBridge
     expect(text).toContain('session_start()');
   });
 });
+
+describe('batch 75: shared memory, SSRF, traits, PHPUnit tooling and RabbitMQ', () => {
+  test('shared memory opened for everyone, holding request data', async () => {
+    const app = appWith('php-shmop-ipc', {
+      'src/Ipc/SharedCounter.php': `<?php
+
+namespace App\\Ipc;
+
+class SharedCounter
+{
+    public function open(): mixed
+    {
+        return shmop_open(0x0a0a, 'c', 0777, 1024);
+    }
+
+    public function store(): void
+    {
+        $segment = shm_attach(0x0b0b);
+        shm_put_var($segment, 1, $_GET['value']);
+        $value = shm_get_var($segment, 1);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-shmop-ipc.js', app);
+
+    expect(text).toContain('shmop');
+  });
+
+  test('a request built from user input, with and without a check', async () => {
+    const app = appWith('php-ssrf-patterns', {
+      'src/Http/Fetcher.php': `<?php
+
+namespace App\\Http;
+
+class Fetcher
+{
+    private const ALLOWED_HOSTS = ['api.acme.com'];
+
+    public function fetch(string $url): string
+    {
+        return (string) file_get_contents($url);
+    }
+
+    public function fetchChecked(string $url): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!in_array($host, self::ALLOWED_HOSTS, true)) {
+            return '';
+        }
+
+        $ch = curl_init($url);
+
+        return (string) curl_exec($ch);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ssrf-patterns.js', app);
+
+    expect(text).toContain('file_get_contents');
+  });
+
+  test('traits that collide, aliased to the name they already had', async () => {
+    const app = appWith('php-trait-conflicts', {
+      'src/Trait/Timestampable.php': `<?php
+
+namespace App\\Trait;
+
+trait Timestampable
+{
+    public function touch(): void
+    {
+    }
+
+    public function reset(): void
+    {
+    }
+}
+`,
+      'src/Trait/Blameable.php': `<?php
+
+namespace App\\Trait;
+
+trait Blameable
+{
+    public function touch(): void
+    {
+    }
+
+    public function reset(): void
+    {
+    }
+}
+`,
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use App\\Trait\\Blameable;
+use App\\Trait\\Timestampable;
+
+class Article
+{
+    use Timestampable, Blameable {
+        Timestampable::touch insteadof Blameable;
+        reset as reset;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-trait-conflicts.js', app);
+
+    expect(text).toContain('trait');
+  });
+
+  test('a custom assertion that never fails, and a constraint with no message', async () => {
+    const app = appWith('phpunit-assertions-custom', {
+      'tests/Constraint/IsInvoice.php': `<?php
+
+namespace App\\Tests\\Constraint;
+
+use PHPUnit\\Framework\\Constraint\\Constraint;
+
+class IsInvoice extends Constraint
+{
+    public function toString(): string
+    {
+        return '';
+    }
+
+    protected function matches(mixed $other): bool
+    {
+        return is_object($other);
+    }
+}
+`,
+      'tests/Assertion/InvoiceAssertions.php': `<?php
+
+namespace App\\Tests\\Assertion;
+
+use PHPUnit\\Framework\\Assert;
+
+trait InvoiceAssertions
+{
+    public static function assertInvoiceIsPaid(object $invoice): void
+    {
+        Assert::assertTrue($invoice->paid);
+    }
+
+    public static function assertInvoiceHasLines(object $invoice): void
+    {
+        if (count($invoice->lines) === 0) {
+            return;
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-assertions-custom.js', app);
+
+    expect(text).toContain('assertion');
+  });
+
+  test('a large suite run in one process, with static state in it', async () => {
+    const app = appWith('phpunit-parallel', {
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="tests/bootstrap.php" processIsolation="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+      'tests/Unit/BigTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class BigTest extends TestCase
+{
+    private static array $cache = [];
+
+    public function testCase0(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase1(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase2(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase3(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase4(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase5(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase6(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase7(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase8(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase9(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase10(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase11(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase12(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase13(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase14(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase15(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase16(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase17(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase18(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase19(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase20(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase21(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase22(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase23(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase24(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase25(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase26(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase27(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase28(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase29(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase30(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase31(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase32(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase33(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase34(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase35(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase36(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase37(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase38(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase39(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase40(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase41(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase42(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase43(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase44(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase45(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase46(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase47(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase48(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase49(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase50(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase51(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase52(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase53(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase54(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase55(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase56(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase57(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase58(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase59(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase60(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase61(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase62(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase63(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase64(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase65(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase66(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase67(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase68(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase69(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase70(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase71(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase72(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase73(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase74(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase75(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase76(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase77(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase78(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase79(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase80(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase81(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase82(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase83(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase84(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase85(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase86(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase87(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase88(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase89(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase90(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase91(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase92(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase93(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase94(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase95(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase96(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase97(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase98(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase99(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase100(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase101(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase102(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase103(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase104(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase105(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase106(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase107(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase108(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase109(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase110(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase111(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase112(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase113(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase114(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase115(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase116(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase117(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase118(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase119(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase120(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase121(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase122(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase123(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase124(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase125(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase126(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase127(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase128(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase129(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase130(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase131(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase132(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase133(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase134(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase135(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase136(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase137(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase138(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase139(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase140(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase141(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase142(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase143(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase144(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase145(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase146(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase147(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase148(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase149(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase150(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase151(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase152(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase153(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase154(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase155(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase156(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase157(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase158(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase159(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase160(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase161(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase162(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase163(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase164(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase165(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase166(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase167(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase168(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase169(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase170(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase171(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase172(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase173(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase174(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase175(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase176(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase177(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase178(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase179(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase180(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase181(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase182(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase183(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase184(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase185(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase186(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase187(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase188(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase189(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase190(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase191(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase192(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase193(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase194(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase195(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase196(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase197(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase198(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase199(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase200(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase201(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase202(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase203(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase204(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase205(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase206(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase207(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase208(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testCase209(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-parallel.js', app);
+
+    expect(text).toContain('paratest');
+  });
+
+  test('tests named in ways nothing will run', async () => {
+    const app = appWith('phpunit-test-naming', {
+      'tests/Unit/InvoiceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class InvoiceTest extends TestCase
+{
+    public function testItWorks(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function checkTheTotal(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function test_it_adds_lines(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/Unit/HelperClass.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+class HelperClass
+{
+    public function help(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-naming.js', app);
+
+    expect(text).toContain('Invoice');
+  });
+
+  test('a Playwright configuration for the end-to-end suite', async () => {
+    const app = appWith('playwright-e2e-config', {
+      'playwright.config.ts': `import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+    testDir: './tests/e2e',
+    retries: 0,
+    workers: 1,
+    use: {
+        trace: 'off',
+        video: 'off',
+    },
+});
+`,
+      'tests/e2e/login.spec.ts': `import { test, expect } from '@playwright/test';
+
+test('login', async ({ page }) => {
+    await page.goto('/login');
+    await expect(page).toHaveTitle(/Acme/);
+});
+`,
+    });
+
+    const text = await runModule('playwright-e2e-config.js', app);
+
+    expect(text).toContain('Playwright');
+  });
+
+  test('RabbitMQ still on its default credentials, over plain HTTP', async () => {
+    const app = appWith('rabbitmq-management-api', {
+      '.env': `APP_ENV=prod
+RABBITMQ_MANAGEMENT_URL=http://rabbit.acme.internal:15672
+RABBITMQ_DEFAULT_USER=guest
+RABBITMQ_DEFAULT_PASS=guest
+`,
+      'src/Queue/RabbitStats.php': `<?php
+
+namespace App\\Queue;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class RabbitStats
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function queues(): array
+    {
+        return $this->client->request('GET', 'http://rabbit.acme.internal:15672/api/queues')->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('rabbitmq-management-api.js', app);
+
+    expect(text).toContain('guest');
+  });
+});
