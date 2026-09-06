@@ -30977,3 +30977,280 @@ class OrderPublisher
     expect(text).toContain('FIFO');
   });
 });
+
+describe('batch 104: asset packages, cache chains and tags, constraints and container', () => {
+  test('an asset package versioned by manifest', async () => {
+    const app = appWith('symfony-asset-packages', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        json_manifest_path: '%kernel.project_dir%/public/build/manifest.json'
+        packages:
+            images:
+                base_urls: ['https://cdn.acme.example.com']
+                version_strategy: 'assets.empty_version_strategy'
+`,
+      'public/build/manifest.json': '{"app.js":"/build/app.abc123.js"}\n',
+    });
+
+    const text = await runModule('symfony-asset-packages.js', app);
+
+    expect(text).toContain('manifest');
+  });
+
+  test('a chain pool with the slow adapter first', async () => {
+    const app = appWith('symfony-cache-chain', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app.chain:
+                adapters:
+                    - cache.adapter.filesystem
+                    - cache.adapter.array
+            app.broken: ~
+`,
+    });
+
+    const text = await runModule('symfony-cache-chain.js', app);
+
+    expect(text).toContain('chain');
+  });
+
+  test('a cache namespace too short to be safe', async () => {
+    const app = appWith('symfony-cache-namespace', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        prefix_seed: ac
+        pools:
+            app.invoice:
+                adapter: cache.adapter.redis
+                namespace: iv
+            app.customer:
+                adapter: cache.adapter.redis
+                namespace: acme.customer
+`,
+    });
+
+    const text = await runModule('symfony-cache-namespace.js', app);
+
+    expect(text).toContain('amespace');
+  });
+
+  test('cache tags broad enough to clear everything', async () => {
+    const app = appWith('symfony-cache-tags', {
+      'src/Service/InvoiceCache.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Cache\\ItemInterface;
+use Symfony\\Contracts\\Cache\\TagAwareCacheInterface;
+
+class InvoiceCache
+{
+    public function __construct(private TagAwareCacheInterface $cache)
+    {
+    }
+
+    public function get(int $id): array
+    {
+        return $this->cache->get('invoice_' . $id, function (ItemInterface $item): array {
+            $item->tag(['all', 'invoices', 'app']);
+
+            return [];
+        });
+    }
+
+    public function clear(): void
+    {
+        $this->cache->invalidateTags(['all']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-cache-tags.js', app);
+
+    expect(text).toContain('tag');
+  });
+
+  test('a compound constraint holding a single rule', async () => {
+    const app = appWith('symfony-compound-constraints', {
+      'src/Validator/StrongPassword.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+use Symfony\\Component\\Validator\\Constraints\\Compound;
+
+class StrongPassword extends Compound
+{
+    protected function getConstraints(array $options): array
+    {
+        return [
+            new Assert\\NotBlank(),
+        ];
+    }
+}
+`,
+      'src/Validator/SequentialChecks.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+use Symfony\\Component\\Validator\\Constraints\\Compound;
+
+class SequentialChecks extends Compound
+{
+    protected function getConstraints(array $options): array
+    {
+        return [
+            new Assert\\Sequentially([
+                new Assert\\NotBlank(),
+                new Assert\\Sequentially([
+                    new Assert\\Length(min: 8),
+                ]),
+            ]),
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-compound-constraints.js', app);
+
+    expect(text).toContain('Compound');
+  });
+
+  test('a package configured only for one environment', async () => {
+    const app = appWith('symfony-config-environments', {
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+`,
+      'config/packages/dev/web_profiler.yaml': `web_profiler:
+    toolbar: true
+`,
+      'config/packages/test/web_profiler.yaml': '{}\n',
+    });
+
+    const text = await runModule('symfony-config-environments.js', app);
+
+    expect(text).toContain('web_profiler');
+  });
+
+  test('a command mixing SymfonyStyle with raw output', async () => {
+    const app = appWith('symfony-console-style', {
+      'src/Command/ReportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+use Symfony\\Component\\Console\\Style\\SymfonyStyle;
+
+class ReportCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $io = new SymfonyStyle($input, $output);
+        $io->title('Report');
+
+        $output->writeln('Raw line');
+
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-style.js', app);
+
+    expect(text).toContain('SymfonyStyle');
+  });
+
+  test('a constraint test that validates several times over', async () => {
+    const app = appWith('symfony-constraint-validator-test', {
+      'tests/Validator/IbanValidatorTest.php': `<?php
+
+namespace App\\Tests\\Validator;
+
+use Symfony\\Component\\Validator\\Test\\ConstraintValidatorTestCase;
+
+class IbanValidatorTest extends ConstraintValidatorTestCase
+{
+    protected function createValidator(): object
+    {
+        return new \\App\\Validator\\IbanValidator();
+    }
+
+    public function testEverything(): void
+    {
+        $this->validator->validate('ES91', new \\App\\Validator\\Iban());
+        $this->validator->validate('', new \\App\\Validator\\Iban());
+        $this->validator->validate(null, new \\App\\Validator\\Iban());
+        $this->assertNoViolation();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-constraint-validator-test.js', app);
+
+    expect(text).toContain('validate()');
+  });
+
+  test('a compiled container in the cache directory', async () => {
+    const app = appWith('symfony-container-compile', {
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\\:
+        resource: '../src/'
+`,
+      'var/cache/prod/Container12345/App_KernelProdContainer.php': `<?php
+
+class App_KernelProdContainer
+{
+}
+`,
+      'var/cache/prod/App_KernelProdContainer.preload.php': "<?php\n\n// preload\n",
+    });
+
+    const text = await runModule('symfony-container-compile.js', app);
+
+    expect(text).toContain('ontainer');
+  });
+
+  test('a format asked for that the framework does not declare', async () => {
+    const app = appWith('symfony-content-negotiation', {
+      'config/packages/framework.yaml': `framework:
+    http_method_override: true
+    request:
+        formats:
+            jsonld: ['application/ld+json']
+`,
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ApiController
+{
+    public function index(Request $request): Response
+    {
+        $format = $request->getPreferredFormat('csv');
+
+        return new Response('', 200, ['Content-Type' => $request->getMimeType($format)]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-content-negotiation.js', app);
+
+    expect(text).toContain('http_method_override');
+  });
+});
