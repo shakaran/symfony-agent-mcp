@@ -5455,3 +5455,343 @@ class ReportLocker
     expect(text).toContain('ReportLocker');
   });
 });
+
+describe('pcre security', () => {
+  test('patterns that backtrack catastrophically, and a backtrack limit set by hand', async () => {
+    const app = appWith('pcre', {
+      'src/Validator/PatternValidator.php': `<?php
+
+namespace App\\Validator;
+
+class PatternValidator
+{
+    public function nested(string $value): bool
+    {
+        return (bool) preg_match('/^(a+)+$/', $value);
+    }
+
+    public function starStar(string $value): bool
+    {
+        return (bool) preg_match('/^(a*)*$/', $value);
+    }
+
+    public function plusStar(string $value): bool
+    {
+        return (bool) preg_match('/^(x+)*$/', $value);
+    }
+
+    public function starPlus(string $value): bool
+    {
+        return (bool) preg_match('/^(y*)+$/', $value);
+    }
+
+    public function possessive(string $value): bool
+    {
+        return (bool) preg_match('/^[a-z]++$/', $value);
+    }
+
+    public function alternation(string $value): bool
+    {
+        return (bool) preg_match('/^(a|aa)+$/', $value);
+    }
+
+    public function greedy(string $value): bool
+    {
+        return (bool) preg_match('/^.*=.*$/', $value);
+    }
+
+    public function limits(): void
+    {
+        ini_set('pcre.backtrack_limit', '10000000');
+        ini_set('pcre.recursion_limit', '100');
+    }
+}
+`,
+      'php.ini': `pcre.backtrack_limit = 100000000
+pcre.jit = 1
+`,
+    });
+
+    const text = await runModule('php-pcre-security.js', app);
+
+    expect(text).toContain('backtracking');
+  });
+});
+
+describe('string helpers', () => {
+  test('legacy strpos patterns beside the modern helpers', async () => {
+    const app = appWith('string-helpers', {
+      'src/Support/Strings.php': `<?php
+
+namespace App\\Support;
+
+class Strings
+{
+    public function checks(string $haystack, string $needle): bool
+    {
+        if (strpos($haystack, $needle) !== false) {
+            return true;
+        }
+
+        if (strpos($haystack, 'prefix') === 0) {
+            return true;
+        }
+
+        if (str_contains($haystack, $needle)) {
+            return true;
+        }
+
+        if (str_starts_with($haystack, 'prefix')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function lower(string $value): string
+    {
+        return mb_strtolower($value);
+    }
+
+    public function counted(array $rows): int
+    {
+        return count(array_filter($rows, static fn (array $row): bool => $row['active']));
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-string-helpers.js', app);
+
+    expect(text).toContain('strpos');
+  });
+});
+
+describe('sentry tracing', () => {
+  test('a sample rate of one in production and spans that are never finished', async () => {
+    const app = appWith('sentry-tracing', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'sentry/sentry-symfony': '^4.9' },
+      }, null, 2),
+      'config/packages/sentry.yaml': `sentry:
+    dsn: '%env(SENTRY_DSN)%'
+    options:
+        traces_sample_rate: 0.2
+        profiles_sample_rate: 0.1
+`,
+      'config/packages/prod/sentry.yaml': `sentry:
+    options:
+        traces_sample_rate: 1.0
+`,
+      '.env': `SENTRY_DSN=https://0123456789abcdef@o1.ingest.sentry.io/1
+SENTRY_TRACES_SAMPLE_RATE=1.0
+SENTRY_ENVIRONMENT=prod
+`,
+      'src/Tracing/Tracer.php': `<?php
+
+namespace App\\Tracing;
+
+use Sentry\\Tracing\\SpanContext;
+use Sentry\\Tracing\\TransactionContext;
+
+use function Sentry\\startTransaction;
+
+class Tracer
+{
+    public function trace(): void
+    {
+        $transaction = \\Sentry\\startTransaction(new TransactionContext('checkout'));
+        $span = \\Sentry\\startSpan(new SpanContext());
+        $transaction->setTag('area', 'checkout');
+        $transaction->setContext('order', ['id' => 1]);
+        $transaction->setUser(['id' => 1]);
+    }
+
+    public function traced(): void
+    {
+        $transaction = \\Sentry\\startTransaction(new TransactionContext('invoice'));
+        $span = \\Sentry\\startSpan(new SpanContext());
+        $span->finish();
+        $transaction->finish();
+    }
+}
+`,
+    });
+
+    const text = await runModule('sentry-performance-tracing.js', app);
+
+    expect(text).toContain('traces_sample_rate');
+  });
+});
+
+describe('redis sentinel', () => {
+  test('a sentinel dsn with two hosts, and one written in a php config', async () => {
+    const app = appWith('redis-sentinel', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        default_redis_provider: 'redis+sentinel://cache-1:26379,cache-2:26379/mymaster'
+        app: cache.adapter.redis
+`,
+      '.env': `REDIS_SENTINEL_DSN=redis+sentinel://cache-1:26379,cache-2:26379,cache-3:26379/mymaster
+REDIS_DSN=redis://cache:6379
+`,
+      '.env.prod': `REDIS_SENTINEL_DSN=redis+sentinel://cache-1:26379,cache-2:26379,cache-3:26379/mymaster
+`,
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'redis+sentinel://cache-1:26379,cache-2:26379/mymaster/messages'
+`,
+    });
+
+    const text = await runModule('symfony-cache-redis-sentinel.js', app);
+
+    expect(text).toContain('sentinel');
+  });
+});
+
+describe('http client scopes', () => {
+  test('scoped clients with basic auth, ntlm, verify off and a plaintext base uri', async () => {
+    const app = appWith('httpclient-scopes', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        scoped_clients:
+            legacy.client:
+                base_uri: 'http://legacy.example.com'
+                auth_basic: ['acme', 'hunter2']
+                verify_peer: false
+                verify_host: false
+            windows.client:
+                base_uri: 'https://sharepoint.example.com'
+                auth_ntlm: 'acme:hunter2'
+            safe.client:
+                base_uri: 'https://api.example.com'
+                auth_bearer: '%env(API_TOKEN)%'
+`,
+      'src/Client/LegacyClient.php': `<?php
+
+namespace App\\Client;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class LegacyClient
+{
+    public function __construct(private HttpClientInterface $legacyClient)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-scopes.js', app);
+
+    expect(text).toContain('legacy.client');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('processes', () => {
+  test('processes built from strings, run without a timeout and with shell emulation', async () => {
+    const app = appWith('process', {
+      'src/Service/Runner.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Runner
+{
+    public function fromString(string $name): void
+    {
+        $process = Process::fromShellCommandline('convert ' . $name . ' out.png');
+        $process->enableShellEmulation();
+        $process->setTimeout(null);
+        $process->run();
+    }
+
+    public function quoted(): void
+    {
+        $process = new Process(['convert', 'in.png', 'out.png']);
+        $process->setTimeout(60);
+        $process->mustRun();
+    }
+
+    public function native(string $name): void
+    {
+        exec('convert ' . $name);
+        shell_exec('ls -la');
+        system('whoami');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-process.js', app);
+
+    expect(text).toContain('Runner');
+  });
+});
+
+describe('routing loaders', () => {
+  test('a loader that supports everything and one that may return null', async () => {
+    const app = appWith('routing-loader', {
+      'config/services.yaml': `services:
+    App\\Routing\\ExtraLoader:
+        tags:
+            - 'routing.loader'
+    App\\Routing\\LooseLoader:
+        tags:
+            - { name: routing.loader }
+`,
+      'src/Routing/ExtraLoader.php': `<?php
+
+namespace App\\Routing;
+
+use Symfony\\Component\\Config\\Loader\\Loader;
+use Symfony\\Component\\Routing\\RouteCollection;
+
+class ExtraLoader extends Loader
+{
+    public function load(mixed $resource, ?string $type = null): RouteCollection
+    {
+        $routes = new RouteCollection();
+
+        return $routes;
+    }
+
+    public function supports(mixed $resource, ?string $type = null): bool
+    {
+        return 'extra' === $type;
+    }
+}
+`,
+      'src/Routing/LooseLoader.php': `<?php
+
+namespace App\\Routing;
+
+use Symfony\\Component\\Config\\Loader\\Loader;
+
+class LooseLoader extends Loader
+{
+    public function load(mixed $resource, ?string $type = null)
+    {
+        if (!$resource) {
+            return null;
+        }
+
+        return $this->collection;
+    }
+
+    public function supports(mixed $resource, ?string $type = null): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-routing-loader.js', app);
+
+    expect(text).toContain('ExtraLoader');
+  });
+});
