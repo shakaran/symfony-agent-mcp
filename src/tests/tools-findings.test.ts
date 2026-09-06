@@ -8854,3 +8854,219 @@ class StubbedCaster
     expect(text).toContain('Caster');
   });
 });
+
+describe('dbal connection pools', () => {
+  test('persistent connections, a pool size in the dsn and several named connections', async () => {
+    const app = appWith('dbal-pool', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                url: 'postgresql://app:pass@db:5432/acme?pool_size=20'
+                driver: pdo_pgsql
+                options:
+                    12: true
+                driverOptions:
+                    1002: "SET NAMES utf8mb4"
+                    3: 2
+            reporting:
+                url: 'mysql://app:pass@db:3306/reporting'
+                driver: pdo_mysql
+                persistent: true
+                options:
+                    'PDO::ATTR_PERSISTENT': true
+`,
+    });
+
+    const text = await runModule('dbal-connection-pool.js', app);
+
+    expect(text).toContain('reporting');
+  });
+});
+
+describe('aws parameter store', () => {
+  test('a parameter fetched without decryption and a hardcoded name', async () => {
+    const app = appWith('parameter-store', {
+      'src/Aws/Parameters.php': `<?php
+
+namespace App\\Aws;
+
+use Aws\\Ssm\\SsmClient;
+
+class Parameters
+{
+    public function __construct(private SsmClient $ssm)
+    {
+    }
+
+    public function encrypted(): string
+    {
+        $result = $this->ssm->getParameter([
+            'Name' => '/acme/production/database_password',
+            'WithDecryption' => false,
+        ]);
+
+        return $result['Parameter']['Value'];
+    }
+
+    public function fromEnv(): string
+    {
+        $result = $this->ssm->getParameter([
+            'Name' => getenv('ACME_PARAMETER_NAME'),
+            'WithDecryption' => true,
+        ]);
+
+        return $result['Parameter']['Value'];
+    }
+
+    public function byPath(): array
+    {
+        return $this->ssm->getParametersByPath([
+            'Path' => '/acme/production/',
+            'Recursive' => true,
+            'WithDecryption' => true,
+        ]);
+    }
+}
+`,
+      'config/packages/aws.yaml': `aws:
+    version: latest
+    region: eu-west-1
+    Ssm:
+        version: '2014-11-06'
+`,
+    });
+
+    const text = await runModule('aws-parameter-store.js', app);
+
+    expect(text).toContain('WithDecryption');
+  });
+});
+
+describe('caster prefixes', () => {
+  test('a caster using the Caster API on a class with private state', async () => {
+    const app = appWith('caster-prefixes', {
+      'src/Caster/AccountCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Caster\\Caster;
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class AccountCaster
+{
+    protected $secret;
+
+    private $token;
+
+    public static function cast($account, array $a, Stub $stub, bool $isNested): array
+    {
+        $a[Caster::EXCLUDE_VERBOSE] = true;
+        $a['reference'] = $account->reference;
+
+        return $a;
+    }
+}
+`,
+      'src/Caster/PrefixedCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Caster\\Caster;
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class PrefixedCaster
+{
+    private $token;
+
+    public static function cast($value, array $a, Stub $stub, bool $isNested): array
+    {
+        $a[Caster::PREFIX_PROTECTED . 'token'] = $value->token;
+
+        return array_merge($a, ['extra' => 1]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('Caster');
+  });
+});
+
+describe('behat definitions on unreadable and duplicate steps', () => {
+  test('two definitions with the same pattern in one context, and a feature with none', async () => {
+    const app = appWith('behat-duplicates', {
+      'features/bootstrap/FeatureContext.php': `<?php
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+    /**
+     * @Given I am on the home page
+     */
+    public function iAmOnTheHomePage(): void
+    {
+    }
+
+    /**
+     * @Given I am on the home page
+     */
+    public function duplicate(): void
+    {
+    }
+
+    /**
+     * @Given
+     */
+    public function empty(): void
+    {
+    }
+}
+`,
+      'features/empty.feature': `Feature: Nothing here
+
+    Scenario: No steps at all
+`,
+    });
+
+    const text = await runModule('behat-step-coverage.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('socket helpers', () => {
+  test('a tls address on a sensitive port and a commented one', async () => {
+    const app = appWith('socket-tls', {
+      'src/Net/Secure.php': `<?php
+
+namespace App\\Net;
+
+class Secure
+{
+    public function tls(): void
+    {
+        $client = stream_socket_client('tls://0.0.0.0:6379');
+    }
+
+    public function ssl(): void
+    {
+        $client = stream_socket_client('ssl://127.0.0.1:5432');
+    }
+
+    public function inline(): void
+    {
+        $client = stream_socket_client('tcp://0.0.0.0:27017', $errno, $errstr, 30, STREAM_CLIENT_CONNECT);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-socket-programming.js', app);
+
+    expect(text).toContain('Secure');
+  });
+});
