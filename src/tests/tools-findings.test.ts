@@ -5195,3 +5195,263 @@ class ChatServer implements MessageComponentInterface
     expect(text).toContain('ChatServer');
   });
 });
+
+describe('aws ecs', () => {
+  test('a task definition with a secret in the environment, no health check and a privileged container', async () => {
+    const app = appWith('aws-ecs', {
+      'deploy/task-definition.json': JSON.stringify({
+        family: 'acme-app',
+        networkMode: 'awsvpc',
+        containerDefinitions: [
+          {
+            name: 'app',
+            image: 'registry.example.com/acme:latest',
+            essential: true,
+            privileged: true,
+            environment: [
+              { name: 'APP_ENV', value: 'prod' },
+              { name: 'DATABASE_PASSWORD', value: 'hunter2-in-the-task-def' },
+            ],
+          },
+          {
+            name: 'sidecar',
+            image: 'registry.example.com/sidecar:latest',
+            healthCheck: { command: ['CMD-SHELL', 'curl -f http://localhost/health || exit 1'] },
+            secrets: [{ name: 'APP_SECRET', valueFrom: 'arn:aws:secretsmanager:eu-west-1:1:secret:acme' }],
+          },
+        ],
+      }, null, 2),
+      'deploy/ecs-task-broken.json': '{ not json\n',
+      'node_modules/ignored/task-definition.json': '{}\n',
+    });
+
+    const text = await runModule('aws-ecs-config.js', app);
+
+    expect(text).toContain('acme-app');
+    expect(text).not.toContain('hunter2-in-the-task-def');
+  });
+});
+
+describe('custom authenticators', () => {
+  test('a stateless firewall with remember_me, and one with a very long lifetime', async () => {
+    const app = appWith('custom-authenticators', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        api:
+            pattern: ^/api
+            stateless: true
+            custom_authenticator: App\\Security\\ApiTokenAuthenticator
+            remember_me:
+                secret: '%kernel.secret%'
+                lifetime: 31536000
+                secure: false
+        main:
+            lazy: true
+            custom_authenticators:
+                - App\\Security\\LoginFormAuthenticator
+                - App\\Security\\MagicLinkAuthenticator
+            form_login:
+                login_path: app_login
+        broken: ~
+`,
+      'src/Security/ApiTokenAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractAuthenticator;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Passport;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\SelfValidatingPassport;
+
+class ApiTokenAuthenticator extends AbstractAuthenticator
+{
+    public function supports($request): bool
+    {
+        return $request->headers->has('X-API-TOKEN');
+    }
+
+    public function authenticate($request): Passport
+    {
+        return new SelfValidatingPassport($this->userBadge($request));
+    }
+}
+`,
+    });
+
+    const text = await runModule('custom-authenticators.js', app);
+
+    expect(text).toContain('ApiTokenAuthenticator');
+  });
+});
+
+describe('doctrine query cache', () => {
+  test('caches configured as a service, a pool and a provider, sharing one redis dsn', async () => {
+    const app = appWith('query-cache', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+    orm:
+        query_cache_driver:
+            type: redis
+            dsn: 'redis://cache:6379'
+        result_cache_driver:
+            type: redis
+            dsn: 'redis://cache:6379'
+        metadata_cache_driver:
+            type: pool
+            pool: doctrine.system_cache_pool
+        second_level_cache:
+            enabled: true
+            region_cache_driver:
+                type: service
+                id: cache.app
+`,
+    });
+    const providers = appWith('query-cache-providers', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        query_cache_driver: array
+        result_cache_driver:
+            cache_provider: my_provider
+        metadata_cache_driver:
+            type: array
+`,
+    });
+
+    const text = await runModule('doctrine-query-cache.js', app);
+    const providersText = await runModule('doctrine-query-cache.js', providers);
+
+    expect(text).toContain('query_cache');
+    expect(providersText.length).toBeGreaterThan(0);
+  });
+});
+
+describe('lock stores', () => {
+  test('every store the lock component understands', async () => {
+    const app = appWith('lock-stores', {
+      'config/packages/lock.yaml': `framework:
+    lock:
+        default: 'rediss://cache:6379'
+        database: 'postgresql://app:pass@db:5432/acme'
+        legacy: 'mysql://app:pass@db:3306/acme'
+        memcached: 'memcached://cache:11211'
+        memory: 'in_memory'
+        mongo: 'mongodb://mongo:27017/locks'
+        zk: 'zookeeper://zk:2181'
+        weird: 'acme://store'
+`,
+    });
+    const single = appWith('lock-single', {
+      'config/packages/framework.yaml': `framework:
+    lock: 'flock'
+`,
+    });
+
+    const text = await runModule('lock.js', app);
+    const singleText = await runModule('lock.js', single);
+
+    expect(text).toContain('Redis');
+    expect(singleText.length).toBeGreaterThan(0);
+  });
+});
+
+describe('php jit', () => {
+  test('jit disabled, the function mode, an unknown mode and buffer sizes at both ends', async () => {
+    const disabled = appWith('jit-disabled', {
+      'docker/php/conf.d/opcache.ini': `opcache.enable = 1
+opcache.jit = disable
+opcache.jit_buffer_size = 0
+`,
+    });
+    const fn = appWith('jit-function', {
+      'docker/php/conf.d/jit.ini': `opcache.enable = 1
+opcache.jit = function
+opcache.jit_buffer_size = 8M
+opcache.jit_hot_func = 127
+`,
+    });
+    const unknown = appWith('jit-unknown', {
+      'php.ini': `opcache.enable = 1
+opcache.jit = sometimes
+opcache.jit_buffer_size = 1024M
+`,
+    });
+    const tracing = appWith('jit-tracing', {
+      'config/php.ini': `opcache.enable = 1
+opcache.jit = tracing
+opcache.jit_buffer_size = 256M
+`,
+    });
+
+    const one = await runModule('php-jit-config.js', disabled);
+    const two = await runModule('php-jit-config.js', fn);
+    const three = await runModule('php-jit-config.js', unknown);
+    const four = await runModule('php-jit-config.js', tracing);
+
+    expect(one).toContain('JIT');
+    expect(two).toContain('function');
+    expect(three.length).toBeGreaterThan(0);
+    expect(four).toContain('tracing');
+  });
+});
+
+describe('profiler storage layout', () => {
+  test('profiles nested the way Symfony writes them', async () => {
+    const app = appWith('profiler-files', {
+      'var/cache/dev/profiler/23/c1/abc123': "{\"time\": {\"duration\": 128.5, \"initTime\": 12.25}, \"memory\": {\"memory\": 12582912, \"memoryLimit\": \"256M\"}, \"db\": {\"time\": 0.045, \"queries\": [{\"sql\": \"SELECT * FROM invoice WHERE id = ?\", \"executionMS\": 12.5, \"params\": [1]}, {\"sql\": \"SELECT * FROM customer\", \"executionMs\": 3.25, \"params\": []}]}, \"logger\": {\"logs\": [{\"priority\": \"400\", \"priorityName\": \"ERROR\", \"message\": \"Payment failed\", \"channel\": \"app\"}, {\"priority\": \"300\", \"priorityName\": \"WARNING\", \"message\": \"Slow response\", \"channel\": \"request\"}]}, \"exception\": {\"exception\": true, \"class\": \"RuntimeException\", \"message\": \"Payment gateway timeout\"}, \"request\": {\"status_code\": 500, \"request_headers\": {\"accept\": \"text/html\"}, \"response_headers\": {\"content-type\": \"text/html\"}}}",
+      'var/cache/dev/profiler/56/f4/def456': '{ "time": { "duration": 5 } }',
+      'var/cache/dev/profiler/56/f4/short': 'too short',
+    });
+
+    const text = await runModule('profiler.js', app, ['abc123', 'def456']);
+
+    expect(text).toContain('RuntimeException');
+  });
+});
+
+describe('lock usage in code', () => {
+  test('locks acquired and released in a service', async () => {
+    const app = appWith('lock-usage', {
+      'config/packages/lock.yaml': `framework:
+    lock: 'redis://cache:6379'
+`,
+      'src/Service/ReportLocker.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Lock\\LockFactory;
+
+class ReportLocker
+{
+    public function __construct(private LockFactory $factory)
+    {
+    }
+
+    public function run(): void
+    {
+        $lock = $this->factory->createLock('report', 300, false);
+        if (!$lock->acquire(true)) {
+            return;
+        }
+
+        try {
+            $this->build();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function forgetful(): void
+    {
+        $lock = $this->factory->createLock('cleanup');
+        $lock->acquire();
+        $this->cleanup();
+    }
+}
+`,
+    });
+
+    const text = await runModule('lock.js', app);
+
+    expect(text).toContain('ReportLocker');
+  });
+});
