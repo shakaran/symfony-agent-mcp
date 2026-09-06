@@ -8026,6 +8026,61 @@ class Reader
 describe('memory management', () => {
   test('a huge range, memory_limit off and a very large limit', async () => {
     const app = appWith('memory', {
+      'src/Service/Streamer.php': `<?php
+
+namespace App\\Service;
+
+class Streamer
+{
+    public function rows(): \\Generator
+    {
+        yield 1;
+    }
+
+    public function eager(): array
+    {
+        return iterator_to_array($this->rows());
+    }
+
+    public function chained(array $rows): array
+    {
+        return array_values(array_filter(array_map(static fn ($r) => $r, $this->repository->findAll())));
+    }
+
+    public function all(): void
+    {
+        foreach ($this->repository->findAll() as $row) {
+            $this->handle($row);
+        }
+    }
+
+    public function chunked(): void
+    {
+        foreach (array_chunk($this->ids, 100) as $chunk) {
+            $this->handle($chunk);
+        }
+    }
+}
+`,
+      'src/Entity/Node.php': `<?php
+
+namespace App\\Entity;
+
+class Node
+{
+    private $parent;
+
+    private ?Node $head = null;
+
+    private $children = [];
+
+    public function addChild(Node $child): void
+    {
+        $this->children[] = $child;
+        $child->parent = $this;
+    }
+}
+`,
       'src/Service/Big.php': `<?php
 
 namespace App\\Service;
