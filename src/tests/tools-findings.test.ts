@@ -4349,3 +4349,296 @@ AWS_REGION=eu-west-1
     expect(text).toContain('CloudWatch');
   });
 });
+
+describe('easy coding standard', () => {
+  test('an ecs config, the older cs-fixer files and ecs in the pipeline', async () => {
+    const app = appWith('ecs', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'symplify/easy-coding-standard': '^12.0' },
+        scripts: { ecs: 'vendor/bin/ecs check' },
+      }, null, 2),
+      'ecs.php': `<?php
+
+declare(strict_types=1);
+
+use PhpCsFixer\\Fixer\\ArrayNotation\\ArraySyntaxFixer;
+use Symplify\\EasyCodingStandard\\Config\\ECSConfig;
+
+return ECSConfig::configure()
+    ->withPaths([__DIR__ . '/src', __DIR__ . '/tests'])
+    ->withPreparedSets(psr12: true, common: true)
+    ->withRules([ArraySyntaxFixer::class])
+    ->withSkip([__DIR__ . '/src/Kernel.php']);
+`,
+      '.php-cs-fixer.dist.php': `<?php
+
+return (new PhpCsFixer\\Config())->setRules(['@PSR12' => true]);
+`,
+      '.github/workflows/ci.yml': `name: ci
+on: [push]
+jobs:
+    style:
+        runs-on: ubuntu-latest
+        steps:
+            - run: vendor/bin/ecs check --no-progress-bar
+`,
+    });
+
+    const text = await runModule('easy-coding-standard.js', app);
+
+    expect(text).toContain('ecs');
+  });
+});
+
+describe('flex recipes', () => {
+  test('official and contrib recipes side by side', async () => {
+    const app = appWith('flex-official', {
+      'symfony.lock': JSON.stringify({
+        'symfony/framework-bundle': {
+          version: '7.0',
+          recipe: {
+            repo: 'github.com/symfony/recipes',
+            branch: 'main',
+            version: '6.4',
+            ref: 'https://github.com/symfony/recipes/tree/main/symfony/framework-bundle',
+          },
+        },
+        'sentry/sentry-symfony': {
+          version: '4.9',
+          recipe: {
+            repo: 'github.com/symfony/recipes-contrib',
+            branch: 'main',
+            version: '4.0',
+            ref: 'https://github.com/symfony/recipes-contrib/tree/main/sentry/sentry-symfony',
+          },
+        },
+        'acme/private-bundle': {
+          version: '1.0',
+          recipe: { repo: 'gitlab.example.com/acme/recipes', branch: 'main', version: '1.0' },
+        },
+      }, null, 2),
+    });
+
+    const text = await runModule('flex-recipes.js', app);
+
+    expect(text).toContain('framework-bundle');
+    expect(text).toContain('Contrib');
+  });
+});
+
+describe('heroku', () => {
+  test('a Procfile with a release dyno and an app.json with addons', async () => {
+    const app = appWith('heroku', {
+      'Procfile': `web: heroku-php-apache2 public/
+worker: php bin/console messenger:consume async
+release: php bin/console doctrine:migrations:migrate --no-interaction
+# a comment line
+malformed line without a colon
+`,
+      'app.json': JSON.stringify({
+        name: 'acme',
+        env: {
+          APP_ENV: { description: 'Environment', value: 'prod' },
+          APP_SECRET: { description: 'Secret', required: true },
+        },
+        addons: [
+          { plan: 'heroku-postgresql:standard-0' },
+          { plan: 'heroku-redis' },
+          'papertrail',
+        ],
+        buildpacks: [
+          { url: 'heroku/php' },
+          { name: 'heroku/nodejs' },
+        ],
+      }, null, 2),
+    });
+
+    const text = await runModule('heroku-config.js', app);
+
+    expect(text).toContain('release');
+  });
+});
+
+describe('netlify', () => {
+  test('a netlify.toml with build, environment, headers, redirects and functions', async () => {
+    const app = appWith('netlify', {
+      'netlify.toml': `[build]
+    command = "composer install && bin/console assets:install"
+    publish = "public"
+
+[build.environment]
+    PHP_VERSION = "8.3"
+    APP_SECRET = "0123456789abcdef0123456789abcdef"
+    APP_ENV = "$APP_ENV"
+
+[context.production.environment]
+    APP_ENV = "prod"
+    DATABASE_URL = "postgresql://app:hunter2@db.example.com/acme"
+
+[[headers]]
+    for = "/*"
+    [headers.values]
+        X-Frame-Options = "SAMEORIGIN"
+        X-Content-Type-Options = "nosniff"
+
+[[redirects]]
+    from = "/old"
+    to = "/new"
+    status = 301
+
+[functions]
+    directory = "netlify/functions"
+    node_bundler = "esbuild"
+`,
+    });
+
+    const text = await runModule('netlify-deploy-config.js', app);
+
+    expect(text).toContain('build');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('covariance', () => {
+  test('return types narrowed, widened and left alone', async () => {
+    const app = appWith('covariance', {
+      'src/Contract/Repository.php': `<?php
+
+namespace App\\Contract;
+
+abstract class Repository
+{
+    abstract public function find(int $id): ?object;
+
+    abstract public function all(): iterable;
+
+    abstract public function name(): string|int;
+
+    abstract public function raw(): mixed;
+}
+`,
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Contract\\Repository;
+use App\\Entity\\Invoice;
+
+class InvoiceRepository extends Repository
+{
+    public function find(int $id): ?Invoice
+    {
+        return null;
+    }
+
+    public function all(): array
+    {
+        return [];
+    }
+
+    public function name(): string
+    {
+        return 'invoice';
+    }
+
+    public function raw(): string|int
+    {
+        return 1;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-covariance.js', app);
+
+    expect(text).toContain('InvoiceRepository');
+  });
+});
+
+describe('parallel extension', () => {
+  test('runtimes and channels created outside try/catch', async () => {
+    const app = appWith('parallel', {
+      'src/Parallel/Worker.php': `<?php
+
+namespace App\\Parallel;
+
+use parallel\\Channel;
+use parallel\\Runtime;
+
+class Worker
+{
+    public function unguarded(): void
+    {
+        $runtime = new Runtime();
+        parallel\\run(function (): void {
+            echo 'work';
+        });
+    }
+
+    public function guarded(): void
+    {
+        try {
+            $runtime = new Runtime();
+            parallel\\run(function (): void {
+                echo 'work';
+            });
+        } catch (\\parallel\\Error $e) {
+        }
+    }
+
+    public function channels(object $shared): void
+    {
+        $unbuffered = new Channel();
+        $buffered = Channel::make('acme', 16);
+        parallel\\run(function () use ($shared): void {
+            $shared->mutate();
+        });
+    }
+
+    public function boot(string $path): void
+    {
+        parallel\\bootstrap($path);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-parallel-extension.js', app);
+
+    expect(text).toContain('Worker');
+  });
+});
+
+describe('phpstan configuration', () => {
+  test('a large baseline, unmatched ignores turned off and many excluded paths', async () => {
+    const excludes = Array.from({ length: 8 }, (_, i) => `        - src/Legacy${i}`).join('\n');
+    const baseline = Array.from({ length: 220 }, (_, i) => `    -\n        message: "#^Error ${i}$#"\n        count: 1\n        path: src/Legacy.php`).join('\n');
+    const app = appWith('phpstan-config', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpstan/phpstan': '^1.10' },
+      }, null, 2),
+      'phpstan.neon': `includes:
+    - phpstan-baseline.neon
+    - vendor/phpstan/phpstan-symfony/extension.neon
+
+parameters:
+    level: 6
+    reportUnmatchedIgnoredErrors: false
+    paths:
+        - src
+    excludePaths:
+${excludes}
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors:
+${baseline}
+`,
+    });
+
+    const text = await runModule('phpstan-config.js', app);
+
+    expect(text).toContain('phpstan.neon');
+  });
+});
