@@ -52,7 +52,10 @@ function analyzeFormButtons(content: string): FormButton[] {
   const buttons: FormButton[] = [];
 
   // Match ->add('name', SubmitType::class, [...]) or ButtonType::class
-  const addPattern = /->add\s*\(\s*['"](\w{1,120})['"]\s*,\s*\\?(?:\w+\\){0,10}(Submit|Button)Type::class([^;]{0,500})/g;
+  // The options stop at the next ->add() as well as at the semicolon: a
+  // fluent chain is one statement, so taking everything up to the ";" made
+  // the first button swallow the ones after it.
+  const addPattern = /->add\s*\(\s*['"](\w{1,120})['"]\s*,\s*\\?(?:\w+\\){0,10}(Submit|Button)Type::class([\s\S]{0,500}?)(?=->add\s*\(|;|$)/g;
   let m: RegExpExecArray | null;
 
   while ((m = addPattern.exec(content)) !== null) {

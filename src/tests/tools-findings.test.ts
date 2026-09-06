@@ -23278,3 +23278,252 @@ class PruneCommand extends Command
     expect(text).toContain('prune');
   });
 });
+
+describe('batch 77: cache stampedes, console tables, CSRF, profiler panels and forms', () => {
+  test('a pool used with a short TTL and no stampede protection', async () => {
+    const app = appWith('symfony-cache-stampede', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app.rates_pool:
+                adapter: cache.adapter.redis
+                default_lifetime: 30
+`,
+      'src/Service/RateProvider.php': `<?php
+
+namespace App\\Service;
+
+use Psr\\Cache\\CacheItemPoolInterface;
+
+class RateProvider
+{
+    public function __construct(private CacheItemPoolInterface $appRatesPool)
+    {
+    }
+
+    public function rate(string $currency): float
+    {
+        $item = $this->appRatesPool->getItem('app.rates_pool.' . $currency);
+        $item->expiresAfter(5);
+
+        return 1.0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-cache-stampede.js', app);
+
+    expect(text).toContain('pool');
+  });
+
+  test('a console table too wide to read, filled inside a loop', async () => {
+    const app = appWith('symfony-console-table', {
+      'src/Command/ReportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Helper\\Table;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+
+class ReportCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $table = new Table($output);
+        $table->setHeaders(['col0', 'col1', 'col2', 'col3', 'col4', 'col5', 'col6', 'col7', 'col8', 'col9', 'col10', 'col11', 'col12', 'col13', 'col14', 'col15', 'col16', 'col17', 'col18', 'col19', 'col20', 'col21', 'col22', 'col23']);
+
+        foreach (range(1, 5000) as $i) {
+            $table->addRow([$i]);
+        }
+
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-table.js', app);
+
+    expect(text).toContain('columns');
+  });
+
+  test('CSRF switched off for the whole application', async () => {
+    const app = appWith('symfony-csrf', {
+      'config/packages/framework.yaml': `framework:
+    csrf_protection:
+        enabled: false
+    session:
+        cookie_lifetime: 0
+`,
+    });
+
+    const text = await runModule('symfony-csrf.js', app);
+
+    expect(text).toContain('CSRF');
+  });
+
+  test('a profiler panel that takes a name Symfony already uses', async () => {
+    const app = appWith('symfony-debug-profiler-panels', {
+      'src/DataCollector/RequestCollector.php': `<?php
+
+namespace App\\DataCollector;
+
+use Symfony\\Bundle\\FrameworkBundle\\DataCollector\\TemplateAwareDataCollectorInterface;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpKernel\\DataCollector\\DataCollector;
+
+class RequestCollector extends DataCollector implements TemplateAwareDataCollectorInterface
+{
+    public function collect(Request $request, Response $response, ?\\Throwable $exception = null): void
+    {
+        $this->data = [];
+    }
+
+    public function getName(): string
+    {
+        return 'request';
+    }
+
+    public static function getTemplate(): string
+    {
+        return 'data_collector/request';
+    }
+}
+`,
+      'templates/data_collector/request.html.twig': `{% extends '@WebProfiler/Profiler/layout.html.twig' %}
+`,
+    });
+
+    const text = await runModule('symfony-debug-profiler-panels.js', app);
+
+    expect(text).toContain('request');
+  });
+
+  test('casters registered globally and never put back', async () => {
+    const app = appWith('symfony-debug-var-dumper', {
+      'src/Debug/DumpConfigurator.php': `<?php
+
+namespace App\\Debug;
+
+use Symfony\\Component\\VarDumper\\Cloner\\AbstractCloner;
+use Symfony\\Component\\VarDumper\\VarDumper;
+
+class DumpConfigurator
+{
+    public function configure(): void
+    {
+        AbstractCloner::addCasters([
+            'App\\Entity\\Invoice' => static fn (): array => [],
+        ]);
+
+        VarDumper::setHandler(static function ($var): void {
+        });
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-debug-var-dumper.js', app);
+
+    expect(text).toContain('addCasters');
+  });
+
+  test('a project told to skip every check', async () => {
+    const app = appWith('symfony-enlighten-analysis', {
+      '.env': 'APP_ENV=prod\nAPP_DEBUG=true\n',
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+    debug: true
+`,
+      'enlighten.yaml': `skip_checks:
+    - all
+`,
+    });
+
+    const text = await runModule('symfony-enlighten-analysis.js', app);
+
+    expect(text).toContain('APP_DEBUG');
+  });
+
+  test('a form with two submit buttons and nothing to tell them apart', async () => {
+    const app = appWith('symfony-form-button', {
+      'src/Form/InvoiceType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\SubmitType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class InvoiceType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('save', SubmitType::class, ['label' => 'Save'])
+            ->add('saveAndSend', SubmitType::class, ['label' => 'Save and send'])
+        ;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-button.js', app);
+
+    expect(text).toContain('isClicked()');
+  });
+
+  test('a compound form type built from another type', async () => {
+    const app = appWith('symfony-form-compound-types', {
+      'src/Form/AddressType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\TextType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class AddressType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('street', TextType::class)
+            ->add('city', TextType::class)
+        ;
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults(['compound' => true]);
+    }
+}
+`,
+      'src/Form/CustomerType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class CustomerType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('address', AddressType::class);
+    }
+}
+`,
+      'src/Form/notes.php': "<?php\n\n// AbstractType and buildForm are described here.\n",
+    });
+
+    const text = await runModule('symfony-form-compound-types.js', app);
+
+    expect(text).toContain('AddressType');
+  });
+});
