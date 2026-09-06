@@ -9684,3 +9684,231 @@ class Unregistered implements Extension
     expect(text).toContain('TimingExtension');
   });
 });
+
+describe('parameter store names and credentials', () => {
+  test('a hardcoded parameter name, one from the environment, and aws keys in the source', async () => {
+    const app = appWith('parameter-names', {
+      'src/Aws/Store.php': `<?php
+
+namespace App\\Aws;
+
+use Aws\\Ssm\\SsmClient;
+
+class Store
+{
+    public function client(): SsmClient
+    {
+        return new SsmClient([
+            'region' => 'eu-west-1',
+            'credentials' => [
+                'key' => 'AKIAIOSFODNN7EXAMPLE',
+                'secretAccessKey' => 'wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY',
+            ],
+        ]);
+    }
+
+    public function hardcoded(): array
+    {
+        return $this->ssm->getParameters([
+            'Names' => ['/acme/production/database_password'],
+            'WithDecryption' => true,
+        ]);
+    }
+
+    public function fromEnvironment(): array
+    {
+        return $this->ssm->getParameters([
+            'Names' => [$_ENV['ACME_PARAMETER']],
+            'WithDecryption' => true,
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-parameter-store.js', app);
+
+    expect(text).not.toContain('wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY');
+  });
+});
+
+describe('dbal connections in detail', () => {
+  test('a connection with host, database, wrapper and driver classes, and replicas', async () => {
+    const app = appWith('dbal-detail', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                host: db.example.com
+                port: 5432
+                dbname: acme
+                user: app
+                password: '%env(DATABASE_PASSWORD)%'
+                driver: pdo_pgsql
+                persistent: true
+                wrapper_class: App\\Doctrine\\LoggingConnection
+                driver_class: App\\Doctrine\\CustomDriver
+                options:
+                    sslmode: require
+                replicas:
+                    replica_one:
+                        host: replica-1.example.com
+                        dbname: acme
+                    broken: ~
+            reporting:
+                url: 'postgresql://app:pass@reporting.example.com:5432/reporting'
+            broken: ~
+`,
+    });
+
+    const text = await runModule('dbal-config.js', app);
+
+    expect(text).toContain('db.example.com');
+  });
+});
+
+describe('parallel channels', () => {
+  test('an unbuffered channel, a buffered one and an object shared into a closure', async () => {
+    const app = appWith('parallel-channels', {
+      'src/Parallel/Pipeline.php': `<?php
+
+namespace App\\Parallel;
+
+use parallel\\Channel;
+use parallel\\Runtime;
+
+class Pipeline
+{
+    public function run(object $shared): void
+    {
+        $unbuffered = new parallel\\Channel();
+        $buffered = parallel\\Channel::make(64);
+
+        $runtime = new parallel\\Runtime();
+        $future = parallel\\Future::run(function () use (&$shared): void {
+            $shared->mutate();
+        });
+
+        parallel\\run(function (): void {
+            echo 'work';
+        });
+
+        if (true) {
+            $nested = new parallel\\Channel();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-parallel-extension.js', app);
+
+    expect(text).toContain('Channel');
+  });
+});
+
+describe('suppressions across files', () => {
+  test('the same suppression in more than ten files', async () => {
+    const files: Record<string, string> = {
+      'phpstan.neon': 'parameters:\n    level: 8\n',
+    };
+    for (let i = 0; i < 12; i++) {
+      files[`src/Service/Suppressed${i}.php`] = `<?php
+
+namespace App\\Service;
+
+class Suppressed${i}
+{
+    /** @phpstan-ignore-next-line */
+    public function run(): void
+    {
+    }
+}
+`;
+    }
+    const app = appWith('suppressions-systematic', files);
+
+    const text = await runModule('php-static-analysis-ignore.js', app);
+
+    expect(text).toContain('systematic');
+  });
+});
+
+describe('self shunting', () => {
+  test('a test extending production code, an inner mock class and a mock of the test itself', async () => {
+    const app = appWith('self-shunting', {
+      'tests/Service/ShuntTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use App\\Service\\Importer;
+use PHPUnit\\Framework\\TestCase;
+
+class ShuntTest extends Importer
+{
+    public function testItImports(): void
+    {
+        $mock = $this->getMockBuilder(get_class($this))
+            ->onlyMethods(['fetch'])
+            ->getMock();
+
+        self::assertNotNull($mock);
+    }
+}
+
+class FakeImporter extends Importer
+{
+    public function fetch(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-self-shunting.js', app);
+
+    expect(text).toContain('ShuntTest');
+  });
+});
+
+describe('caster return shapes', () => {
+  test('a caster returning an array literal and one merging into the argument', async () => {
+    const app = appWith('caster-returns', {
+      'src/Caster/LiteralCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class LiteralCaster
+{
+    public static function cast($value, array $a, Stub $stub, bool $isNested)
+    {
+        return [
+            'reference' => $value->reference,
+        ];
+    }
+}
+`,
+      'src/Caster/MergingCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class MergingCaster
+{
+    public static function cast($value, array $a, Stub $stub, bool $isNested)
+    {
+        return $a + ['extra' => 1];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('Caster');
+  });
+});
