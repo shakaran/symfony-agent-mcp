@@ -37194,3 +37194,481 @@ class InvoiceDto implements DenormalizableInterface
     expect(text).toContain('enormaliz');
   });
 });
+
+describe('batch 119: resets, sessions, proxies, Twig runtime, UIDs and UX bridges', () => {
+  test('a service that holds state and never resets it', async () => {
+    const app = appWith('symfony-service-reset', {
+      'src/Service/Accumulator.php': `<?php
+
+namespace App\\Service;
+
+class Accumulator
+{
+    private array $rows = [];
+
+    private static int $count = 0;
+
+    public function add(array $row): void
+    {
+        $this->rows[] = $row;
+        self::$count++;
+    }
+}
+`,
+      'src/Service/Plain.php': `<?php
+
+namespace App\\Service;
+
+class Plain
+{
+    public function value(): int
+    {
+        return 42;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-service-reset.js', app);
+
+    expect(text).toContain('ccumulator');
+  });
+
+  test('a session handler whose gc() returns the wrong type', async () => {
+    const app = appWith('symfony-session-handlers', {
+      'src/Session/RedisSessionHandler.php': `<?php
+
+namespace App\\Session;
+
+class RedisSessionHandler implements \\SessionHandlerInterface
+{
+    public function open(string $path, string $name): bool
+    {
+        return true;
+    }
+
+    public function close(): bool
+    {
+        return true;
+    }
+
+    public function read(string $id): string
+    {
+        return '';
+    }
+
+    public function write(string $id, string $data): bool
+    {
+        return true;
+    }
+
+    public function destroy(string $id): bool
+    {
+        return true;
+    }
+
+    public function gc(int $maxLifetime): bool
+    {
+        return false;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-session-handlers.js', app);
+
+    expect(text).toContain('gc()');
+  });
+
+  test('strings sorted with strcmp', async () => {
+    const app = appWith('symfony-string-normalization', {
+      'src/Text/Sorter.php': `<?php
+
+namespace App\\Text;
+
+class Sorter
+{
+    public function sort(array $names): array
+    {
+        usort($names, static fn (string $a, string $b): int => strcmp($a, $b));
+
+        return $names;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-string-normalization.js', app);
+
+    expect(text).toContain('strcmp');
+  });
+
+  test('a token read without checking whether there is one', async () => {
+    const app = appWith('symfony-token-storage', {
+      'src/Service/CurrentUser.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Security\\Core\\Authentication\\Token\\Storage\\TokenStorageInterface;
+
+class CurrentUser
+{
+    public function __construct(private TokenStorageInterface $tokenStorage)
+    {
+    }
+
+    public function id(): int
+    {
+        return $this->tokenStorage->getToken()->getUser()->getId();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-token-storage.js', app);
+
+    expect(text).toContain('getToken()');
+  });
+
+  test('the client address read with no trusted proxies configured', async () => {
+    const app = appWith('symfony-trusted-proxies', {
+      'config/packages/framework.yaml': `framework:
+    trusted_proxies: ~
+`,
+      'src/Controller/AuditController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class AuditController
+{
+    public function log(Request $request): Response
+    {
+        $ip = $request->getClientIp();
+        $secure = $request->isSecure();
+
+        return new Response($ip . $secure);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-trusted-proxies.js', app);
+
+    expect(text).toContain('trusted_proxies');
+  });
+
+  test('a Twig extension that pulls the database in with it', async () => {
+    const app = appWith('symfony-twig-runtime', {
+      'src/Twig/InvoiceExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+use Twig\\Extension\\AbstractExtension;
+use Twig\\TwigFunction;
+
+class InvoiceExtension extends AbstractExtension
+{
+    public function __construct(
+        private EntityManagerInterface $entityManager,
+        private HttpClientInterface $client,
+    ) {
+    }
+
+    public function getFunctions(): array
+    {
+        return [new TwigFunction('invoice_total', [$this, 'total'])];
+    }
+
+    public function total(int $id): int
+    {
+        return 0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-twig-runtime.js', app);
+
+    expect(text).toContain('xtension');
+  });
+
+  test('a Twig test that shadows a built-in one', async () => {
+    const app = appWith('symfony-twig-test', {
+      'src/Twig/TestExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Twig\\Extension\\AbstractExtension;
+use Twig\\TwigTest;
+
+class TestExtension extends AbstractExtension
+{
+    public function getTests(): array
+    {
+        return [
+            new TwigTest('empty', [$this, 'isEmpty']),
+            new TwigTest('overdue', [$this, 'isOverdue']),
+        ];
+    }
+
+    public function isEmpty(mixed $value): bool
+    {
+        return empty($value);
+    }
+
+    public function isOverdue(object $invoice): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-twig-test.js', app);
+
+    expect(text).toContain('empty');
+  });
+
+  test('entities keyed by different UUID versions', async () => {
+    const app = appWith('symfony-uid', {
+      'composer.json': JSON.stringify({ require: { 'symfony/uid': '^7.0' } }, null, 4) + '\n',
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Component\\Uid\\Uuid;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column(type: 'uuid')]
+    private Uuid $id;
+
+    public function __construct()
+    {
+        $this->id = Uuid::v4();
+    }
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Component\\Uid\\Uuid;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\Id]
+    #[ORM\\Column(type: 'uuid')]
+    private Uuid $id;
+
+    public function __construct()
+    {
+        $this->id = Uuid::v7();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-uid.js', app);
+
+    expect(text).toContain('UUID');
+  });
+
+  test('a user checker that lets everything through', async () => {
+    const app = appWith('symfony-user-checker', {
+      'src/Security/UserChecker.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserCheckerInterface;
+use Symfony\\Component\\Security\\Core\\User\\UserInterface;
+
+class UserChecker implements UserCheckerInterface
+{
+    public function checkPreAuth(UserInterface $user): void
+    {
+    }
+
+    public function checkPostAuth(UserInterface $user): void
+    {
+    }
+}
+`,
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            user_checker: App\\Security\\UserChecker
+`,
+    });
+
+    const text = await runModule('symfony-user-checker.js', app);
+
+    expect(text).toContain('hecker');
+  });
+
+  test('a chart with its data written into the PHP', async () => {
+    const app = appWith('symfony-ux-chart', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-chartjs': '^2.0' } }, null, 4) + '\n',
+      'src/Controller/ChartController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\UX\\Chartjs\\Builder\\ChartBuilderInterface;
+use Symfony\\UX\\Chartjs\\Model\\Chart;
+
+class ChartController
+{
+    public function __construct(private ChartBuilderInterface $chartBuilder)
+    {
+    }
+
+    public function chart(): Chart
+    {
+        $chart = $this->chartBuilder->createChart(Chart::TYPE_LINE);
+        $chart->setData([
+            'labels' => ['January', 'February'],
+            'datasets' => [['label' => 'Invoices', 'data' => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]]],
+        ]);
+
+        return $chart;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-chart.js', app);
+
+    expect(text).toContain('hart');
+  });
+
+  test('a cropped image stored without checking it', async () => {
+    const app = appWith('symfony-ux-cropperjs', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-cropperjs': '^2.0' } }, null, 4) + '\n',
+      'src/Form/AvatarType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\UX\\Cropperjs\\Form\\CropperType;
+
+class AvatarType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('crop', CropperType::class, [
+            'public_url' => '/uploads/avatar.png',
+            'cropper_options' => ['aspectRatio' => 1],
+        ]);
+    }
+}
+`,
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class User
+{
+    #[ORM\\Column(type: 'text')]
+    private string $croppedAvatar = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-cropperjs.js', app);
+
+    expect(text).toContain('rop');
+  });
+
+  test('a writable live property with no validation on it', async () => {
+    const app = appWith('symfony-ux-livecomponent-security', {
+      'src/Twig/Components/InvoiceEditor.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\LiveComponent\\Attribute\\AsLiveComponent;
+use Symfony\\UX\\LiveComponent\\Attribute\\LiveProp;
+use Symfony\\UX\\LiveComponent\\DefaultActionTrait;
+
+#[AsLiveComponent('invoice_editor')]
+class InvoiceEditor
+{
+    use DefaultActionTrait;
+
+    #[LiveProp(writable: true)]
+    public string $total = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-livecomponent-security.js', app);
+
+    expect(text).toContain('writable');
+  });
+
+  test('translations shipped to the front end', async () => {
+    const app = appWith('symfony-ux-translator', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-translator': '^2.0' } }, null, 4) + '\n',
+      'assets/app.js': `import { trans, INVOICE_TITLE } from './translator';
+
+console.log(trans(INVOICE_TITLE));
+`,
+      'translations/messages.en.yaml': "invoice.title: 'Invoice'\n",
+    });
+
+    const text = await runModule('symfony-ux-translator.js', app);
+
+    expect(text).toContain('ranslat');
+  });
+
+  test('a nested object validated without cascading', async () => {
+    const app = appWith('symfony-validator-cascade', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Order
+{
+    #[Assert\\NotBlank]
+    private string $number = '';
+
+    private ?Address $shippingAddress = null;
+
+    #[Assert\\Valid]
+    private ?Address $billingAddress = null;
+}
+`,
+      'src/Entity/Address.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Address
+{
+    #[Assert\\NotBlank]
+    private string $street = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-cascade.js', app);
+
+    expect(text).toContain('alid');
+  });
+});

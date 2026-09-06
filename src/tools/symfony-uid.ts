@@ -78,7 +78,8 @@ function parseUidEntity(filePath: string, appPath: string): UidEntity | null {
                  content.includes("type: 'ulid'") || content.includes('type: "ulid"') ||
                  content.includes('uuid_binary') || content.includes('Uuid') || content.includes('Ulid');
   if (!hasUid) return null;
-  if (!content.includes('#[Entity') && !content.includes('@Entity') && !content.includes('extends ')) return null;
+  // The mapping is imported as ORM, so the attribute reads #[ORM\Entity].
+  if (!/#\[(?:\w+\\)?Entity\b/.test(content) && !content.includes('@Entity') && !content.includes('extends ')) return null;
   if (content.includes('namespace Symfony\\')) return null;
 
   const classM = /class\s+(\w+)/.exec(content);
