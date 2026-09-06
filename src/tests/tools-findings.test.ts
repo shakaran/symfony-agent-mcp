@@ -9070,3 +9070,312 @@ class Secure
     expect(text).toContain('Secure');
   });
 });
+
+describe('swarm resources and ports', () => {
+  test('a service with reservations but no cpu limit, a rollback with no parallelism and ingress ports', async () => {
+    const app = appWith('swarm-resources', {
+      'docker-compose.prod.yml': `version: "3.8"
+
+services:
+  app:
+    image: acme:1.0
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 512M
+      rollback_config:
+        delay: 10s
+      update_config:
+        order: start-first
+    ports:
+      - "8080:8080"
+
+  edge:
+    image: acme-edge:1.0
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+      placement:
+        constraints:
+          - node.role == worker
+    ports:
+      - target: 443
+        published: 443
+        mode: ingress
+`,
+    });
+
+    const text = await runModule('docker-swarm-config.js', app);
+
+    expect(text).toContain('app');
+  });
+});
+
+describe('gedmo trees', () => {
+  test('a closure tree with no closure class and a materialized path with no path fields', async () => {
+    const app = appWith('gedmo-tree', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'gedmo/doctrine-extensions': '^3.11' },
+      }, null, 2),
+      'src/Entity/ClosureCategory.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+#[Gedmo\\Tree(type: 'closure')]
+class ClosureCategory
+{
+    #[Gedmo\\TreeLeft]
+    private ?int $lft = null;
+}
+`,
+      'src/Entity/PathCategory.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+#[Gedmo\\Tree(type: 'materializedPath')]
+class PathCategory
+{
+    #[ORM\\Column]
+    private string $title = '';
+}
+`,
+      'src/Entity/StofCategory.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Timestampable\\Traits\\TimestampableEntity;
+
+#[ORM\\Entity]
+class StofCategory
+{
+    use TimestampableEntity;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-tree.js', app);
+
+    expect(text).toContain('ClosureCategory');
+  });
+});
+
+describe('doctrine indexes', () => {
+  test('an index built with new Index(), a name over the limit and one made redundant', async () => {
+    const longName = 'idx_' + 'a'.repeat(70);
+    const app = appWith('doctrine-indexes', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Doctrine\\ORM\\Mapping\\Index;
+
+#[ORM\\Entity]
+#[ORM\\Table(
+    name: 'invoice',
+    indexes: [
+        new Index(name: 'idx_customer', columns: ['customer_id']),
+        new Index(name: 'idx_customer_issued', columns: ['customer_id', 'issued_at']),
+        new ORM\\Index(name: '${longName}', columns: ['reference']),
+    ],
+)]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-indexes.js', app);
+
+    expect(text).toContain('idx_customer');
+  });
+});
+
+describe('orm configuration', () => {
+  test('mappings by prefix, several entity managers and a proxy directory', async () => {
+    const app = appWith('orm-config', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: false
+        proxy_dir: '%kernel.cache_dir%/doctrine/orm/Proxies'
+        default_entity_manager: default
+        entity_managers:
+            default:
+                connection: default
+                mappings:
+                    App:
+                        is_bundle: false
+                        type: attribute
+                        dir: '%kernel.project_dir%/src/Entity'
+                        prefix: 'App\\Entity'
+                        alias: App
+                    Legacy:
+                        prefix: 'Legacy\\Entity'
+                    broken: ~
+                dql:
+                    string_functions:
+                        test_string: App\\DQL\\StringFunction
+                    numeric_functions: ~
+            reporting:
+                connection: reporting
+                mappings:
+                    Reporting:
+                        dir: '%kernel.project_dir%/src/Reporting'
+            broken: ~
+`,
+    });
+
+    const text = await runModule('doctrine-orm-config.js', app);
+
+    expect(text).toContain('reporting');
+  });
+});
+
+describe('unit of work listeners', () => {
+  test('flush inside postFlush, persist inside onClear and business logic in onClear', async () => {
+    const app = appWith('uow-flush', {
+      'src/EventListener/UnitOfWorkListener.php': `<?php
+
+namespace App\\EventListener;
+
+class UnitOfWorkListener
+{
+    public function postFlush($args): void
+    {
+        $args->getObjectManager()->flush();
+    }
+
+    public function onClear($args): void
+    {
+        $this->em->persist($this->entity);
+        $this->messageBus->dispatch(new \\App\\Message\\Cleared());
+    }
+
+    public function preUpdate($args): void
+    {
+        $this->em->persist($this->other);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-uow-flush.js', app);
+
+    expect(text).toContain('postFlush');
+  });
+});
+
+describe('github actions', () => {
+  test('write-all permissions, pull_request_target with checkout, a self-hosted runner and a secret in a run', async () => {
+    const app = appWith('github-actions', {
+      '.github/workflows/ci.yml': `name: ci
+
+on:
+    pull_request_target:
+        branches: [main]
+
+permissions: write-all
+
+env:
+    APP_ENV: prod
+    DEPLOY_TOKEN: ghp\x5f0123456789abcdef
+    SAFE_TOKEN: \${{ secrets.DEPLOY_TOKEN }}
+
+jobs:
+    build:
+        runs-on: self-hosted
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/cache@v4
+              with:
+                  path: vendor
+                  key: composer-\${{ hashFiles('composer.lock') }}
+            - run: export DEPLOY_TOKEN=ghp\x5f0123456789abcdef && bin/deploy
+`,
+      '.github/workflows/notes.md': 'not a workflow\n',
+    });
+
+    const text = await runModule('github-actions-config.js', app);
+
+    expect(text).toContain('self-hosted');
+  });
+});
+
+describe('mercure hubs', () => {
+  test('a hub with jwt config, one with no secret and topics published from code', async () => {
+    const app = appWith('mercure-hubs', {
+      'config/packages/framework.yaml': `framework:
+    mercure:
+        url: 'https://single.example.com/.well-known/mercure'
+        public: true
+        jwt_config:
+            secret: '%env(MERCURE_JWT_SECRET)%'
+            algorithm: 'hmac.sha256'
+`,
+      'config/packages/mercure.yaml': `mercure:
+    hubs:
+        default:
+            url: 'https://mercure.example.com/.well-known/mercure'
+            jwt_config:
+                secret: '%env(MERCURE_JWT_SECRET)%'
+                algorithm: 'hmac.sha256'
+                publish: ['*']
+        public:
+            url: 'https://public.example.com/.well-known/mercure'
+        broken: ~
+`,
+      'src/Service/Publisher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Mercure\\HubInterface;
+use Symfony\\Component\\Mercure\\Update;
+
+class Publisher
+{
+    public function __construct(private HubInterface $hub)
+    {
+    }
+
+    public function publish(): void
+    {
+        $this->hub->publish(new Update(['https://example.com/books/1', 'https://example.com/books/2'], '{}'));
+    }
+}
+`,
+    });
+
+    const single = appWith('mercure-single', {
+      'config/packages/framework.yaml': `framework:
+    mercure:
+        url: 'https://single.example.com/.well-known/mercure'
+        public: true
+        jwt_config:
+            secret: '%env(MERCURE_JWT_SECRET)%'
+            algorithm: 'hmac.sha256'
+`,
+    });
+
+    const text = await runModule('mercure.js', app);
+    const singleText = await runModule('mercure.js', single);
+
+    expect(text).toContain('mercure');
+    expect(singleText).toContain('single.example.com');
+  });
+});
