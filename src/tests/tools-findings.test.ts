@@ -13014,3 +13014,279 @@ class V2Controller
     expect(text).toContain('v1');
   });
 });
+
+describe('ses in the mailer', () => {
+  test('a ses dsn in the mailer config, an sns topic and a bounce queue', async () => {
+    const app = appWith('ses-mailer', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'ses+smtp://AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI@default'
+`,
+      'src/Aws/Bounces.php': `<?php
+
+namespace App\\Aws;
+
+use Aws\\Sns\\SnsClient;
+use Aws\\Sqs\\SqsClient;
+
+class Bounces
+{
+    public function subscribe(SnsClient $sns): void
+    {
+        $sns->subscribe([
+            'TopicArn' => 'arn:aws:sns:eu-west-1:1:acme-bounces',
+            'Protocol' => 'https',
+            'Endpoint' => 'https://acme.example.com/webhook/ses',
+        ]);
+    }
+
+    public function read(SqsClient $sqs): array
+    {
+        return $sqs->receiveMessage(['QueueUrl' => 'https://sqs.eu-west-1.amazonaws.com/1/acme-bounces']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-ses-integration.js', app);
+
+    expect(text).not.toContain('wJalrXUtnFEMI');
+  });
+});
+
+describe('behat configuration', () => {
+  test('a behat.yml with sessions and suites, contexts and feature files', async () => {
+    const app = appWith('behat-config', {
+      'behat.yml': `default:
+    suites:
+        default:
+            paths: ['%paths.base%/features']
+            contexts:
+                - App\\Tests\\Behat\\FeatureContext
+                - App\\Tests\\Behat\\ApiContext
+        api:
+            paths: ['%paths.base%/features/api']
+            contexts: ['App\\Tests\\Behat\\ApiContext']
+        broken: ~
+    extensions:
+        Behat\\MinkExtension:
+            base_url: 'http://localhost:8000'
+            default_session: symfony
+            sessions:
+                symfony:
+                    symfony: ~
+`,
+      'features/home.feature': `Feature: Home
+
+    Scenario: Visiting
+        Given I am on the home page
+`,
+      'features/bootstrap/FeatureContext.php': `<?php
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+}
+`,
+      'tests/Behat/ApiContext.php': `<?php
+
+namespace App\\Tests\\Behat;
+
+use Behat\\Behat\\Context\\Context;
+
+class ApiContext implements Context
+{
+}
+`,
+    });
+
+    const text = await runModule('behat-config.js', app);
+
+    expect(text).toContain('default');
+  });
+});
+
+describe('behat tags', () => {
+  test('a slow scenario with no timeout and tags repeated from the feature', async () => {
+    const app = appWith('behat-tags', {
+      'behat.yaml': `default:
+    suites:
+        default:
+            paths: ['%paths.base%/features']
+`,
+      'features/checkout.feature': `@checkout @slow
+Feature: Checkout
+
+    @checkout
+    Scenario: Buying something
+        Given I am on the home page
+
+    @wip
+    Scenario: Work in progress
+        Given I am on the home page
+`,
+    });
+
+    const text = await runModule('behat-tags.js', app);
+
+    expect(text).toContain('@slow');
+  });
+});
+
+describe('bitbucket steps', () => {
+  test('a privileged step and a hardcoded credential in a script', async () => {
+    const app = appWith('bitbucket-steps', {
+      'bitbucket-pipelines.yml': `image: php:8.3
+
+pipelines:
+    default:
+        - step:
+              name: Test
+              script:
+                  - vendor/bin/phpunit
+        - step:
+              name: Build image
+              services:
+                  - docker
+              privileged: true
+              script:
+                  - docker login -u acme -p hunter2-password registry.example.com
+                  - docker build -t acme .
+        - step:
+              name: Ship
+              script:
+                  - helm upgrade acme ./helm/acme
+`,
+    });
+
+    const text = await runModule('bitbucket-pipelines-config.js', app);
+
+    expect(text).toContain('privileged');
+  });
+});
+
+describe('blackfire', () => {
+  test('the extension in composer, scenario files and the agent in compose', async () => {
+    const app = appWith('blackfire', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'ext-blackfire': '*' },
+      }, null, 2),
+      'composer.lock': JSON.stringify({
+        packages: [{ name: 'symfony/framework-bundle', version: 'v7.0.3' }],
+      }, null, 2),
+      'blackfire/checkout.bkf': `#!blackfire-player
+
+scenario
+    name "Checkout"
+    visit url('/checkout')
+        expect status_code() == 200
+`,
+      'docker-compose.yml': `services:
+  blackfire:
+    image: blackfire/blackfire:2
+    environment:
+      BLACKFIRE_SERVER_ID: server-id
+      BLACKFIRE_SERVER_TOKEN: server-token
+`,
+    });
+
+    const text = await runModule('blackfire-config.js', app);
+
+    expect(text).toContain('blackfire');
+  });
+});
+
+describe('braintree', () => {
+  test('production environment with sandbox credentials and a gateway built in code', async () => {
+    const app = appWith('braintree', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'braintree/braintree_php': '^6.0' },
+      }, null, 2),
+      '.env': `BRAINTREE_ENVIRONMENT=production
+BRAINTREE_MERCHANT_ID=sandbox_merchant_id
+BRAINTREE_PUBLIC_KEY=sandbox_public_key
+BRAINTREE_PRIVATE_KEY=sandbox_private_key
+`,
+      'src/Payment/Gateway.php': `<?php
+
+namespace App\\Payment;
+
+use Braintree\\Gateway as BraintreeGateway;
+
+class Gateway
+{
+    public function build(): BraintreeGateway
+    {
+        return new BraintreeGateway([
+            'environment' => 'production',
+            'merchantId' => 'hardcoded-merchant',
+            'publicKey' => 'hardcoded-public',
+            'privateKey' => 'hardcoded-private',
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('braintree-integration.js', app);
+
+    expect(text).toContain('BRAINTREE');
+  });
+});
+
+describe('consul', () => {
+  test('a service registered without a sidecar proxy and a health check', async () => {
+    const app = appWith('consul', {
+      'consul.json': JSON.stringify({
+        service: {
+          name: 'acme',
+          port: 8080,
+          tags: ['php', 'symfony'],
+          check: {
+            http: 'http://localhost:8080/health',
+            interval: '10s',
+          },
+        },
+      }, null, 2),
+      'config/consul/registration.json': JSON.stringify({
+        service: { name: 'acme-worker', port: 9000 },
+      }, null, 2),
+      'docker-compose.yml': `services:
+  consul:
+    image: hashicorp/consul:1.18
+`,
+    });
+
+    const text = await runModule('consul-service-discovery.js', app);
+
+    expect(text).toContain('consul.json');
+  });
+});
+
+describe('container tags in code', () => {
+  test('tags declared as plain strings and a locator consuming them', async () => {
+    const app = appWith('container-tags-strings', {
+      'config/services.yaml': `services:
+    App\\Handler\\EmailHandler:
+        tags: ['app.handler', 'kernel.event_listener']
+
+    App\\Handler\\HandlerLocator:
+        arguments:
+            - tagged_locator: app.handler
+`,
+      'src/Handler/EmailHandler.php': `<?php
+
+namespace App\\Handler;
+
+class EmailHandler
+{
+}
+`,
+    });
+
+    const text = await runModule('container-tags.js', app);
+
+    expect(text).toContain('app.handler');
+  });
+});
