@@ -25280,3 +25280,312 @@ class Page
     expect(text).toContain('slug');
   });
 });
+
+describe('batch 85: Doctrine mapping and dialects, EasyAdmin, Elasticsearch, archives and forms', () => {
+  test('an entity manager mapped in XML and attributes at once', async () => {
+    const app = appWith('doctrine-mapping-format', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        entity_managers:
+            default:
+                mappings:
+                    App:
+                        type: attribute
+                        dir: '%kernel.project_dir%/src/Entity'
+                        prefix: 'App\\Entity'
+                    Legacy:
+                        type: xml
+                        dir: '%kernel.project_dir%/config/doctrine'
+                        prefix: 'App\\Legacy'
+`,
+      'config/doctrine/Legacy.Invoice.orm.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<doctrine-mapping>
+    <entity name="App\\Legacy\\Invoice" table="legacy_invoice">
+        <id name="id" type="integer"/>
+    </entity>
+</doctrine-mapping>
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-mapping-format.js', app);
+
+    expect(text).toContain('apping');
+  });
+
+  test('a MySQL schema still on the three-byte charset', async () => {
+    const app = appWith('doctrine-mysql-specific', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        driver: pdo_mysql
+        charset: utf8
+        default_table_options:
+            charset: utf8
+            collate: utf8_unicode_ci
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(options: ['charset' => 'utf8', 'collate' => 'utf8_unicode_ci'])]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-mysql-specific.js', app);
+
+    expect(text).toContain('utf8');
+  });
+
+  test('a query cache pointed at a service of its own', async () => {
+    const app = appWith('doctrine-query-cache', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        query_cache_driver:
+            id: app.doctrine.query_cache
+        result_cache_driver:
+            type: pool
+            pool: doctrine.result_cache_pool
+`,
+    });
+
+    const text = await runModule('doctrine-query-cache.js', app);
+
+    expect(text).toContain('cache');
+  });
+
+  test('an entity with validity columns and nothing to check them', async () => {
+    const app = appWith('doctrine-temporal-tables', {
+      'src/Entity/Price.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Price
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private \\DateTimeImmutable $validFrom;
+
+    #[ORM\\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\\DateTimeImmutable $validTo = null;
+
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private \\DateTimeImmutable $systemFrom;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-temporal-tables.js', app);
+
+    expect(text).toContain('valid_from');
+  });
+
+  test('an EasyAdmin CRUD controller with fields of its own', async () => {
+    const app = appWith('easyadmin', {
+      'composer.json': JSON.stringify({ require: { 'easycorp/easyadmin-bundle': '^4.0' } }, null, 4) + '\n',
+      'src/Controller/Admin/InvoiceCrudController.php': `<?php
+
+namespace App\\Controller\\Admin;
+
+use App\\Entity\\Invoice;
+use EasyCorp\\Bundle\\EasyAdminBundle\\Controller\\AbstractCrudController;
+use EasyCorp\\Bundle\\EasyAdminBundle\\Field\\IdField;
+use EasyCorp\\Bundle\\EasyAdminBundle\\Field\\MoneyField;
+
+class InvoiceCrudController extends AbstractCrudController
+{
+    public static function getEntityFqcn(): string
+    {
+        return Invoice::class;
+    }
+
+    public function configureFields(string $pageName): iterable
+    {
+        return [
+            IdField::new('id'),
+            MoneyField::new('total')->setCurrency('EUR'),
+        ];
+    }
+}
+`,
+      'src/Controller/Admin/DashboardController.php': `<?php
+
+namespace App\\Controller\\Admin;
+
+use EasyCorp\\Bundle\\EasyAdminBundle\\Controller\\AbstractDashboardController;
+use EasyCorp\\Bundle\\EasyAdminBundle\\Config\\Dashboard;
+
+class DashboardController extends AbstractDashboardController
+{
+    public function configureDashboard(): Dashboard
+    {
+        return Dashboard::new()->setTitle('Acme');
+    }
+}
+`,
+    });
+
+    const text = await runModule('easyadmin.js', app);
+
+    expect(text).toContain('InvoiceCrudController');
+  });
+
+  test('an Elasticsearch mapping with the source switched off', async () => {
+    const app = appWith('elasticsearch-mapping-config', {
+      '.env': 'APP_ENV=prod\nELASTICSEARCH_URL=http://elastic.acme.internal:9200\n',
+      'config/elasticsearch/invoice.json': JSON.stringify({
+        mappings: {
+          _source: { enabled: false },
+          properties: {
+            number: { type: 'keyword' },
+            total: { type: 'integer' },
+          },
+        },
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('elasticsearch-mapping-config.js', app);
+
+    expect(text).toContain('_source');
+  });
+
+  test('an entity with neither relations nor indexes', async () => {
+    const app = appWith('entities-bare', {
+      'src/Entity/Setting.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Setting
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column]
+    private string $name = '';
+}
+`,
+    });
+
+    const text = await runModule('entities.js', app, ['Setting']);
+
+    expect(text).toContain('Setting');
+  });
+
+  test('a zip extracted wherever its entries point', async () => {
+    const app = appWith('file-archive', {
+      'src/Import/ArchiveImporter.php': `<?php
+
+namespace App\\Import;
+
+class ArchiveImporter
+{
+    public function import(string $path, string $target): void
+    {
+        $zip = new \\ZipArchive();
+        $zip->open($path);
+        $zip->extractTo($target);
+
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            file_put_contents($target . '/' . $name, $zip->getFromIndex($i));
+        }
+
+        $zip->close();
+    }
+}
+`,
+    });
+
+    const text = await runModule('file-archive.js', app);
+
+    expect(text).toContain('extractTo');
+  });
+
+  test('a fixture with a dependency and a group', async () => {
+    const app = appWith('fixtures-basic', {
+      'src/DataFixtures/AppFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class AppFixtures extends Fixture
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+}
+`,
+      'src/DataFixtures/notes.php': "<?php\n\n// The fixtures for the application live here.\n",
+    });
+
+    const text = await runModule('fixtures.js', app, ['AppFixtures']);
+
+    expect(text).toContain('AppFixtures');
+  });
+
+  test('a form type whose fields cannot be read statically', async () => {
+    const app = appWith('forms-dynamic', {
+      'src/Form/DynamicType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class DynamicType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        foreach ($options['fields'] as $field) {
+            $builder->add(...$field);
+        }
+    }
+
+    public function getParent(): string
+    {
+        return BaseType::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('forms.js', app, ['DynamicType']);
+
+    expect(text).toContain('DynamicType');
+  });
+});
