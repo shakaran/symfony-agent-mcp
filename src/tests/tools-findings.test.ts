@@ -21360,3 +21360,173 @@ pm.max_requests = 0
     expect(text).toContain('Strict-Transport-Security');
   });
 });
+
+describe('batch 73: OpenAPI attributes and PHP class patterns', () => {
+  test('documented endpoints and schemas', async () => {
+    const app = appWith('openapi-attributes', {
+      'src/Controller/Api/InvoiceController.php': `<?php
+
+namespace App\\Controller\\Api;
+
+use OpenApi\\Attributes as OA;
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class InvoiceController
+{
+    #[Route('/api/invoices', methods: ['GET'])]
+    #[OA\\Get(path: '/api/invoices', tags: ['invoice'], security: [['bearerAuth' => []]])]
+    #[OA\\Response(response: 200, description: 'The invoices')]
+    public function index(): JsonResponse
+    {
+        return new JsonResponse([]);
+    }
+
+    #[Route('/api/invoices', methods: ['POST'])]
+    #[OA\\Post(path: '/api/invoices', tags: ['invoice'])]
+    #[OA\\RequestBody(description: 'The invoice to create')]
+    #[OA\\Response(response: 201, description: 'Created')]
+    public function create(): JsonResponse
+    {
+        return new JsonResponse([], 201);
+    }
+}
+`,
+      'src/Dto/InvoiceSchema.php': `<?php
+
+namespace App\\Dto;
+
+use OpenApi\\Attributes as OA;
+
+#[OA\\Schema(schema: 'Invoice')]
+class InvoiceSchema
+{
+    #[OA\\Property(description: 'The number')]
+    public string $number = '';
+
+    #[OA\\Property(description: 'The total')]
+    public int $total = 0;
+}
+`,
+      'src/Dto/notes.php': "<?php\n\n// #[OA\\Schema] and #[OA\\Property] are described here.\n",
+    });
+
+    const text = await runModule('openapi.js', app);
+
+    expect(text).toContain('InvoiceController');
+  });
+
+  test('an abstract class with too many obligations, calling one from its constructor', async () => {
+    const app = appWith('php-abstract-patterns', {
+      'src/Import/AbstractImporter.php': `<?php
+
+namespace App\\Import;
+
+abstract class AbstractImporter
+{
+    public function __construct(private string $source)
+    {
+        $this->prepare();
+    }
+
+    abstract protected function prepare(): void;
+
+    abstract protected function step0(): void;
+
+    abstract protected function step1(): void;
+
+    abstract protected function step2(): void;
+
+    abstract protected function step3(): void;
+
+    abstract protected function step4(): void;
+
+    abstract protected function step5(): void;
+
+    abstract protected function step6(): void;
+
+    abstract protected function step7(): void;
+
+    abstract protected function step8(): void;
+
+    abstract protected function step9(): void;
+
+    abstract protected function step10(): void;
+
+    abstract protected function step11(): void;
+
+    public function run(): void
+    {
+        $this->prepare();
+        $this->step0();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-abstract-patterns.js', app);
+
+    expect(text).toContain('AbstractImporter');
+  });
+
+  test('array searches that PHP 8.4 would write differently', async () => {
+    const app = appWith('php-array-find-functions', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.4' } }, null, 4) + '\n',
+      'src/Service/Finder.php': `<?php
+
+namespace App\\Service;
+
+class Finder
+{
+    public function first(array $rows, string $needle): ?array
+    {
+        $found = array_filter($rows, static fn (array $row): bool => $row['name'] === $needle);
+
+        return array_values($found)[0] ?? null;
+    }
+
+    public function position(array $haystack, string $needle): int|string|false
+    {
+        return array_search($needle, $haystack);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-array-find-functions.js', app);
+
+    expect(text).toContain('array_search');
+  });
+
+  test('a benchmark method with nothing to warm it up', async () => {
+    const app = appWith('php-benchmark-patterns', {
+      'benchmarks/HashBench.php': `<?php
+
+namespace App\\Benchmarks;
+
+class HashBench
+{
+    /**
+     * @Revs(1)
+     * @Iterations(1)
+     */
+    public function benchSha256(): void
+    {
+        for ($i = 0; $i < 1000; $i++) {
+            hash('sha256', (string) $i);
+        }
+    }
+
+    public function benchNoBraces(): void
+    {
+        hash('crc32b', 'acme');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-benchmark-patterns.js', app);
+
+    expect(text).toContain('Bench');
+  });
+});
