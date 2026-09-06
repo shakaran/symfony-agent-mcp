@@ -11376,3 +11376,247 @@ describe('multiple connections', () => {
     expect(text).toContain('reporting');
   });
 });
+
+describe('feature flags', () => {
+  test('flags in flagception, in parameters and referenced from code', async () => {
+    const app = appWith('feature-flags', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'flagception/flagception-bundle': '^3.0' },
+      }, null, 2),
+      'config/packages/flagception.yaml': `flagception:
+    features:
+        feature_new_checkout: true
+        feature_legacy_import: false
+        feature_beta: ~
+`,
+      'config/services.yaml': `parameters:
+    feature.new_dashboard: true
+    feature.old_reports: false
+    app.name: 'Acme'
+`,
+      'src/Controller/CheckoutController.php': `<?php
+
+namespace App\\Controller;
+
+use Flagception\\Manager\\FeatureManagerInterface;
+
+class CheckoutController
+{
+    public function __construct(private FeatureManagerInterface $features)
+    {
+    }
+
+    public function index(): void
+    {
+        if ($this->features->isActive('feature_new_checkout')) {
+            return;
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('feature-flags.js', app);
+
+    expect(text).toContain('feature_new_checkout');
+  });
+});
+
+describe('github api', () => {
+  test('a webhook secret in .env and a client built in code', async () => {
+    const app = appWith('github-api', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'knplabs/github-api': '^3.0' },
+      }, null, 2),
+      '.env': `GITHUB_TOKEN=ghp\x5f0123456789abcdef0123456789abcdef
+GITHUB_WEBHOOK_SECRET=whsec\x5f0123456789abcdef
+`,
+      '.env.local': `GITHUB_WEBHOOK_SECRET=%env(GITHUB_WEBHOOK_SECRET)%
+`,
+      'src/Github/Client.php': `<?php
+
+namespace App\\Github;
+
+use Github\\Client as GithubClient;
+
+class Client
+{
+    public function build(): GithubClient
+    {
+        $client = new GithubClient();
+        $client->authenticate($_ENV['GITHUB_TOKEN'], null, GithubClient::AUTH_ACCESS_TOKEN);
+
+        return $client;
+    }
+
+    public function webhook(string $payload, string $signature): bool
+    {
+        return hash_equals('sha256=' . hash_hmac('sha256', $payload, $_ENV['GITHUB_WEBHOOK_SECRET']), $signature);
+    }
+}
+`,
+    });
+
+    const text = await runModule('github-api-integration.js', app);
+
+    expect(text).toContain('GITHUB_WEBHOOK_SECRET');
+    expect(text).not.toContain('whsec\x5f0123456789abcdef');
+  });
+});
+
+describe('google oauth', () => {
+  test('a client id and secret in .env and an oauth flow in code', async () => {
+    const app = appWith('google-oauth', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'google/apiclient': '^2.15' },
+      }, null, 2),
+      '.env': `GOOGLE_CLIENT_ID=1234567890-abcdef.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-0123456789abcdef
+GOOGLE_REDIRECT_URI=https://acme.example.com/oauth/google
+`,
+      'src/Google/OAuth.php': `<?php
+
+namespace App\\Google;
+
+use Google\\Client;
+
+class OAuth
+{
+    public function client(): Client
+    {
+        $client = new Client();
+        $client->setClientId($_ENV['GOOGLE_CLIENT_ID']);
+        $client->setClientSecret($_ENV['GOOGLE_CLIENT_SECRET']);
+        $client->setRedirectUri($_ENV['GOOGLE_REDIRECT_URI']);
+        $client->addScope('https://www.googleapis.com/auth/userinfo.email');
+        $client->setAccessType('offline');
+
+        return $client;
+    }
+}
+`,
+    });
+
+    const text = await runModule('google-oauth-integration.js', app);
+
+    expect(text).toContain('GOOGLE_CLIENT');
+    expect(text).not.toContain('GOCSPX-0123456789abcdef');
+  });
+});
+
+describe('kernel bundles', () => {
+  test('bundles enabled only in test and in a mix of environments', async () => {
+    const app = appWith('kernel-bundles', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Symfony\\Bundle\\WebProfilerBundle\\WebProfilerBundle::class => ['dev' => true, 'test' => true],
+    Symfony\\Bundle\\MakerBundle\\MakerBundle::class => ['dev' => true],
+    DAMA\\DoctrineTestBundle\\DAMADoctrineTestBundle::class => ['test' => true],
+    Doctrine\\Bundle\\DoctrineBundle\\DoctrineBundle::class => ['all' => true],
+];
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;
+
+class Kernel extends BaseKernel
+{
+    use MicroKernelTrait;
+}
+`,
+    });
+
+    const text = await runModule('kernel-analysis.js', app);
+
+    expect(text).toContain('Test only');
+  });
+});
+
+describe('oauth sso', () => {
+  test('a client over http, several providers and env vars with no bundle config', async () => {
+    const app = appWith('oauth-sso', {
+      'config/packages/knpu_oauth2_client.yaml': `knpu_oauth2_client:
+    clients:
+        google:
+            type: google
+            client_id: '%env(GOOGLE_CLIENT_ID)%'
+            client_secret: '%env(GOOGLE_CLIENT_SECRET)%'
+            redirect_route: connect_google_check
+            redirect_uri: 'http://acme.example.com/connect/google/check'
+            scopes: ['email', 'profile']
+        github:
+            type: github
+            client_id: '%env(GITHUB_CLIENT_ID)%'
+            client_secret: '%env(GITHUB_CLIENT_SECRET)%'
+            redirect_uri: 'https://acme.example.com/connect/github/check'
+        broken: ~
+`,
+      '.env': `AZURE_CLIENT_ID=azure-id
+AZURE_CLIENT_SECRET=azure-secret
+`,
+    });
+
+    const text = await runModule('oauth-sso.js', app);
+
+    expect(text).toContain('google');
+  });
+});
+
+describe('owasp dependency check', () => {
+  test('an old report and the check wired into the pipeline', async () => {
+    const app = appWith('owasp', {
+      'dependency-check.xml': `<?xml version="1.0"?>
+<analysis>
+    <projectInfo>
+        <name>acme</name>
+        <reportDate>2020-01-01T00:00:00Z</reportDate>
+    </projectInfo>
+</analysis>
+`,
+      '.github/workflows/security.yml': `name: security
+on: [push]
+jobs:
+    audit:
+        runs-on: ubuntu-latest
+        steps:
+            - run: dependency-check.sh --project acme --scan .
+`,
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        scripts: { audit: 'composer audit' },
+      }, null, 2),
+    });
+
+    const text = await runModule('owasp-dependency-check.js', app);
+
+    expect(text).toContain('dependency-check');
+  });
+});
+
+describe('password hashers', () => {
+  test('bcrypt with no cost and argon2 with no memory cost', async () => {
+    const app = appWith('password-hashers', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        App\\Entity\\User:
+            algorithm: bcrypt
+        App\\Entity\\Admin:
+            algorithm: argon2id
+        App\\Entity\\Legacy:
+            algorithm: sodium
+            memory_cost: 65536
+            time_cost: 4
+            threads: 2
+`,
+    });
+
+    const text = await runModule('password-hashers.js', app);
+
+    expect(text).toContain('bcrypt');
+  });
+});
