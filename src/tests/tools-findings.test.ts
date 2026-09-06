@@ -10507,3 +10507,250 @@ class Timed
     expect(two.length).toBeGreaterThan(0);
   });
 });
+
+describe('user checkers', () => {
+  test('a checker named in a firewall that does not throw the account status exception', async () => {
+    const app = appWith('user-checker', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            lazy: true
+            user_checker: App\\Security\\UserChecker
+        api:
+            pattern: ^/api
+            user_checker: App\\Security\\ApiUserChecker
+`,
+      'src/Security/UserChecker.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserCheckerInterface;
+use Symfony\\Component\\Security\\Core\\User\\UserInterface;
+
+class UserChecker implements UserCheckerInterface
+{
+    public function checkPreAuth(UserInterface $user): void
+    {
+    }
+
+    public function checkPostAuth(UserInterface $user): void
+    {
+        if ($user->isBanned()) {
+            throw new \\RuntimeException('banned');
+        }
+    }
+}
+`,
+      'src/Security/ApiUserChecker.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\Exception\\AccountStatusException;
+use Symfony\\Component\\Security\\Core\\User\\UserCheckerInterface;
+use Symfony\\Component\\Security\\Core\\User\\UserInterface;
+
+class ApiUserChecker implements UserCheckerInterface
+{
+    public function checkPreAuth(UserInterface $user): void
+    {
+    }
+
+    public function checkPostAuth(UserInterface $user): void
+    {
+        if ($user->isExpired()) {
+            throw new class extends AccountStatusException {};
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-user-checker.js', app);
+
+    expect(text).toContain('UserChecker');
+  });
+});
+
+describe('workflow events', () => {
+  test('a guard with no blocker, an entered listener that writes the marking and one event subscribed twice', async () => {
+    const app = appWith('workflow-events', {
+      'src/EventSubscriber/WorkflowSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\Workflow\\Event\\Event;
+use Symfony\\Component\\Workflow\\Event\\GuardEvent;
+
+class WorkflowSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'workflow.invoice.guard' => 'onGuard',
+            'workflow.invoice.entered' => 'onEntered',
+            'workflow.invoice.completed' => 'onCompleted',
+        ];
+    }
+
+    public function onGuard(GuardEvent $event): void
+    {
+        if (!$this->allowed) {
+            return;
+        }
+    }
+
+    public function onEntered(Event $event): void
+    {
+        $event->getMarking()->mark('paid');
+    }
+
+    public function onCompleted(Event $event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/SecondWorkflowSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\Workflow\\Event\\Event;
+
+class SecondWorkflowSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'workflow.invoice.completed' => 'onCompleted',
+        ];
+    }
+
+    public function onCompleted(Event $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-events.js', app);
+
+    expect(text).toContain('workflow.invoice');
+  });
+});
+
+describe('terraform secrets', () => {
+  test('a hardcoded secret in a resource, and directories the walk skips', async () => {
+    const app = appWith('terraform-secrets', {
+      'infra/main.tf': `resource "aws_secretsmanager_secret_version" "acme" {
+  secret_id     = aws_secretsmanager_secret.acme.id
+  secret_string = "hunter2-in-the-state"
+}
+
+resource "aws_instance" "web" {
+  ami           = "ami-0123456789"
+  instance_type = "t3.micro"
+}
+`,
+      'infra/.terraform/modules/skipped.tf': `resource "aws_db_instance" "skipped" {
+  password = "should-not-be-read"
+}
+`,
+      'infra/node_modules/also-skipped.tf': `resource "aws_db_instance" "skipped" {
+  password = "should-not-be-read"
+}
+`,
+    });
+
+    const text = await runModule('terraform-config.js', app);
+
+    expect(text).toContain('aws_secretsmanager_secret_version');
+    expect(text).not.toContain('hunter2-in-the-state');
+  });
+});
+
+describe('ansible tasks', () => {
+  test('a task naming a credential without no_log, and one with it', async () => {
+    const app = appWith('ansible-tasks', {
+      'ansible/site.yml': `---
+- name: Deploy
+  hosts: web
+  become: true
+  become_user: deploy
+  tasks:
+    - name: Write the database password
+      copy:
+        content: "{{ vault_db_password }}"
+        dest: /etc/acme/db_password
+
+    - name: Write the api token safely
+      copy:
+        content: "{{ vault_api_token }}"
+        dest: /etc/acme/api_token
+      no_log: true
+
+    - name: Run a shell command
+      shell: /srv/app/bin/console cache:clear
+`,
+    });
+
+    const text = await runModule('ansible-playbook-config.js', app);
+
+    expect(text).toContain('no_log');
+  });
+});
+
+describe('apache configuration', () => {
+  test('an .htaccess with directory listing, server signature and no rewrite', async () => {
+    const app = appWith('apache', {
+      'public/.htaccess': `Options +Indexes
+
+ServerSignature On
+ServerTokens Full
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+</IfModule>
+
+AllowOverride None
+`,
+    });
+
+    const text = await runModule('apache-config.js', app);
+
+    expect(text).toContain('Indexes');
+  });
+});
+
+describe('problem details', () => {
+  test('a problem response with no type, the wrong content type and a mismatched status', async () => {
+    const app = appWith('problem-details', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Controller/ErrorController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+
+class ErrorController
+{
+    public function problem(\\Throwable $e): JsonResponse
+    {
+        return new JsonResponse([
+            'title' => 'Something failed',
+            'status' => 500,
+            'detail' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ], 503, ['Content-Type' => 'application/json']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-problem-details.js', app);
+
+    expect(text).toContain('problem');
+  });
+});
