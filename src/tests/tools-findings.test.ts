@@ -21113,3 +21113,137 @@ return [
     expect(text).toContain('404');
   });
 });
+
+describe('batch 71: GraphQL, health checks, Jenkins and kernels', () => {
+  test('GraphQL types declared in YAML, with API Platform switched on', async () => {
+    const app = appWith('graphql-types', {
+      'composer.json': JSON.stringify({ require: { 'api-platform/core': '^3.0' } }, null, 4) + '\n',
+      'config/packages/api_platform.yaml': `api_platform:
+    title: Acme
+    graphql:
+        enabled: true
+        graphql_playground:
+            enabled: false
+`,
+      'config/graphql/types/Invoice.types.yaml': `Invoice:
+    type: object
+    config:
+        fields:
+            id:
+                type: 'Int!'
+            total:
+                type: 'Int!'
+`,
+      'config/graphql/types/notes.txt': 'Not a type definition.\n',
+    });
+
+    const text = await runModule('graphql.js', app);
+
+    expect(text).toContain('Invoice');
+  });
+
+  test('health endpoints declared as routes', async () => {
+    const app = appWith('health-checks-routes', {
+      'config/routes.yaml': `health_live:
+    path: /health/live
+    controller: App\\Controller\\HealthController::live
+
+health_ready:
+    path: /health/ready
+    controller: App\\Controller\\HealthController::ready
+
+ping:
+    path: /ping
+    controller: App\\Controller\\HealthController::ping
+
+home:
+    path: /
+    controller: App\\Controller\\HomeController::index
+`,
+    });
+
+    const text = await runModule('health-checks.js', app);
+
+    expect(text).toContain('Liveness:   yes');
+  });
+
+  test('a Jenkinsfile with credentials in the environment and a broad rm', async () => {
+    const app = appWith('jenkins-config', {
+      'Jenkinsfile': `pipeline {
+    agent any
+
+    environment {
+        DB_PASSWORD = "hunter2acme"
+        REGISTRY = "registry.acme.com"
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh "composer install"
+                sh "rm -rf var/cache"
+            }
+        }
+        stage('Deploy') {
+            steps {
+                sh "./deploy.sh --token=abcdef123456"
+            }
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('jenkins-config.js', app);
+
+    expect(text).toContain('rm -rf');
+  });
+
+  test('a scripted Jenkins pipeline', async () => {
+    const app = appWith('jenkins-scripted', {
+      'Jenkinsfile': `node {
+    stage('Checkout') {
+        checkout scm
+    }
+    stage('Test') {
+        sh 'vendor/bin/phpunit'
+    }
+}
+`,
+    });
+
+    const text = await runModule('jenkins-config.js', app);
+
+    expect(text).toContain('Checkout');
+  });
+
+  test('bundles enabled in some environments but not others', async () => {
+    const app = appWith('kernel-analysis', {
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;
+
+class Kernel extends BaseKernel
+{
+    use MicroKernelTrait;
+}
+`,
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Symfony\\Bundle\\WebProfilerBundle\\WebProfilerBundle::class => ['dev' => true, 'test' => true],
+    Symfony\\Bundle\\DebugBundle\\DebugBundle::class => ['dev' => true],
+    Symfony\\Bundle\\MonologBundle\\MonologBundle::class => ['prod' => true],
+];
+`,
+    });
+
+    const text = await runModule('kernel-analysis.js', app);
+
+    expect(text).toContain('WebProfilerBundle');
+  });
+});
