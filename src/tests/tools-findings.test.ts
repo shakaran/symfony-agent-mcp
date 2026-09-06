@@ -23098,3 +23098,183 @@ class RabbitStats
     expect(text).toContain('guest');
   });
 });
+
+describe('batch 76: vaults, scanners, Sentry, locators, Slack, access control and caches', () => {
+  test('secrets kept in an encrypted vault', async () => {
+    const app = appWith('secrets-vault', {
+      'config/secrets/prod/prod.list.php': `<?php
+
+return ['APP_SECRET', 'DATABASE_URL'];
+`,
+      'config/secrets/prod/APP_SECRET.abcdef.php': "<?php\n\nreturn 'encrypted';\n",
+      'config/secrets/prod/prod.decrypt.private.php': "<?php\n\nreturn 'key';\n",
+      'config/secrets/prod/prod.encrypt.public.php': "<?php\n\nreturn 'key';\n",
+      'config/secrets/prod/notes.gpg': 'encrypted notes\n',
+    });
+
+    const text = await runModule('secrets-vault.js', app);
+
+    expect(text).toContain('secret');
+  });
+
+  test('debug left on outside production, and CSRF switched off', async () => {
+    const app = appWith('security-scanner', {
+      '.env': 'APP_ENV=dev\nAPP_DEBUG=true\nAPP_SECRET=0123456789abcdef\n',
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+    csrf_protection: false
+`,
+    });
+
+    const text = await runModule('security-scanner.js', app);
+
+    expect(text).toContain('CSRF');
+  });
+
+  test('Sentry sending everything it can see', async () => {
+    const app = appWith('sentry-integration', {
+      'composer.json': JSON.stringify({ require: { 'sentry/sentry-symfony': '^4.0' } }, null, 4) + '\n',
+      'config/packages/sentry.yaml': `sentry:
+    dsn: '%env(SENTRY_DSN)%'
+    options:
+        send_default_pii: true
+        traces_sample_rate: 1.0
+        max_breadcrumbs: 200
+`,
+    });
+
+    const text = await runModule('sentry-integration.js', app);
+
+    expect(text).toContain('send_default_pii');
+  });
+
+  test('a tagged service locator declared in YAML', async () => {
+    const app = appWith('service-locators', {
+      'config/services.yaml': `services:
+    App\\Export\\ExporterRegistry:
+        arguments:
+            - !tagged_locator app.exporter
+
+    App\\Export\\CsvExporter:
+        tags: ['app.exporter']
+`,
+      'src/Export/ExporterRegistry.php': `<?php
+
+namespace App\\Export;
+
+use Psr\\Container\\ContainerInterface;
+
+class ExporterRegistry
+{
+    public function __construct(private ContainerInterface $exporters)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('service-locators.js', app);
+
+    expect(text).toContain('locator');
+  });
+
+  test('a Slack webhook written into the environment and the code', async () => {
+    const app = appWith('slack-webhook-integration', {
+      '.env': `APP_ENV=prod
+SLACK_WEBHOOK_URL=https://hooks.slack.com\x2fservices/T00000000/B00000000/abcdefghijklmnopqrstuvwx
+SLACK_BOT_TOKEN=xoxb\x2d123456789-abcdefghij
+`,
+      'src/Notifier/SlackNotifier.php': `<?php
+
+namespace App\\Notifier;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class SlackNotifier
+{
+    private const WEBHOOK = 'https://hooks.slack.com\x2fservices/T00000000/B00000000/abcdefghijklmnopqrstuvwx';
+
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function notify(string $message): void
+    {
+        $this->client->request('POST', self::WEBHOOK, ['json' => ['text' => $message]]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('slack-webhook-integration.js', app);
+
+    expect(text).toContain('webhook');
+  });
+
+  test('an access control rule that matches everything', async () => {
+    const app = appWith('symfony-access-control', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { roles: ROLE_ADMIN }
+        - { path: ^/admin, roles: ROLE_ADMIN }
+        - { path: ^/, roles: PUBLIC_ACCESS }
+`,
+    });
+
+    const text = await runModule('symfony-access-control.js', app);
+
+    expect(text).toContain('Rule without path');
+  });
+
+  test('templates that preload what they do not need', async () => {
+    const app = appWith('symfony-asset-preload-hints', {
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="preload" href="{{ asset('build/app.css') }}" as="style">
+        <link rel="preload" href="{{ asset('build/hero.jpg') }}" as="image">
+        <link rel="prefetch" href="{{ asset('build/admin.js') }}">
+        <link rel="preconnect" href="https://fonts.gstatic.com">
+    </head>
+    <body>{% block body %}{% endblock %}</body>
+</html>
+`,
+      'templates/invoice/show.html.twig': `{% extends 'base.html.twig' %}
+
+{% block body %}<h1>Invoice</h1>{% endblock %}
+`,
+    });
+
+    const text = await runModule('symfony-asset-preload-hints.js', app);
+
+    expect(text).toContain('preload');
+  });
+
+  test('a pruneable cache pool with nothing scheduled to prune it', async () => {
+    const app = appWith('symfony-cache-pool-prune', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        pools:
+            doctrine.result_cache_pool:
+                adapter: cache.adapter.filesystem
+            app.session_pool:
+                adapter: cache.adapter.doctrine_dbal
+`,
+      'src/Command/PruneCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class PruneCommand extends Command
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-cache-pool-prune.js', app);
+
+    expect(text).toContain('prune');
+  });
+});
