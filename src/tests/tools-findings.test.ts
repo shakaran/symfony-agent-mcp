@@ -4043,3 +4043,309 @@ class WebhookController
     expect(text).not.toContain('shpss\x5f0123456789abcdef0123456789abcdef');
   });
 });
+
+describe('console completion', () => {
+  test('a complete() that suggests values for arguments and options that do not exist', async () => {
+    const app = appWith('console-completion', {
+      'src/Command/DeployCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Completion\\CompletionInput;
+use Symfony\\Component\\Console\\Completion\\CompletionSuggestions;
+use Symfony\\Component\\Console\\Input\\InputArgument;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+#[AsCommand(name: 'app:deploy')]
+class DeployCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this
+            ->addArgument('environment', InputArgument::REQUIRED, 'Target environment')
+            ->addOption('strategy', null, InputOption::VALUE_REQUIRED, 'Deploy strategy');
+    }
+
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        if ($input->mustSuggestArgumentValuesFor('environment')) {
+            $suggestions->suggestValues(['prod', 'staging']);
+        }
+
+        if ($input->mustSuggestArgumentValuesFor('release')) {
+            $suggestions->suggestValues(['latest']);
+        }
+
+        if ($input->mustSuggestOptionValuesFor('strategy')) {
+            $suggestions->suggestValues(['rolling', 'blue-green']);
+        }
+
+        if ($input->mustSuggestOptionValuesFor('force')) {
+            $suggestions->suggestValues(['yes', 'no']);
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-completion.js', app);
+
+    expect(text).toContain('DeployCommand');
+  });
+});
+
+describe('doctrine sql logging', () => {
+  test('logging and backtrace left on in production, and off in development', async () => {
+    const app = appWith('sql-logger', {
+      'config/packages/prod/doctrine.yaml': `doctrine:
+    dbal:
+        logging: true
+        profiling: true
+        profiling_collect_backtrace: true
+`,
+      'config/packages/dev/doctrine.yaml': `doctrine:
+    dbal:
+        logging: false
+        profiling: false
+`,
+      'src/Doctrine/QueryLogger.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Driver\\Middleware;
+
+class QueryLogger implements Middleware
+{
+    public function wrap($driver): object
+    {
+        return $driver;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-sql-logger.js', app);
+
+    expect(text).toContain('logging');
+  });
+});
+
+describe('exception mapping', () => {
+  test('exceptions with status codes, an access denied subclass and duplicate codes', async () => {
+    const app = appWith('exception-mapping', {
+      'src/Exception/NotFoundException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class NotFoundException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(Response::HTTP_NOT_FOUND, 'Not found');
+    }
+}
+`,
+      'src/Exception/GoneException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+
+class GoneException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(404, 'Gone');
+    }
+}
+`,
+      'src/Exception/StorageUnavailableException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+
+class StorageUnavailableException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(503, 'Storage unavailable');
+    }
+}
+`,
+      'src/Exception/InvoiceAccessDeniedException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\Security\\Core\\Exception\\AccessDeniedException;
+
+class InvoiceAccessDeniedException extends AccessDeniedException
+{
+}
+`,
+      'config/packages/twig.yaml': `twig:
+    exception_controller: null
+    paths:
+        '%kernel.project_dir%/templates': ~
+`,
+      'templates/bundles/TwigBundle/Exception/error404.html.twig': `<h1>Not found</h1>
+`,
+      'templates/bundles/TwigBundle/Exception/error.html.twig': `<h1>Error</h1>
+`,
+    });
+
+    const text = await runModule('symfony-exception-mapping.js', app);
+
+    expect(text).toContain('NotFoundException');
+  });
+});
+
+describe('accessibility', () => {
+  test('a template with every accessibility problem the audit knows', async () => {
+    const app = appWith('accessibility', {
+      'templates/page/index.html.twig': `<h1>First</h1>
+<h1>Second</h1>
+<h4>Skipped a level</h4>
+
+<img src="/logo.png" alt="">
+<img src="/hero.png">
+
+<button></button>
+<button><i class="icon-save"></i></button>
+
+<table>
+    <tr><th>Name</th><td>Acme</td></tr>
+</table>
+
+<div aria-hidden="true"><a href="/hidden">Hidden link</a></div>
+
+<label>Name</label>
+<input type="text" name="name">
+
+<a href="/somewhere">Click here</a>
+`,
+    });
+
+    const text = await runModule('accessibility-audit.js', app);
+
+    expect(text).toContain('index.html.twig');
+  });
+});
+
+describe('api platform resources', () => {
+  test('a resource with operations, filters, pagination and a security expression', async () => {
+    const app = appWith('api-platform-resource', {
+      'config/packages/api_platform.yaml': `api_platform:
+    title: Acme API
+    version: 1.0.0
+    defaults:
+        pagination_items_per_page: 25
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Doctrine\\Orm\\Filter\\OrderFilter;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\SearchFilter;
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Get;
+use ApiPlatform\\Metadata\\GetCollection;
+use ApiPlatform\\Metadata\\Post;
+
+#[ApiResource(
+    description: 'A customer invoice',
+    security: "is_granted('ROLE_USER')",
+    paginationEnabled: true,
+    paginationItemsPerPage: 50,
+    operations: [
+        new Get(security: "is_granted('INVOICE_VIEW', object)"),
+        new GetCollection(),
+        new Post(security: "is_granted('ROLE_ADMIN')"),
+    ],
+)]
+#[ApiFilter(SearchFilter::class, properties: ['reference' => 'exact', 'customer.name' => 'partial'])]
+#[ApiFilter(OrderFilter::class, properties: ['issuedAt'])]
+class Invoice
+{
+    public ?int $id = null;
+}
+`,
+      'src/Entity/Note.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class Note
+{
+    public ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('api-platform.js', app, ['Invoice', 'Note']);
+
+    expect(text).toContain('Invoice');
+  });
+});
+
+describe('cloudwatch', () => {
+  test('a cloudwatch handler, an alarm, a retention setting and x-ray', async () => {
+    const app = appWith('cloudwatch', {
+      'composer.json': JSON.stringify({
+        require: {
+          'symfony/framework-bundle': '^7.0',
+          'aws/aws-sdk-php': '^3.0',
+          'maxbanton/cwh': '^2.0',
+        },
+      }, null, 2),
+      'config/packages/prod/monolog.yaml': `monolog:
+    handlers:
+        cloudwatch:
+            type: service
+            id: Maxbanton\\Cwh\\Handler\\CloudWatch
+            level: error
+`,
+      'src/Aws/AlarmFactory.php': `<?php
+
+namespace App\\Aws;
+
+use Aws\\CloudWatch\\CloudWatchClient;
+use Aws\\CloudWatchLogs\\CloudWatchLogsClient;
+
+class AlarmFactory
+{
+    public function alarm(CloudWatchClient $client): void
+    {
+        $client->putMetricAlarm([
+            'AlarmName' => 'acme-5xx',
+            'MetricName' => 'HTTPCode_Target_5XX_Count',
+        ]);
+    }
+
+    public function retention(CloudWatchLogsClient $logs): void
+    {
+        $logs->putRetentionPolicy([
+            'logGroupName' => '/acme/app',
+            'retentionInDays' => 30,
+        ]);
+    }
+}
+`,
+      '.env': `AWS_XRAY_DAEMON_ADDRESS=127.0.0.1:2000
+AWS_REGION=eu-west-1
+`,
+    });
+
+    const text = await runModule('cloudwatch-integration.js', app);
+
+    expect(text).toContain('CloudWatch');
+  });
+});
