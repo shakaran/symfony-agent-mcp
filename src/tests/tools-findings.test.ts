@@ -6851,3 +6851,292 @@ describe('json login', () => {
     expect(text).toContain('json_login');
   });
 });
+
+describe('voter attribute shapes', () => {
+  test('attributes from a constant, from a match and from an equality check', async () => {
+    const app = appWith('voter-shapes', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/invoice, roles: ['INVOICE_VIEW'] }
+`,
+      'src/Security/Voter/ConstantVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class ConstantVoter extends Voter
+{
+    public const SUPPORTED_ATTRIBUTES = ['INVOICE_VIEW', 'INVOICE_EDIT'];
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, self::SUPPORTED_ATTRIBUTES, true);
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        switch ($attribute) {
+            case 'INVOICE_VIEW':
+                return true;
+            case self::INVOICE_EDIT:
+                return false;
+        }
+
+        if ($attribute === 'INVOICE_ARCHIVE') {
+            return false;
+        }
+
+        if ($attribute === self::INVOICE_DELETE) {
+            return false;
+        }
+
+        return false;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-custom-voter.js', app);
+
+    expect(text).toContain('ConstantVoter');
+  });
+});
+
+describe('translation extraction with links', () => {
+  test('templates and translations reached through directories', async () => {
+    const app = appWith('translation-dirs', {
+      'templates/home/index.html.twig': `<h1>{{ 'app.title'|trans }}</h1>
+`,
+      'templates/mail/welcome.html.twig': `<p>{{ 'app.welcome'|trans }}</p>
+`,
+      'app/Resources/views/legacy.html.twig': `<p>{{ 'app.legacy'|trans }}</p>
+`,
+      'translations/messages.en.yaml': `app:
+    title: 'Dashboard'
+    welcome: 'Welcome'
+`,
+      'translations/messages.en.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+    <file source-language="en" datatype="plaintext" original="file.ext">
+        <body>
+            <trans-unit id="1">
+                <source>app.legacy</source>
+                <target>Legacy</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Contracts\\Translation\\TranslatorInterface;
+
+class HomeController
+{
+    public function index(TranslatorInterface $translator): string
+    {
+        return $translator->trans('app.title');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-translation-extractors.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('messenger transports and dsns', () => {
+  test('a dsn with credentials, no routing, no buses and an unknown transport', async () => {
+    const noRouting = appWith('messenger-no-routing', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'amqp://guest:guest@rabbit:5672/%2f/messages'
+            unknown: 'acme://queue'
+`,
+    });
+    const empty = appWith('messenger-empty', {
+      'config/packages/messenger.yaml': `framework:
+    messenger: ~
+`,
+      'src/Message/PlainMessage.php': `<?php
+
+namespace App\\Message;
+
+final class PlainMessage
+{
+}
+`,
+    });
+
+    const one = await runModule('messenger.js', noRouting, ['async']);
+    const two = await runModule('messenger.js', empty, ['PlainMessage']);
+
+    expect(one).not.toContain('guest:guest');
+    expect(two.length).toBeGreaterThan(0);
+  });
+});
+
+describe('covariance shapes', () => {
+  test('a child that drops the nullable, one that matches and one with no types at all', async () => {
+    const app = appWith('covariance-shapes', {
+      'src/Contract/Base.php': `<?php
+
+namespace App\\Contract;
+
+abstract class Base
+{
+    abstract public function nullable(): ?object;
+
+    abstract public function same(): string;
+
+    abstract public function untyped();
+
+    abstract public function widened(): string;
+}
+`,
+      'src/Impl/Child.php': `<?php
+
+namespace App\\Impl;
+
+use App\\Contract\\Base;
+
+final class Child extends Base
+{
+    public function nullable(): object
+    {
+        return new \\stdClass();
+    }
+
+    public function same(): string
+    {
+        return '';
+    }
+
+    public function untyped()
+    {
+        return null;
+    }
+
+    public function widened(): string|int
+    {
+        return '';
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-covariance.js', app);
+
+    expect(text).toContain('Child');
+  });
+});
+
+describe('monolog formatters', () => {
+  test('custom formatters extending each base, and formatters named in the config', async () => {
+    const app = appWith('monolog-formatter', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            formatter: monolog.formatter.json
+        console:
+            type: console
+            formatter: App\\Logger\\LineFormatter
+        broken: ~
+`,
+      'src/Logger/JsonFormatter.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Formatter\\NormalizerFormatter;
+
+class JsonFormatter extends NormalizerFormatter
+{
+    public function format(array $record): string
+    {
+        return json_encode($record);
+    }
+}
+`,
+      'src/Logger/PlainFormatter.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Formatter\\LineFormatter;
+
+class PlainFormatter extends LineFormatter
+{
+    public function format(array $record): string
+    {
+        return $record['message'];
+    }
+}
+`,
+      'src/Logger/OddFormatter.php': `<?php
+
+namespace App\\Logger;
+
+class OddFormatter
+{
+    public function format(array $record): string
+    {
+        return print_r($record, true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-monolog-formatter.js', app);
+
+    expect(text).toContain('Formatter');
+  });
+});
+
+describe('monolog rotation', () => {
+  test('handlers with no max_files, with zero, with far too many, in /tmp and not bubbling', async () => {
+    const app = appWith('monolog-rotation', {
+      'config/packages/prod/monolog.yaml': `monolog:
+    handlers:
+        unlimited:
+            type: rotating_file
+            path: '%kernel.logs_dir%/unlimited.log'
+        zero:
+            type: rotating_file
+            path: '%kernel.logs_dir%/zero.log'
+            max_files: 0
+        huge:
+            type: rotating_file
+            path: '%kernel.logs_dir%/huge.log'
+            max_files: 400
+        temporary:
+            type: rotating_file
+            path: /tmp/acme.log
+            max_files: 7
+        quiet:
+            type: rotating_file
+            path: '%kernel.logs_dir%/quiet.log'
+            max_files: 7
+            bubble: false
+        shared_one:
+            type: rotating_file
+            path: '%kernel.logs_dir%/shared.log'
+            max_files: 7
+        shared_two:
+            type: rotating_file
+            path: '%kernel.logs_dir%/shared.log'
+            max_files: 7
+`,
+    });
+
+    const text = await runModule('symfony-monolog-rotation.js', app);
+
+    expect(text).toContain('max_files');
+  });
+});
