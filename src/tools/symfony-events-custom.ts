@@ -87,7 +87,9 @@ function scanCustomEventClasses(appPath: string): CustomEvent[] {
     if (!classM) continue;
 
     const constants: string[] = [];
-    for (const m of content.matchAll(/const\s+(EVENT[_A-Z]*)\s*=/g)) {
+    // The convention is "public const NAME = 'invoice.paid';", so asking for
+    // a name beginning with EVENT listed almost nothing.
+    for (const m of content.matchAll(/const\s+([A-Z][A-Z0-9_]{0,60})\s*=/g)) {
       constants.push(m[1]);
     }
 

@@ -31254,3 +31254,381 @@ class ApiController
     expect(text).toContain('http_method_override');
   });
 });
+
+describe('batch 105: constraints, makers, pipelines, factories and error controllers', () => {
+  test('a constraint that targets both a property and a class', async () => {
+    const app = appWith('symfony-custom-constraints', {
+      'src/Validator/ConsistentOrder.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class ConsistentOrder extends Constraint
+{
+    public string $message = 'The order is not consistent.';
+
+    public function getTargets(): string|array
+    {
+        return [self::PROPERTY_CONSTRAINT, self::CLASS_CONSTRAINT];
+    }
+}
+`,
+      'src/Validator/ConsistentOrderValidator.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+use Symfony\\Component\\Validator\\ConstraintValidator;
+
+class ConsistentOrderValidator extends ConstraintValidator
+{
+    public function validate(mixed $value, Constraint $constraint): void
+    {
+        $this->context->buildViolation($constraint->message)->addViolation();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-custom-constraints.js', app);
+
+    expect(text).toContain('ConsistentOrder');
+  });
+
+  test('a maker with a template of its own', async () => {
+    const app = appWith('symfony-custom-makers', {
+      'src/Maker/MakeReport.php': `<?php
+
+namespace App\\Maker;
+
+use Symfony\\Bundle\\MakerBundle\\ConsoleStyle;
+use Symfony\\Bundle\\MakerBundle\\DependencyBuilder;
+use Symfony\\Bundle\\MakerBundle\\Generator;
+use Symfony\\Bundle\\MakerBundle\\InputConfiguration;
+use Symfony\\Bundle\\MakerBundle\\Maker\\AbstractMaker;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+
+class MakeReport extends AbstractMaker
+{
+    public static function getCommandName(): string
+    {
+        return 'make:report';
+    }
+
+    public static function getCommandDescription(): string
+    {
+        return 'Creates a report class';
+    }
+
+    public function configureCommand(Command $command, InputConfiguration $inputConfig): void
+    {
+    }
+
+    public function generate(InputInterface $input, ConsoleStyle $io, Generator $generator): void
+    {
+        $generator->generateClass('App\\\\Report\\\\Report', __DIR__ . '/../Resources/skeleton/Report.tpl.php');
+    }
+
+    public function configureDependencies(DependencyBuilder $dependencies): void
+    {
+    }
+}
+`,
+      'src/Resources/skeleton/Report.tpl.php': `<?= "<?php\\n" ?>
+
+namespace <?= $namespace ?>;
+
+class <?= $class_name ?>
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-custom-makers.js', app);
+
+    expect(text).toContain('make:report');
+  });
+
+  test('a pipeline that accumulates everything in an array', async () => {
+    const app = appWith('symfony-data-pipeline-patterns', {
+      'src/Import/Pipeline.php': `<?php
+
+namespace App\\Import;
+
+class Pipeline
+{
+    public function run(iterable $rows): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->transform($row);
+        }
+
+        return $out;
+    }
+
+    public function pipe(callable $stage): self
+    {
+        return $this;
+    }
+
+    private function transform(array $row): array
+    {
+        return $row;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-data-pipeline-patterns.js', app);
+
+    expect(text).toContain('ipeline');
+  });
+
+  test('a factory service with no method named', async () => {
+    const app = appWith('symfony-di-factories', {
+      'config/services.yaml': `services:
+    App\\Http\\AcmeClient:
+        factory: ['@App\\Http\\ClientFactory']
+        arguments: ['%env(ACME_API_URL)%']
+
+    App\\Http\\LegacyClient:
+        factory: ['@App\\Http\\ClientFactory', 'createLegacy']
+`,
+      'src/Http/ClientFactory.php': `<?php
+
+namespace App\\Http;
+
+class ClientFactory
+{
+    public function __invoke(string $url): object
+    {
+        return new \\stdClass();
+    }
+
+    public function createLegacy(): object
+    {
+        return new \\stdClass();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-di-factories.js', app);
+
+    expect(text).toContain('actory');
+  });
+
+  test('an error controller beside a file with no class in it', async () => {
+    const app = appWith('symfony-error-controller', {
+      'config/packages/framework.yaml': `framework:
+    error_controller: App\\Controller\\ErrorController::show
+`,
+      'src/Controller/ErrorController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ErrorController
+{
+    public function show(Request $request, \\Throwable $exception): Response
+    {
+        return new Response('', 500);
+    }
+}
+`,
+      'src/Controller/notes.php': "<?php\n\n// The error controller is described here.\n",
+    });
+
+    const text = await runModule('symfony-error-controller.js', app);
+
+    expect(text).toContain('ErrorController');
+  });
+
+  test('a custom event class with constants of its own', async () => {
+    const app = appWith('symfony-events-custom', {
+      'src/Event/InvoicePaidEvent.php': `<?php
+
+namespace App\\Event;
+
+use Symfony\\Contracts\\EventDispatcher\\Event;
+
+class InvoicePaidEvent extends Event
+{
+    public const NAME = 'invoice.paid';
+
+    public const LEGACY_NAME = 'app.invoice.paid';
+
+    public function __construct(public readonly int $invoiceId)
+    {
+    }
+}
+`,
+      'src/EventSubscriber/InvoicePaidSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use App\\Event\\InvoicePaidEvent;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class InvoicePaidSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [InvoicePaidEvent::class => 'onPaid'];
+    }
+
+    public function onPaid(InvoicePaidEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-events-custom.js', app);
+
+    expect(text).toContain('Constants: NAME');
+  });
+
+  test('the filesystem component used from the application', async () => {
+    const app = appWith('symfony-filesystem', {
+      'src/Service/Files.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Filesystem\\Filesystem;
+
+class Files
+{
+    public function __construct(private Filesystem $filesystem)
+    {
+    }
+
+    public function write(string $path, string $content): void
+    {
+        $this->filesystem->dumpFile($path, $content);
+        $this->filesystem->chmod($path, 0777);
+        $this->filesystem->remove($path . '.old');
+    }
+}
+`,
+      'src/Service/notes.php': "<?php\n\n// The Filesystem service is described here.\n",
+    });
+
+    const text = await runModule('symfony-filesystem.js', app);
+
+    expect(text).toContain('ilesystem');
+  });
+
+  test('a choice value callback that captures and returns an object', async () => {
+    const app = appWith('symfony-form-choice-value-closure', {
+      'src/Form/InvoiceType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\ChoiceType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class InvoiceType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $default = $options['default_customer'];
+
+        $builder->add('customer', ChoiceType::class, [
+            'choices' => $options['customers'],
+            'choice_value' => function ($customer) use ($default) {
+                return $customer ?? $default;
+            },
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-choice-value.js', app);
+
+    expect(text).toContain('choice_value');
+  });
+
+  test('a type guesser that never guesses', async () => {
+    const app = appWith('symfony-form-type-guesser', {
+      'src/Form/TypeGuesser/AcmeTypeGuesser.php': `<?php
+
+namespace App\\Form\\TypeGuesser;
+
+use Symfony\\Component\\Form\\FormTypeGuesserInterface;
+use Symfony\\Component\\Form\\Guess\\Guess;
+
+class AcmeTypeGuesser implements FormTypeGuesserInterface
+{
+    public function guessType(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+
+    public function guessRequired(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+
+    public function guessMaxLength(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+
+    public function guessPattern(string $class, string $property): ?Guess
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-type-guesser.js', app);
+
+    expect(text).toContain('guessType()');
+  });
+
+  test('an HTTP cache store with options of its own', async () => {
+    const app = appWith('symfony-http-cache-store-options', {
+      'config/packages/framework.yaml': `framework:
+    http_cache:
+        enabled: true
+        default_ttl: 3600
+        private_headers: ['Authorization', 'Cookie']
+        store_options:
+            hash_algo: sha256
+`,
+      'src/Cache/AppKernelCache.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Bundle\\FrameworkBundle\\HttpCache\\HttpCache;
+
+class AppKernelCache extends HttpCache
+{
+    protected function getOptions(): array
+    {
+        return [
+            'debug' => false,
+            'default_ttl' => 3600,
+            'private_headers' => ['Authorization', 'Cookie'],
+            'allow_reload' => false,
+            'trace_level' => 'short',
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-cache-store.js', app);
+
+    expect(text).toContain('store_options');
+  });
+});
