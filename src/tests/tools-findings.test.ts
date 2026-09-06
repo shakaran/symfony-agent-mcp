@@ -2384,3 +2384,421 @@ describe('asset packages', () => {
     expect(text).toContain('static');
   });
 });
+
+describe('lock resources', () => {
+  test('every store a lock can use', async () => {
+    const stores = [
+      ['flock', 'flock'],
+      ['semaphore', 'semaphore'],
+      ['redis-cluster', 'redis+cluster://cache-1:6379,cache-2:6379'],
+      ['redis-tls', 'rediss://cache:6379'],
+      ['zookeeper', 'zookeeper://zk:2181'],
+      ['postgresql', 'postgresql://app:pass@db:5432/acme'],
+      ['mysql', 'mysql://app:pass@db:3306/acme'],
+      ['combined', 'combined-lock:consensus'],
+      ['service', '@app.lock.store'],
+      ['unknown', 'acme://store'],
+    ];
+
+    for (const [name, store] of stores) {
+      const app = appWith(`lock-${name}`, {
+        'config/packages/lock.yaml': `framework:
+    lock: '${store}'
+`,
+      });
+
+      const text = await runModule('symfony-lock-resources.js', app);
+
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('named resources and a lock held for longer than five minutes', async () => {
+    const app = appWith('lock-resources', {
+      'config/packages/lock.yaml': `framework:
+    lock:
+        invoice: 'redis://cache:6379'
+        report: 'flock'
+`,
+      'src/Service/InvoiceLocker.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Lock\\LockFactory;
+
+class InvoiceLocker
+{
+    public function __construct(private LockFactory $factory)
+    {
+    }
+
+    public function run(): void
+    {
+        $lock = $this->factory->createLock('invoice', 900);
+        if ($lock->acquire()) {
+            $lock->release();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-lock-resources.js', app);
+
+    expect(text).toContain('invoice');
+  });
+});
+
+describe('messenger routing table', () => {
+  test('a routing entry whose transports are a list of their own lines', async () => {
+    const app = appWith('routing-table', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            failed: 'doctrine://default?queue_name=failed'
+        routing:
+            'App\\Message\\SendInvoice': async
+            'App\\Message\\RebuildIndex':
+                - async
+                - failed
+            'App\\Message\\*': async
+`,
+      'src/Message/SendInvoice.php': `<?php
+
+namespace App\\Message;
+
+final class SendInvoice
+{
+}
+`,
+      'src/MessageHandler/SendInvoiceHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use App\\Message\\SendInvoice;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+final class SendInvoiceHandler
+{
+    public function __invoke(SendInvoice $message): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text).toContain('RebuildIndex');
+  });
+});
+
+describe('monolog handlers', () => {
+  test('stdout in production, fingers crossed with no strategy, a group with duplicates and a short rotation', async () => {
+    const app = appWith('monolog', {
+      'config/packages/prod/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: fingers_crossed
+            handler: nested
+            excluded_http_codes: [404, 405]
+        nested:
+            type: stream
+            path: php://stdout
+            level: debug
+        grouped:
+            type: group
+            members: [nested, nested, sentry]
+        rotating:
+            type: rotating_file
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            max_files: 3
+        sentry:
+            type: sentry
+            level: error
+`,
+      'config/packages/dev/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            level: debug
+`,
+    });
+
+    const withPhp = appWith('monolog-php', {
+      'src/Logger/AuditHandler.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Handler\\AbstractProcessingHandler;
+use Monolog\\LogRecord;
+
+class AuditHandler extends AbstractProcessingHandler
+{
+    protected function write(LogRecord $record): void
+    {
+    }
+
+    public function isHandling(LogRecord $record): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Logger/SilentHandler.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Handler\\AbstractProcessingHandler;
+
+class SilentHandler extends AbstractProcessingHandler
+{
+}
+`,
+      'src/Logger/PlainHandler.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Handler\\HandlerInterface;
+
+class PlainHandler implements HandlerInterface
+{
+}
+`,
+      'src/Logger/BaseHandler.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Handler\\AbstractHandler;
+
+class BaseHandler extends AbstractHandler
+{
+    public function isHandling($record): bool
+    {
+        return false;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-monolog-handler.js', app);
+    const phpText = await runModule('symfony-monolog-handler.js', withPhp);
+
+    expect(phpText).toContain('AuditHandler');
+    expect(text).toContain('fingers_crossed');
+    expect(text).toContain('group');
+  });
+});
+
+describe('fixtures', () => {
+  test('fixtures in a cycle and one depending on something that is not there', async () => {
+    const fixture = (name: string, deps: string[], groups: string[]): string => `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\DependentFixtureInterface;
+use Doctrine\\Bundle\\FixturesBundle\\FixtureGroupInterface;
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class ${name} extends Fixture implements DependentFixtureInterface, FixtureGroupInterface
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+
+    public function getDependencies(): array
+    {
+        return [${deps.map((d) => `${d}::class`).join(', ')}];
+    }
+
+    public static function getGroups(): array
+    {
+        return [${groups.map((g) => `'${g}'`).join(', ')}];
+    }
+}
+`;
+
+    const app = appWith('fixtures', {
+      'src/DataFixtures/UserFixtures.php': fixture('UserFixtures', ['OrderFixtures'], ['dev']),
+      'src/DataFixtures/OrderFixtures.php': fixture('OrderFixtures', ['UserFixtures'], ['dev', 'test']),
+      'src/DataFixtures/ProductFixtures.php': fixture('ProductFixtures', ['MissingFixtures'], ['test']),
+      'src/DataFixtures/TagFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class TagFixtures extends Fixture
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+}
+`,
+    });
+
+    const text = await runModule('database-fixture-groups.js', app);
+
+    expect(text).toContain('Circular');
+    expect(text).toContain('Missing');
+  });
+});
+
+describe('schema manager', () => {
+  test('schema work outside a migration, with and without a transaction', async () => {
+    const app = appWith('schema-manager', {
+      'src/Service/SchemaInstaller.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class SchemaInstaller
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function install(): void
+    {
+        $manager = $this->connection->createSchemaManager();
+        $manager->createTable($this->tableDefinition());
+        $manager->dropTable('legacy_order');
+        $manager->introspectTable('product');
+        $platform = $this->connection->getDatabasePlatform();
+    }
+}
+`,
+      'src/Service/TransactionalSchema.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class TransactionalSchema
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function install(): void
+    {
+        $this->connection->beginTransaction();
+        $manager = $this->connection->createSchemaManager();
+        $manager->createTable($this->tableDefinition());
+        $this->connection->commit();
+    }
+}
+`,
+      'migrations/Version20260404000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260404000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $manager = $this->connection->createSchemaManager();
+        $manager->createTable($this->tableDefinition());
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-schema-manager.js', app);
+
+    expect(text).toContain('SchemaInstaller');
+  });
+});
+
+describe('file storage', () => {
+  test('every adapter flysystem knows', async () => {
+    const app = appWith('file-storage', {
+      'config/packages/flysystem.yaml': `flysystem:
+    storages:
+        local.storage:
+            adapter: 'local'
+            options:
+                directory: '%kernel.project_dir%/var/storage'
+        s3.storage:
+            adapter: 'aws'
+            options:
+                bucket: acme
+        gcs.storage:
+            adapter: 'google'
+        azure.storage:
+            adapter: 'azure'
+        sftp.storage:
+            adapter: 'sftp'
+        ftp.storage:
+            adapter: 'ftp'
+        memory.storage:
+            adapter: 'memory'
+        readonly.storage:
+            adapter: 'readonly'
+        env.storage:
+            adapter: '%env(STORAGE_ADAPTER)%'
+        broken.storage: ~
+`,
+      'config/packages/vich_uploader.yaml': `vich_uploader:
+    db_driver: orm
+    mappings:
+        product_image:
+            uri_prefix: /images/products
+            upload_destination: '%kernel.project_dir%/public/images/products'
+        invoice_pdf: ~
+`,
+    });
+
+    const uploadable = appWith('file-storage-entities', {
+      'config/packages/vich_uploader.yaml': `vich_uploader:
+    db_driver: orm
+    mappings:
+        product_image:
+            uri_prefix: /images/products
+            upload_destination: '%kernel.project_dir%/public/images/products'
+`,
+      'src/Entity/Product.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\HttpFoundation\\File\\File;
+use Vich\\UploaderBundle\\Mapping\\Annotation as Vich;
+
+#[Vich\\Uploadable]
+class Product
+{
+    #[Vich\\UploadableField(mapping: 'product_image', fileNameProperty: 'imageName')]
+    private ?File $imageFile = null;
+
+    private ?string $imageName = null;
+}
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+class Kernel
+{
+}
+`,
+    });
+
+    const text = await runModule('file-storage.js', app);
+    const uploadableText = await runModule('file-storage.js', uploadable);
+
+    expect(uploadableText).toContain('Product');
+    expect(text).toContain('S3');
+    expect(text).toContain('local');
+  });
+});
