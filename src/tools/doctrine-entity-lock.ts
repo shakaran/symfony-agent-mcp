@@ -52,6 +52,14 @@ function detectLockType(content: string): string {
   return 'none';
 }
 
+// Wrong types: string, float, array, bool — the version field must be int or
+// DateTime/DateTimeImmutable. A property declares its type without a colon
+// ("private string $version"), which is the spelling that was being missed.
+function hasWrongVersionType(block: string): boolean {
+  return /(?:private|protected|public)\s+(?:readonly\s+)?\??(?:string|float|array|bool)\s+\$/.test(block) ||
+    /:\s*\??(?:string|float|array|bool)\b/.test(block);
+}
+
 function checkVersionProp(content: string): { hasVersion: boolean; wrongType: boolean } {
   const hasAttrVersion = content.includes('#[Version]') ||
     content.includes('#[ORM\\Version]') ||
@@ -67,16 +75,7 @@ function checkVersionProp(content: string): { hasVersion: boolean; wrongType: bo
 
   let wrongType = false;
   if (versionMatch) {
-    const block = versionMatch[0];
-    // Wrong types: string, float, array, bool — must be int or DateTime/DateTimeImmutable
-    if (
-      /:\s*string\b/.test(block) ||
-      /:\s*float\b/.test(block) ||
-      /:\s*array\b/.test(block) ||
-      /:\s*bool\b/.test(block)
-    ) {
-      wrongType = true;
-    }
+    wrongType = hasWrongVersionType(versionMatch[0]);
   }
 
   // Also check annotation-style @Version property
@@ -84,14 +83,7 @@ function checkVersionProp(content: string): { hasVersion: boolean; wrongType: bo
     const annotVre = /@(?:ORM\\)?Version[^\n]{0,100}\n(?:[^\n]{0,100}\n){0,3}[^\n]*(?:private|protected|public)[^\n]*\$[a-zA-Z_][a-zA-Z0-9_]{0,50}/;
     const annotMatch = annotVre.exec(content);
     if (annotMatch) {
-      const block = annotMatch[0];
-      if (
-        /:\s*string\b/.test(block) ||
-        /:\s*float\b/.test(block) ||
-        /:\s*array\b/.test(block)
-      ) {
-        wrongType = true;
-      }
+      wrongType = hasWrongVersionType(annotMatch[0]);
     }
   }
 
@@ -125,10 +117,14 @@ function parseEntityLockFile(filePath: string, appPath: string): EntityLockInfo 
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
+  // #[ORM\Version] is how the attribute is written once the mapping is
+  // imported as ORM, and that spelling was skipping the file entirely.
   const hasLockCode = content.includes('LockMode::') ||
     content.includes('->lock(') ||
     content.includes('#[Version]') ||
-    content.includes('@Version');
+    content.includes('#[ORM\\Version]') ||
+    content.includes('@Version') ||
+    content.includes('@ORM\\Version');
 
   if (!hasLockCode) return null;
   if (!content.includes('class ')) return null;

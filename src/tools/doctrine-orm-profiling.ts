@@ -46,8 +46,11 @@ function readDoctrineConfig(cfgPath: string): Record<string, unknown> | null {
   const raw = parseYamlFile(cfgPath) as Record<string, unknown> | null;
   if (!raw) return null;
   const doctrine = (raw['doctrine'] ?? raw) as Record<string, unknown>;
+  // profiling, profiling_collect_backtrace and logging are DBAL settings;
+  // only reading doctrine.orm meant none of them was ever seen.
+  const dbal = (doctrine['dbal'] ?? {}) as Record<string, unknown>;
   const orm = (doctrine['orm'] ?? {}) as Record<string, unknown>;
-  return orm;
+  return { ...dbal, ...orm };
 }
 
 function buildProfilingInfos(appPath: string): OrmProfilingInfo[] {

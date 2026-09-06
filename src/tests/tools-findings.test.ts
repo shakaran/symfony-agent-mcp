@@ -17028,3 +17028,461 @@ class LoggingConnection extends Connection
     expect(text).toContain('LoggingConnection');
   });
 });
+
+describe('batch 58: Doctrine DBAL, ORM mapping, ODM, projections and ECS', () => {
+  test('DBAL middleware listed in the configuration', async () => {
+    const app = appWith('doctrine-dbal-middleware', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        middleware:
+            - App\\Doctrine\\Middleware\\LoggingMiddleware
+            - App\\Doctrine\\Middleware\\TimingMiddleware
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-middleware.js', app);
+
+    expect(text).toContain('LoggingMiddleware');
+  });
+
+  test('a query that mixes positional and named parameters', async () => {
+    const app = appWith('doctrine-dbal-prepared-statements', {
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\DBAL\\Connection;
+
+class InvoiceRepository
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function search(string $status, array $ids): array
+    {
+        return $this->connection->fetchAllAssociative(
+            'SELECT * FROM invoice WHERE status = ? AND customer = :customer AND id IN (:ids)',
+            ['customer' => 1, 'ids' => $ids],
+            ['ids' => Connection::PARAM_INT_ARRAY],
+        );
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-prepared-statements.js', app);
+
+    expect(text).toContain('mixed positional');
+  });
+
+  test('a transaction that is never rolled back', async () => {
+    const app = appWith('doctrine-dbal-transactions', {
+      'src/Service/Ledger.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class Ledger
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function post(array $entries): void
+    {
+        try {
+            $this->connection->beginTransaction();
+            foreach ($entries as $entry) {
+                $this->connection->insert('ledger', $entry);
+            }
+            $this->connection->commit();
+        } catch (\\Throwable $e) {
+            throw $e;
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-transactions.js', app);
+
+    expect(text).toContain('rollBack');
+  });
+
+  test('entities that inherit three deep and reference each other', async () => {
+    const files: Record<string, string> = {
+      'src/Entity/notes.php': "<?php\n\n// Where the entities live.\n",
+    };
+    const names = ['Base', 'Party', 'Customer', 'PreferredCustomer'];
+    names.forEach((name, i) => {
+      const parent = i === 0 ? '' : ` extends ${names[i - 1]}`;
+      files[`src/Entity/${name}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\InheritanceType('JOINED')]
+class ${name}${parent}
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\ManyToOne(targetEntity: Address::class)]
+    private ?Address $address = null;
+}
+`;
+    });
+    files['src/Entity/Address.php'] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Address
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\ManyToOne(targetEntity: Country::class)]
+    private ?Country $country = null;
+}
+`;
+    files['src/Entity/Country.php'] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Country
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`;
+
+    const app = appWith('doctrine-entity-graph', files);
+
+    const text = await runModule('doctrine-entity-graph.js', app);
+
+    expect(text).toContain('Customer');
+  });
+
+  test('a version column declared as a string', async () => {
+    const app = appWith('doctrine-entity-lock', {
+      'src/Entity/Booking.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Booking
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Version]
+    #[ORM\\Column]
+    private string $version = '0';
+}
+`,
+      'src/Entity/Seat.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ */
+class Seat
+{
+    /**
+     * @ORM\\Version
+     * @ORM\\Column(type="string")
+     */
+    private string $version = '0';
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-lock.js', app);
+
+    expect(text).toContain('incompatible type');
+  });
+
+  test('translatable fields declared both ways, without a fallback locale', async () => {
+    const app = appWith('doctrine-gedmo-translatable', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+class Article
+{
+    #[Gedmo\\Translatable]
+    #[ORM\\Column]
+    private string $title = '';
+
+    /**
+     * @Gedmo\\Translatable
+     * @ORM\\Column
+     */
+    private string $body = '';
+
+    public function setTranslatableLocale(string $locale): void
+    {
+        $this->locale = $locale;
+    }
+}
+`,
+      'src/Service/ArticleLocale.php': `<?php
+
+namespace App\\Service;
+
+use App\\Entity\\Article;
+
+class ArticleLocale
+{
+    public function translate(Article $article, string $locale): void
+    {
+        $article->setTranslatableLocale($locale);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-translatable.js', app);
+
+    expect(text).toContain('fallback locale');
+  });
+
+  test('a class hierarchy deeper than the mapper follows', async () => {
+    const files: Record<string, string> = {};
+    const chain = ['Root', 'Level1', 'Level2', 'Level3', 'Level4', 'Level5', 'Level6', 'Level7'];
+    chain.forEach((name, i) => {
+      const parent = i === 0 ? '' : ` extends ${chain[i - 1]}`;
+      files[`src/Entity/${name}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\InheritanceType('SINGLE_TABLE')]
+#[ORM\\DiscriminatorColumn(name: 'kind', type: 'string')]
+class ${name}${parent}
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`;
+    });
+
+    const app = appWith('doctrine-inheritance-deep', files);
+
+    const text = await runModule('doctrine-inheritance.js', app);
+
+    expect(text).toContain('Level7');
+  });
+
+  test('a MongoDB connection with the password in the configuration', async () => {
+    const app = appWith('doctrine-odm-config', {
+      'composer.json': JSON.stringify({ require: { 'doctrine/mongodb-odm-bundle': '^4.0' } }, null, 4) + '\n',
+      'config/packages/doctrine_mongodb.yaml': `doctrine_mongodb:
+    connections:
+        default:
+            server: 'mongodb://acme:hunter2@mongo:27017/acme'
+    default_database: acme
+    document_managers:
+        default:
+            auto_mapping: true
+`,
+      'src/Document/Order.php': `<?php
+
+namespace App\\Document;
+
+use Doctrine\\ODM\\MongoDB\\Mapping\\Annotations as MongoDB;
+
+#[MongoDB\\Document]
+class Order
+{
+    #[MongoDB\\Id]
+    private ?string $id = null;
+
+    #[MongoDB\\ReferenceMany(targetDocument: Line::class)]
+    private array $lines = [];
+}
+`,
+    });
+
+    const text = await runModule('doctrine-odm-config.js', app);
+
+    expect(text).toContain('credentials in config');
+    expect(text).toContain('ReferenceMany');
+  });
+
+  test('ORM profiling that records a backtrace for every query', async () => {
+    const app = appWith('doctrine-orm-profiling', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        profiling: true
+        logging: true
+        profiling_collect_backtrace: true
+`,
+      'config/packages/dev/doctrine.yaml': `doctrine:
+    dbal:
+        profiling_collect_backtrace: true
+`,
+    });
+
+    const text = await runModule('doctrine-orm-profiling.js', app);
+
+    expect(text).toContain('profiling_collect_backtrace');
+  });
+
+  test('a projection built from far too many arguments', async () => {
+    const app = appWith('doctrine-projections', {
+      'src/Query/InvoiceProjection.php': `<?php
+
+namespace App\\Query;
+
+class InvoiceProjection
+{
+    public function __construct(
+        public readonly int $id,
+        public readonly string $number,
+        public readonly string $status,
+        public readonly string $customer,
+        public readonly string $currency,
+        public readonly int $total,
+        public readonly int $tax,
+        public readonly string $issuedAt,
+        public readonly string $dueAt,
+    ) {
+    }
+}
+`,
+      'src/Repository/InvoiceQueryRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Query\\InvoiceProjection;
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class InvoiceQueryRepository
+{
+    public function __construct(private EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function all(): array
+    {
+        return $this->entityManager
+            ->createQuery('SELECT NEW App\\\\Query\\\\InvoiceProjection(i.id, i.number, i.status) FROM App\\\\Entity\\\\Invoice i')
+            ->getResult();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-projections.js', app);
+
+    expect(text).toContain('InvoiceProjection');
+  });
+
+  test('a second-level cache region that is not strict about writes', async () => {
+    const app = appWith('doctrine-slc', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        second_level_cache:
+            enabled: true
+            region_cache_driver:
+                type: pool
+                pool: doctrine.second_level_cache_pool
+            regions:
+                invoice_region:
+                    lifetime: 3600
+                    cache_driver:
+                        type: pool
+                        pool: doctrine.second_level_cache_pool
+                broken_region: ~
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Cache(usage: 'NONSTRICT_READ_WRITE', region: 'invoice_region')]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-slc.js', app);
+
+    expect(text).toContain('NONSTRICT_READ_WRITE');
+  });
+
+  test('ECS with parallel runs, a cache and a place in the pipeline', async () => {
+    const app = appWith('easy-coding-standard', {
+      'ecs.php': `<?php
+
+use Symplify\\EasyCodingStandard\\Config\\ECSConfig;
+
+return ECSConfig::configure()
+    ->withPaths([__DIR__ . '/src', __DIR__ . '/tests'])
+    ->withPreparedSets(psr12: true)
+    ->withParallel()
+    ->withCache(__DIR__ . '/var/ecs')
+;
+`,
+      '.gitlab-ci.yml': `stages: [lint]
+
+lint:
+    stage: lint
+    script:
+        - vendor/bin/ecs check
+`,
+    });
+
+    const text = await runModule('easy-coding-standard.js', app);
+
+    expect(text).toContain('parallel');
+    expect(text).toContain('cache');
+  });
+
+  test('a project with php-cs-fixer instead of ECS', async () => {
+    const app = appWith('easy-coding-standard-fixer', {
+      '.php-cs-fixer.php': `<?php
+
+return (new PhpCsFixer\\Config())->setRules(['@PSR12' => true]);
+`,
+    });
+
+    const text = await runModule('easy-coding-standard.js', app);
+
+    expect(text).toContain('php-cs-fixer');
+  });
+});

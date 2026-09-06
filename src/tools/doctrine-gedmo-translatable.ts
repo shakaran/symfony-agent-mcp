@@ -33,12 +33,13 @@ function extractEntityName(content: string, filePath: string): string {
 
 function extractTranslatableFields(content: string): string[] {
   const fields: string[] = [];
-  const attrRe = /#\[Gedmo\\Translatable\][^\n]{0,200}\n[^\n]{0,200}(?:private|protected|public)\s+[^\s$]+\s+\$([a-zA-Z_][a-zA-Z0-9_]{0,100})/g;
+  // #[ORM\Column] and friends sit between the attribute and the property.
+  const attrRe = /#\[Gedmo\\Translatable\][^\n]{0,200}\n(?:[^\n]{0,200}\n){0,3}[^\n]{0,200}(?:private|protected|public)\s+[^\s$]+\s+\$([a-zA-Z_][a-zA-Z0-9_]{0,100})/g;
   let m: RegExpExecArray | null;
   while ((m = attrRe.exec(content)) !== null) {
     if (!fields.includes(m[1])) fields.push(m[1]);
   }
-  const annotRe = /@Translatable[^\n]{0,100}\n[^\n]{0,200}(?:private|protected|public)\s+[^\s$]+\s+\$([a-zA-Z_][a-zA-Z0-9_]{0,100})/g;
+  const annotRe = /@Translatable[^\n]{0,100}\n(?:[^\n]{0,200}\n){0,3}[^\n]{0,200}(?:private|protected|public)\s+[^\s$]+\s+\$([a-zA-Z_][a-zA-Z0-9_]{0,100})/g;
   let an: RegExpExecArray | null;
   while ((an = annotRe.exec(content)) !== null) {
     if (!fields.includes(an[1])) fields.push(an[1]);

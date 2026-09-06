@@ -195,10 +195,8 @@ function buildEasyCodingStandardInfos(appPath: string): EasyCodingStandardInfo[]
 
 export function listEasyCodingStandard(appPath: string): McpToolResult {
   try {
+    // Having no ecs.php is reported as a finding, so the list is never empty.
     const infos = buildEasyCodingStandardInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No Easy Coding Standard configuration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `Easy Coding Standard Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {
