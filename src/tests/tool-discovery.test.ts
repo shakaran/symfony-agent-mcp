@@ -189,6 +189,24 @@ describe('activating and deactivating', () => {
     expect(active).toMatch(/and \d+ more/);
   });
 
+  test('a category that does not fit the budget is refused', () => {
+    // A budget of one token: any category at all is over it.
+    const saved = process.env['SYMFONY_MCP_TOKEN_BUDGET'];
+    process.env['SYMFONY_MCP_TOKEN_BUDGET'] = '1';
+
+    try {
+      const id = nextSession();
+      const category = /^ {2}([a-z0-9_-]+)\s+│/m.exec(textOf(listToolCategories()))?.[1];
+      const refused = activateCategory(id, category!, false);
+
+      expect(refused.isError).toBe(true);
+      expect(textOf(refused)).toContain('budget');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_TOKEN_BUDGET'];
+      else process.env['SYMFONY_MCP_TOKEN_BUDGET'] = saved;
+    }
+  });
+
   test('a second category on top of the first is either allowed or refused on budget', () => {
     const id = nextSession();
     const categories = [...textOf(listToolCategories()).matchAll(/^ {2}([a-z0-9_-]+)\s+│/gm)].map((m) => m[1]);
