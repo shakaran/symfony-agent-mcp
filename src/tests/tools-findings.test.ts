@@ -24364,3 +24364,206 @@ class InvoiceController
     expect(text).toContain('sub-request');
   });
 });
+
+describe('batch 81: translations, Twig embeds and icons, Stimulus and validator payloads', () => {
+  test('plural messages in several forms, more than the report prints', async () => {
+    const app = appWith('symfony-translation-plurals', {
+      'translations/messages.en.yaml': `# The plural forms of the invoice messages.
+invoice.count.0: 'There is one invoice|There are %count% invoices'
+invoice.count.1: 'There is one invoice|There are %count% invoices'
+invoice.count.2: 'There is one invoice|There are %count% invoices'
+invoice.count.3: 'There is one invoice|There are %count% invoices'
+invoice.count.4: 'There is one invoice|There are %count% invoices'
+invoice.count.5: 'There is one invoice|There are %count% invoices'
+invoice.count.6: 'There is one invoice|There are %count% invoices'
+invoice.count.7: 'There is one invoice|There are %count% invoices'
+invoice.legacy: '{0} No invoices|{1} One invoice|]1,Inf[ %count% invoices'
+invoice.broken: 'One invoice|'
+`,
+      'translations/messages.fr.yaml': `invoice.count.0: 'Il y a une facture'
+`,
+    });
+
+    const text = await runModule('symfony-translation-plurals.js', app, ['invoice']);
+
+    expect(text).toContain('invoice');
+  });
+
+  test('a translation file that does not parse', async () => {
+    const app = appWith('symfony-translation-yaml-lint', {
+      'translations/messages.en.yaml': `home.title: 'Welcome'
+home.subtitle: 'A subtitle'
+home.title: 'Welcome again'
+home.body: ''
+`,
+      'translations/messages.fr.yaml': "home.title: 'Bienvenue'\n",
+    });
+
+    const text = await runModule('symfony-translation-yaml-lint.js', app);
+
+    expect(text).toContain('DUPLICATE-KEY');
+  });
+
+  test('an embed whose template comes from the request', async () => {
+    const app = appWith('symfony-twig-embed', {
+      'templates/page/show.html.twig': `{% embed app.request.get('template') %}
+    {% block content %}{{ body }}{% endblock %}
+{% endembed %}
+
+{% embed '../legacy/sidebar.html.twig' %}
+    {% block content %}{{ sidebar }}{% endblock %}
+{% endembed %}
+
+{% embed 'partials/footer.html.twig' %}
+    {% block content %}{{ footer }}{% endblock %}
+{% endembed %}
+`,
+    });
+
+    const text = await runModule('symfony-twig-embed.js', app);
+
+    expect(text).toContain('embed');
+  });
+
+  test('icons rendered every way, one of them inside a loop', async () => {
+    const app = appWith('symfony-twig-ux-icons', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-icons': '^2.0' } }, null, 4) + '\n',
+      'config/packages/ux_icons.yaml': `ux_icons:
+    icon_dir: '%kernel.project_dir%/assets/icons'
+    icon_sets:
+        tabler:
+            alias: tb
+`,
+      'templates/invoice/list.html.twig': `<h1>{{ ux_icon('tabler:file-invoice') }}</h1>
+
+<twig:UX:Icon name="tabler:download" />
+
+{% component 'ux:icon' with {name: 'tabler:printer'} %}{% endcomponent %}
+
+{% for invoice in invoices %}
+    {{ ux_icon('tabler:file') }}
+{% endfor %}
+`,
+    });
+
+    const text = await runModule('symfony-twig-ux-icons.js', app);
+
+    expect(text).toContain('icon');
+  });
+
+  test('browser notifications without Mercure behind them', async () => {
+    const app = appWith('symfony-ux-notify', {
+      'composer.json': JSON.stringify({ require: { 'symfony/ux-notify': '^2.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\n',
+      'src/Notification/DeployFinished.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+use Symfony\\Component\\Notifier\\Recipient\\RecipientInterface;
+
+class DeployFinished extends Notification implements NotificationInterface
+{
+    public function getChannels(RecipientInterface $recipient): array
+    {
+        return ['browser'];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-notify.js', app);
+
+    expect(text).toContain('Mercure');
+  });
+
+  test('a Stimulus controller that listens and never stops', async () => {
+    const app = appWith('symfony-ux-stimulus-controllers', {
+      'assets/controllers/dropdown_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {
+    connect() {
+        document.addEventListener('click', this.onClick.bind(this));
+    }
+
+    onClick(event) {
+        this.element.classList.toggle('open');
+    }
+}
+`,
+      'assets/controllers.json': '{"controllers":{}}\n',
+    });
+
+    const text = await runModule('symfony-ux-stimulus-controllers.js', app);
+
+    expect(text).toContain('dropdown');
+  });
+
+  test('Stimulus values declared and used', async () => {
+    const app = appWith('symfony-ux-stimulus-values', {
+      'assets/controllers/chart_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {
+    static values = { url: String, refresh: Number, live: Boolean };
+
+    connect() {
+        fetch(this.urlValue).then(() => this.refreshValue);
+    }
+
+    disconnect() {
+    }
+}
+`,
+      'templates/invoice/chart.html.twig': `<div {{ stimulus_controller('chart', { url: path('api_invoices'), refresh: 30 }) }}></div>
+`,
+    });
+
+    const text = await runModule('symfony-ux-stimulus-values.js', app);
+
+    expect(text).toContain('chart');
+  });
+
+  test('a constraint whose payload nothing reads', async () => {
+    const app = appWith('symfony-validator-payload', {
+      'src/Validator/Iban.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class Iban extends Constraint
+{
+    public string $message = 'This is not a valid IBAN.';
+
+    public $payload;
+
+    public function __construct(?array $options = null)
+    {
+        parent::__construct($options);
+    }
+}
+`,
+      'src/Validator/IbanValidator.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+use Symfony\\Component\\Validator\\ConstraintValidator;
+
+class IbanValidator extends ConstraintValidator
+{
+    public function validate(mixed $value, Constraint $constraint): void
+    {
+        $payload = $constraint->payload;
+
+        $this->context->buildViolation($constraint->message)->addViolation();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-payload.js', app);
+
+    expect(text).toContain('payload');
+  });
+});
