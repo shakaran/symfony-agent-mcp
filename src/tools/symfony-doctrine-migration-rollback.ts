@@ -109,7 +109,9 @@ function analyzeMigrationFile(filePath: string, appPath: string): MigrationRollb
     }
 
     // Check for throw new NotImplementedException or similar
-    if (/throw\s+new\s+\w*Exception/.test(downBody!)) {
+    // The exception is usually reached through the global namespace, as
+    // "throw new \RuntimeException", which the name alone did not match.
+    if (/throw\s+new\s+\\?[\w\\]{0,80}Exception/.test(downBody!)) {
       issues.push('down() throws an exception — migration is intentionally non-reversible; document this explicitly');
     }
   }

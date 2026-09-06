@@ -19574,3 +19574,276 @@ class HomeController
     expect(text).toContain('HomeController');
   });
 });
+
+describe('batch 64: collectors, metadata caches, migrations, emoji, forms and JSON', () => {
+  test('a data collector that keeps the password it collected', async () => {
+    const app = appWith('symfony-data-collectors', {
+      'src/DataCollector/AuthCollector.php': `<?php
+
+namespace App\\DataCollector;
+
+use Symfony\\Bundle\\FrameworkBundle\\DataCollector\\TemplateAwareDataCollectorInterface;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpKernel\\DataCollector\\DataCollector;
+
+class AuthCollector extends DataCollector implements TemplateAwareDataCollectorInterface
+{
+    public function collect(Request $request, Response $response, ?\\Throwable $exception = null): void
+    {
+        $this->data = [
+            'user' => $request->request->get('username'),
+            'password' => $request->request->get('password'),
+        ];
+    }
+
+    public function getName(): string
+    {
+        return 'app.auth';
+    }
+
+    public static function getTemplate(): string
+    {
+        return 'data_collector/auth';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-data-collectors.js', app);
+
+    expect(text).toContain('sensitive data');
+  });
+
+  test('metadata cached on disk in production', async () => {
+    const app = appWith('symfony-doctrine-metadata-cache', {
+      'config/packages/prod/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: pool
+            pool: cache.doctrine.filesystem
+        query_cache_driver:
+            type: array
+`,
+      'config/packages/test/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: array
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-metadata-cache.js', app);
+
+    expect(text).toContain('cache');
+  });
+
+  test('a migration whose down() refuses to run, and one that is complete', async () => {
+    const app = appWith('symfony-doctrine-migration-rollback', {
+      'migrations/Version20260101000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE invoice ADD paid_at DATETIME DEFAULT NULL');
+    }
+
+    public function down(Schema $schema): void
+    {
+        throw new \\RuntimeException('This migration cannot be reverted.');
+    }
+}
+`,
+      'migrations/Version20260102000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260102000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE INDEX idx_invoice_paid_at ON invoice (paid_at)');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP INDEX idx_invoice_paid_at');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-migration-rollback.js', app);
+
+    expect(text).toContain('non-reversible');
+  });
+
+  test('a slugger that will eat the emoji, and a Twig filter without the package', async () => {
+    const app = appWith('symfony-emoji', {
+      'src/Service/Slugger.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\String\\Slugger\\AsciiSlugger;
+
+class Slugger
+{
+    public function slug(string $title): string
+    {
+        // Titles arrive with emoji in them: "🚀 Launch day".
+        return (new AsciiSlugger())->slug($title)->toString();
+    }
+}
+`,
+      'templates/invoice/show.html.twig': `<h1>{{ title|emoji_to_text }}</h1>
+<p>{{ note|text_to_emoji }}</p>
+`,
+    });
+
+    const text = await runModule('symfony-emoji.js', app);
+
+    expect(text).toContain('emoji');
+  });
+
+  test('an expression constraint too long to follow, reaching into a private property', async () => {
+    const app = appWith('symfony-form-callback-constraint', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+#[Assert\\Expression(
+    'this.total > 0 and this.discount < this.total and this.currency in ["EUR", "GBP", "USD"] and this.customer != null',
+    message: 'The order is not consistent.',
+)]
+class Order
+{
+    private int $total = 0;
+
+    private int $discount = 0;
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-callback-constraint.js', app);
+
+    expect(text).toContain('Expression');
+  });
+
+  test('a form extension applied to every form there is', async () => {
+    const app = appWith('symfony-form-type-extension', {
+      'src/Form/Extension/HelpExtension.php': `<?php
+
+namespace App\\Form\\Extension;
+
+use Symfony\\Component\\Form\\AbstractTypeExtension;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\FormType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class HelpExtension extends AbstractTypeExtension
+{
+    public static function getExtendedTypes(): iterable
+    {
+        return [FormType::class];
+    }
+
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults(['help_html' => true]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-type-extension.js', app);
+
+    expect(text).toContain('ALL form types');
+  });
+
+  test('a JSON-encoded class whose names come out in camel case', async () => {
+    const app = appWith('symfony-json-encoder', {
+      'src/Dto/InvoiceDto.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\JsonEncoder\\Attribute\\EncodedName;
+use Symfony\\Component\\JsonEncoder\\Attribute\\JsonEncodable;
+
+#[JsonEncodable]
+class InvoiceDto
+{
+    public int $invoiceId = 0;
+
+    public string $customerName = '';
+}
+`,
+      'src/Dto/CustomerDto.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\JsonEncoder\\Attribute\\EncodedName;
+use Symfony\\Component\\JsonEncoder\\Attribute\\JsonEncodable;
+
+#[JsonEncodable]
+class CustomerDto
+{
+    #[EncodedName('customerId')]
+    public readonly int $customerId;
+
+    #[EncodedName('name')]
+    public readonly string $name;
+}
+`,
+    });
+
+    const text = await runModule('symfony-json-encoder.js', app);
+
+    expect(text).toContain('camelCase');
+  });
+
+  test('a JSON login firewall followed by another top-level section', async () => {
+    const app = appWith('symfony-json-login', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        api:
+            pattern: ^/api
+            stateless: true
+            json_login:
+                check_path: /api/login
+                username_path: email
+                password_path: password
+
+        main:
+            lazy: true
+
+when@test:
+    security:
+        password_hashers:
+            Symfony\\Component\\Security\\Core\\User\\PasswordAuthenticatedUserInterface:
+                algorithm: plaintext
+`,
+    });
+
+    const text = await runModule('symfony-json-login.js', app);
+
+    expect(text).toContain('json_login');
+  });
+});
