@@ -202,15 +202,10 @@ export function listPhpRegexInjection(appPath: string): McpToolResult {
 
     const critical = infos.filter((i) => i.severity === 'critical');
     const high = infos.filter((i) => i.severity === 'high');
-    const medium = infos.filter((i) => i.severity === 'medium');
-    const low = infos.filter((i) => i.severity === 'low');
-
     let text = `PHP Regex Injection Analysis\n${'='.repeat(55)}\n\n`;
     text += `Total findings: ${infos.length}\n`;
     text += `  Critical (code execution via /e):    ${critical.length}\n`;
     text += `  High     (user-controlled pattern):  ${high.length}\n`;
-    text += `  Medium   (indirect variable regex):  ${medium.length}\n`;
-    text += `  Low      (potentially risky regex):  ${low.length}\n`;
 
     if (critical.length > 0) {
       text += `\nCRITICAL SEVERITY — Code Execution Risk:\n`;
@@ -222,20 +217,6 @@ export function listPhpRegexInjection(appPath: string): McpToolResult {
     if (high.length > 0) {
       text += `\nHIGH SEVERITY — User-Controlled Regex Pattern:\n`;
       for (const i of high) {
-        text += `  [${i.pattern}] ${i.file}:${i.line}\n`;
-        text += `    ${i.issue}\n`;
-      }
-    }
-    if (medium.length > 0) {
-      text += `\nMEDIUM SEVERITY — Indirect Variable Regex:\n`;
-      for (const i of medium) {
-        text += `  [${i.pattern}] ${i.file}:${i.line}\n`;
-        text += `    ${i.issue}\n`;
-      }
-    }
-    if (low.length > 0) {
-      text += `\nLOW SEVERITY — Potentially Risky Regex:\n`;
-      for (const i of low) {
         text += `  [${i.pattern}] ${i.file}:${i.line}\n`;
         text += `    ${i.issue}\n`;
       }

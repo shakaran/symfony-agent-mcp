@@ -7887,3 +7887,254 @@ describe('translation plurals', () => {
     expect(text.length).toBeGreaterThan(0);
   });
 });
+
+describe('panther', () => {
+  test('a panther test that asserts without waiting, and the client set up in several ways', async () => {
+    const app = appWith('panther', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'symfony/panther': '^2.1' },
+      }, null, 2),
+      'phpunit.xml': `<?xml version="1.0"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <php>
+        <server name="PANTHER_APP_ENV" value="panther"/>
+        <server name="PANTHER_ERROR_SCREENSHOT_DIR" value="./var/error-screenshots"/>
+    </php>
+</phpunit>
+`,
+      'tests/Panther/CheckoutTest.php': `<?php
+
+namespace App\\Tests\\Panther;
+
+use Symfony\\Component\\Panther\\PantherTestCase;
+
+class CheckoutTest extends PantherTestCase
+{
+    public function testCheckout(): void
+    {
+        $client = static::createPantherClient();
+        $client->request('GET', '/checkout');
+
+        self::assertSelectorExists('.checkout-form');
+    }
+}
+`,
+      'tests/Panther/CartTest.php': `<?php
+
+namespace App\\Tests\\Panther;
+
+use Symfony\\Component\\Panther\\PantherTestCase;
+
+class CartTest extends PantherTestCase
+{
+    public function testCart(): void
+    {
+        $client = static::createPantherClient(['browser' => PantherTestCase::FIREFOX]);
+        $client->request('GET', '/cart');
+        $client->waitFor('.cart');
+
+        self::assertSelectorExists('.cart');
+    }
+}
+`,
+    });
+
+    const text = await runModule('panther-testing.js', app);
+
+    expect(text).toContain('CheckoutTest');
+  });
+});
+
+describe('ftp and sftp', () => {
+  test('a password in the environment, a plain ftp connection and an sftp one', async () => {
+    const app = appWith('ftp-sftp', {
+      '.env': `FTP_PASSWORD=hunter2
+SFTP_PASSWORD=hunter3
+SFTP_PASS=hunter4
+`,
+      'src/Service/Uploader.php': `<?php
+
+namespace App\\Service;
+
+class Uploader
+{
+    public function plain(): void
+    {
+        $conn = ftp_connect('ftp.example.com');
+        ftp_login($conn, 'acme', $_ENV['FTP_PASSWORD']);
+        ftp_put($conn, 'remote.txt', 'local.txt', FTP_ASCII);
+        ftp_close($conn);
+    }
+
+    public function secure(): void
+    {
+        $conn = ftp_ssl_connect('ftp.example.com');
+        ftp_login($conn, 'acme', $_ENV['FTP_PASSWORD']);
+    }
+
+    public function sftp(): void
+    {
+        $ssh = ssh2_connect('sftp.example.com', 22);
+        ssh2_auth_password($ssh, 'acme', $_ENV['SFTP_PASSWORD']);
+        $sftp = ssh2_sftp($ssh);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ftp-sftp-patterns.js', app);
+
+    expect(text).toContain('ftp');
+    expect(text).not.toContain('hunter2');
+  });
+});
+
+describe('imap', () => {
+  test('a mailbox opened from user input and a body printed without sanitising', async () => {
+    const app = appWith('imap', {
+      'src/Mail/Reader.php': `<?php
+
+namespace App\\Mail;
+
+class Reader
+{
+    public function open(): void
+    {
+        $mailbox = imap_open('{' . $_GET['host'] . '}INBOX', $_GET['user'], $_GET['pass']);
+        $headers = imap_headers($mailbox);
+        $body = imap_body($mailbox, 1);
+        echo $body;
+        imap_close($mailbox);
+    }
+
+    public function search(): void
+    {
+        $mailbox = imap_open('{mail.example.com}INBOX', 'acme', 'secret');
+        $result = imap_search($mailbox, 'SUBJECT "' . $_POST['subject'] . '"');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-imap-patterns.js', app);
+
+    expect(text).toContain('imap');
+  });
+});
+
+describe('memory management', () => {
+  test('a huge range, memory_limit off and a very large limit', async () => {
+    const app = appWith('memory', {
+      'src/Service/Big.php': `<?php
+
+namespace App\\Service;
+
+class Big
+{
+    public function build(): array
+    {
+        ini_set('memory_limit', '-1');
+
+        return range(0, 500000);
+    }
+
+    public function bigger(): array
+    {
+        ini_set('memory_limit', '4G');
+
+        return range(0, 200000);
+    }
+
+    public function reasonable(): array
+    {
+        ini_set('memory_limit', '512M');
+
+        return range(0, 100);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-memory-management.js', app);
+
+    expect(text).toContain('memory_limit');
+  });
+});
+
+describe('sockets', () => {
+  test('plain and tls sockets, and one bound to every interface', async () => {
+    const app = appWith('sockets', {
+      'src/Net/Client.php': `<?php
+
+namespace App\\Net;
+
+class Client
+{
+    public function plain(): void
+    {
+        $socket = fsockopen('example.com', 80, $errno, $errstr, 30);
+        $stream = stream_socket_client('tcp://example.com:80');
+    }
+
+    public function secure(): void
+    {
+        $stream = stream_socket_client('tls://example.com:443');
+        $other = stream_socket_client('ssl://example.com:443');
+    }
+
+    public function server(): void
+    {
+        $server = stream_socket_server('tcp://0.0.0.0:8080');
+        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+        socket_bind($socket, '0.0.0.0', 9000);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-socket-programming.js', app);
+
+    expect(text).toContain('socket');
+  });
+});
+
+describe('regex report sections', () => {
+  test('findings of medium and low severity in the report', async () => {
+    const app = appWith('regex-severities', {
+      'src/Service/Patterns.php': `<?php
+
+namespace App\\Service;
+
+class Patterns
+{
+    public function indirect(string $pattern): bool
+    {
+        $built = '/' . $pattern . '/';
+
+        return (bool) preg_match($built, 'subject');
+    }
+
+    public function risky(array $parts): bool
+    {
+        return (bool) preg_match('/' . implode('|', $parts) . '/', 'subject');
+    }
+
+    public function split(string $pattern, string $subject): array
+    {
+        return preg_split($pattern, $subject);
+    }
+
+    public function grep(string $pattern, array $rows): array
+    {
+        return preg_grep($pattern, $rows);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-regex-injection.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
