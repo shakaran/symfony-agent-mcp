@@ -17871,3 +17871,386 @@ class InvoiceController
     expect(text).toContain('InvoiceController');
   });
 });
+
+describe('batch 60: Netlify, notifiers, opcache, PayPal, PgBouncer and PHP analysers', () => {
+  test('a Netlify build with secrets in the production context', async () => {
+    const app = appWith('netlify-deploy-config', {
+      'netlify.toml': `[build]
+    command = "composer install --no-dev"
+    publish = "public"
+
+[dev]
+    command = "symfony serve"
+    port = 8000
+
+[context.production]
+    API_TOKEN = "abcdef1234567890"
+    PUBLIC_URL = "https://acme.example.com"
+
+[context.deploy-preview]
+    API_TOKEN = "$PREVIEW_TOKEN"
+
+[[headers]]
+    for = "/*"
+
+    [headers.values]
+        X-Frame-Options = "DENY"
+`,
+    });
+
+    const text = await runModule('netlify-deploy-config.js', app);
+
+    expect(text).toContain('API_TOKEN');
+  });
+
+  test('notifier transports with the credentials written into the DSN', async () => {
+    const app = appWith('notifier-transport-config', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        texter_transports:
+            twilio: 'twilio://SID:TOKEN@default?from=%2B441234567890'
+        chatter_transports:
+            slack: '%env(SLACK_DSN)%'
+            firebase: 'firebase://acme-project:secret@default'
+`,
+    });
+
+    const text = await runModule('notifier-transport-config.js', app);
+
+    expect(text).toContain('hardcoded credentials');
+  });
+
+  test('a notification class that names its channels', async () => {
+    const app = appWith('notifier-classes', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: 'slack://%env(SLACK_TOKEN)%@default?channel=alerts'
+        texter_transports:
+            twilio: 'twilio://%env(TWILIO_SID)%:%env(TWILIO_TOKEN)%@default'
+`,
+      'src/Notification/InvoiceOverdue.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+use Symfony\\Component\\Notifier\\Recipient\\RecipientInterface;
+
+class InvoiceOverdue extends Notification
+{
+    public function getChannels(RecipientInterface $recipient): array
+    {
+        return ['chat/slack', 'sms'];
+    }
+
+    public function getImportance(): string
+    {
+        return Notification::IMPORTANCE_URGENT;
+    }
+}
+`,
+    });
+
+    const text = await runModule('notifier.js', app);
+
+    expect(text).toContain('channels');
+  });
+
+  test('OPcache switched off, revalidating on every request', async () => {
+    const app = appWith('opcache-apcu-config', {
+      'docker/php.ini': `[opcache]
+opcache.enable=0
+opcache.validate_timestamps=1
+opcache.memory_consumption=64
+`,
+    });
+
+    const text = await runModule('opcache-apcu-config.js', app);
+
+    expect(text).toContain('OPcache disabled');
+  });
+
+  test('PayPal left in sandbox while the application runs in production', async () => {
+    const app = appWith('paypal-checkout-v2', {
+      'composer.json': JSON.stringify({ require: { 'paypal/paypal-checkout-sdk': '^1.0' } }, null, 4) + '\n',
+      '.env': `APP_ENV=prod
+PAYPAL_ENVIRONMENT=sandbox
+PAYPAL_CLIENT_ID=AeA1QIZXiflr1_-r0U2UbWTDXsQrZ2wvKvLtBMDwv7z
+`,
+      'src/Payment/PaypalClient.php': `<?php
+
+namespace App\\Payment;
+
+use PayPalCheckoutSdk\\Core\\SandboxEnvironment;
+use PayPalCheckoutSdk\\Core\\PayPalHttpClient;
+
+class PaypalClient
+{
+    public function client(): PayPalHttpClient
+    {
+        return new PayPalHttpClient(new SandboxEnvironment($_ENV['PAYPAL_CLIENT_ID'], $_ENV['PAYPAL_SECRET']));
+    }
+}
+`,
+    });
+
+    const text = await runModule('paypal-checkout-v2.js', app);
+
+    expect(text).toContain('sandbox');
+  });
+
+  test('a PayPal return URL taken straight from the request', async () => {
+    const app = appWith('paypal-integration', {
+      '.env': 'APP_ENV=prod\nPAYPAL_MODE=sandbox\nPAYPAL_CLIENT_ID=AeA1QIZXiflr\n',
+      'src/Payment/Checkout.php': `<?php
+
+namespace App\\Payment;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class Checkout
+{
+    public function start(Request $request): array
+    {
+        // The PayPal order is created from these.
+        return [
+            'return_url' => $request->get('return_url'),
+            'cancel_url' => $request->get('cancel_url'),
+        ];
+    }
+}
+`,
+      'src/Payment/Confirm.php': `<?php
+
+namespace App\\Payment;
+
+class Confirm
+{
+    // Where PayPal sends the buyer back to.
+    public const PAYPAL_RETURN_URL = 'https://acme.example.com/payment/return';
+
+    public function returnUrl(): string
+    {
+        return self::PAYPAL_RETURN_URL;
+    }
+}
+`,
+    });
+
+    const text = await runModule('paypal-integration.js', app);
+
+    expect(text).toContain('return');
+  });
+
+  test('Postgres reached directly, with no pooler in front of it', async () => {
+    const app = appWith('pgbouncer-absent', {
+      '.env': 'APP_ENV=prod\nDATABASE_URL=postgresql://acme:hunter2@db:5432/acme?serverVersion=16\n',
+    });
+
+    const text = await runModule('pgbouncer-config.js', app);
+
+    expect(text).toContain('PgBouncer');
+  });
+
+  test('array unpacking by key and by position', async () => {
+    const app = appWith('php-array-unpacking', {
+      'src/Service/Unpacker.php': `<?php
+
+namespace App\\Service;
+
+class Unpacker
+{
+    public function byKey(array $row): string
+    {
+        ['name' => $name, 'email' => $email] = $row;
+
+        return $name . $email;
+    }
+
+    public function byPosition(array $row): string
+    {
+        [$a, $b, $c, $d, $e, $f, $g] = $row;
+
+        return $a . $b . $c . $d . $e . $f . $g;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-array-unpacking.js', app);
+
+    expect(text).toContain('String-keyed');
+  });
+
+  test('enums used in ways PHP does not allow', async () => {
+    const app = appWith('php-backed-enum-patterns', {
+      'src/Enum/Status.php': `<?php
+
+namespace App\\Enum;
+
+enum Status
+{
+    case Draft;
+    case Published;
+
+    public readonly string $label;
+
+    public function describe(): string
+    {
+        return $this->value;
+    }
+}
+`,
+      'src/Repository/StatusRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Enum\\Status;
+
+class StatusRepository
+{
+    public function save(object $connection, string $id): void
+    {
+        $status = Status::Draft;
+        $connection->insert('article', ['id' => $id, 'status' => $status]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-backed-enum-patterns.js', app);
+
+    expect(text).toContain('enum');
+  });
+
+  test('shell commands built from input, escaped and unescaped', async () => {
+    const app = appWith('php-command-injection', {
+      'src/Service/Shell.php': `<?php
+
+namespace App\\Service;
+
+class Shell
+{
+    public function raw(string $path): string
+    {
+        return \`ls -la $path\`;
+    }
+
+    public function fromRequest(): string
+    {
+        return \`ls -la {$_GET['dir']}\`;
+    }
+
+    public function escaped(string $path): string
+    {
+        $safe = escapeshellarg($path);
+
+        return \`ls -la $safe\`;
+    }
+
+    public function withExec(string $name): void
+    {
+        exec('convert ' . escapeshellarg($name));
+        system('rm -rf ' . $_POST['dir']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-command-injection.js', app);
+
+    expect(text).toContain('command injection');
+  });
+
+  test('child classes that change what their parent promised', async () => {
+    const app = appWith('php-covariance', {
+      'src/Model/Repository.php': `<?php
+
+namespace App\\Model;
+
+class Repository
+{
+    public function find(int $id): ?Entity
+    {
+        return null;
+    }
+
+    public function all(): iterable
+    {
+        return [];
+    }
+
+    public function flush()
+    {
+    }
+}
+`,
+      'src/Model/StrictRepository.php': `<?php
+
+namespace App\\Model;
+
+class StrictRepository extends Repository
+{
+    public function find(int $id): Entity
+    {
+        return new Entity();
+    }
+
+    public function all(): static
+    {
+        return $this;
+    }
+
+    public function flush()
+    {
+    }
+}
+`,
+      'src/Model/LooseRepository.php': `<?php
+
+namespace App\\Model;
+
+class LooseRepository extends Repository
+{
+    public function all(): mixed
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-covariance.js', app);
+
+    expect(text).toContain('nullable');
+  });
+
+  test('a magic method that runs a command, and a serialized cookie', async () => {
+    const app = appWith('php-deserialization-gadget', {
+      'src/Model/Session.php': `<?php
+
+namespace App\\Model;
+
+class Session
+{
+    private string $command = '';
+
+    public function __destruct()
+    {
+        system($this->command);
+    }
+
+    public function store(array $data): void
+    {
+        $payload = serialize($data);
+        setcookie('acme_session', $payload, time() + 3600);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-deserialization-gadget.js', app);
+
+    expect(text).toContain('gadget');
+  });
+});
