@@ -96,7 +96,8 @@ function analyzePlaybookContent(content: string, source: string, _appPath: strin
     }
 
     // Missing no_log: true on tasks that print credentials
-    if (/^\s*name\s*:.*(?:password|secret|token|credential|auth|login)/i.test(line)) {
+    // A task is a list item, so its name line starts with a dash.
+    if (/^\s*-?\s*name\s*:.*(?:password|secret|token|credential|auth|login)/i.test(line)) {
       const contextEnd = Math.min(lines.length - 1, i + 15);
       const context = lines.slice(i, contextEnd + 1).join('\n');
       const hasNoLog = /no_log\s*:\s*(?:yes|true)/.test(context);

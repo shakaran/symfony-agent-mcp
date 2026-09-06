@@ -10690,7 +10690,7 @@ describe('ansible tasks', () => {
       no_log: true
 
     - name: Run a shell command
-      shell: /srv/app/bin/console cache:clear
+      shell: /srv/app/bin/console cache:clear --env={{ vars.app_env }}
 `,
     });
 

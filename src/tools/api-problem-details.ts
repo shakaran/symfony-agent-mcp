@@ -48,16 +48,18 @@ function buildProblemDetailsInfos(appPath: string): ProblemDetailsInfo[] {
     const relFile = path.relative(appPath, file);
     const issues: string[] = [];
 
-    const hasProblemJson = content.includes("'application/problem+json'") || content.includes('"application/problem+json"') ||
-      (content.includes("'type'") || content.includes('"type"') && content.includes("'title'") || content.includes('"title"') && content.includes("'status'") || content.includes('"status"') && content.includes("'detail'") || content.includes('"detail"'));
-
-    if (!hasProblemJson) continue;
-
     const fields: string[] = [];
     const rfc7807Fields = ['type', 'title', 'status', 'detail', 'instance'];
     for (const f of rfc7807Fields) {
       if (content.includes(`'${f}'`) || content.includes(`"${f}"`)) fields.push(f);
     }
+
+    // The old guard chained || and && without parentheses, so which fields
+    // counted depended on which quotes they were written with: a response
+    // with 'title', 'status' and 'detail' in single quotes was skipped.
+    const hasProblemJson = content.includes('application/problem+json') || fields.length >= 2;
+
+    if (!hasProblemJson) continue;
 
     const isResponse = content.includes('JsonResponse') || content.includes('Response(') || content.includes('$response');
     const isListener = content.includes('onException') || content.includes('ExceptionEvent') || content.includes('ExceptionListener');
