@@ -29662,3 +29662,302 @@ class InvoiceProducer
     expect(text).toContain('Kafka');
   });
 });
+
+describe('batch 100: OAuth clients, live components, search, tenancy and security bundles', () => {
+  test('an OAuth client using PKCE', async () => {
+    const app = appWith('league-oauth2-client', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-client': '^2.7' } }, null, 4) + '\n',
+      'src/OAuth/GoogleProvider.php': `<?php
+
+namespace App\\OAuth;
+
+use League\\OAuth2\\Client\\Provider\\Google;
+
+class GoogleProvider
+{
+    public function provider(): Google
+    {
+        return new Google([
+            'clientId' => $_ENV['GOOGLE_CLIENT_ID'],
+            'clientSecret' => $_ENV['GOOGLE_CLIENT_SECRET'],
+            'redirectUri' => 'https://acme.example.com/connect/google/check',
+            'pkce_method' => 'S256',
+        ]);
+    }
+
+    public function authorize(Google $provider): string
+    {
+        return $provider->getAuthorizationUrl(['state' => bin2hex(random_bytes(16))]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('league-oauth2-client.js', app);
+
+    expect(text).toContain('PKCE');
+  });
+
+  test('a writable live property with nothing validating it', async () => {
+    const app = appWith('live-components', {
+      'src/Twig/Components/InvoiceSearch.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\LiveComponent\\Attribute\\AsLiveComponent;
+use Symfony\\UX\\LiveComponent\\Attribute\\LiveProp;
+use Symfony\\UX\\LiveComponent\\DefaultActionTrait;
+
+#[AsLiveComponent('invoice_search')]
+class InvoiceSearch
+{
+    use DefaultActionTrait;
+
+    #[LiveProp(writable: true)]
+    public string $query = '';
+
+    #[LiveProp]
+    public int $page = 1;
+}
+`,
+      'templates/components/invoice_search.html.twig': `<div {{ attributes }}>
+    <input data-model="query">
+</div>
+`,
+    });
+
+    const text = await runModule('live-components.js', app);
+
+    expect(text).toContain('LiveProp');
+  });
+
+  test('Meilisearch reached over plain HTTP with its master key', async () => {
+    const app = appWith('meilisearch-integration', {
+      'composer.json': JSON.stringify({ require: { 'meilisearch/meilisearch-php': '^1.0' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nMEILISEARCH_HOST=http://meili.acme.internal:7700\nMEILISEARCH_KEY=masterKeyabcdef1234567890\n',
+      'src/Search/MeiliClient.php': `<?php
+
+namespace App\\Search;
+
+use Meilisearch\\Client;
+
+class MeiliClient
+{
+    public function client(): Client
+    {
+        return new Client('http://meili.acme.internal:7700', $_ENV['MEILISEARCH_KEY']);
+    }
+
+    public function search(string $term): array
+    {
+        return $this->client()->index('invoices')->search($term)->getHits();
+    }
+}
+`,
+    });
+
+    const text = await runModule('meilisearch-integration.js', app);
+
+    expect(text).toContain('eilisearch');
+  });
+
+  test('Memcached as the cache adapter, with its extension configured', async () => {
+    const app = appWith('memcached-integration', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.memcached
+        default_memcached_provider: 'memcached://memcached:11211'
+`,
+      'docker/php/php.ini': `[memcached]
+extension = memcached.so
+memcached.sess_locking = On
+memcached.compression_type = fastlz
+`,
+    });
+
+    const text = await runModule('memcached-integration.js', app);
+
+    expect(text).toContain('emcached');
+  });
+
+  test('tenant entities with no Doctrine filter behind them', async () => {
+    const app = appWith('multi-tenancy-entities', {
+      'src/Entity/Tenant.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Tenant
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\ManyToOne(targetEntity: Tenant::class)]
+    private ?Tenant $tenant = null;
+}
+`,
+      'src/Service/TenantContext.php': `<?php
+
+namespace App\\Service;
+
+class TenantContext
+{
+    private ?int $tenantId = null;
+
+    public function tenantId(): ?int
+    {
+        return $this->tenantId;
+    }
+}
+`,
+    });
+
+    const text = await runModule('multi-tenancy.js', app);
+
+    expect(text).toContain('enant');
+  });
+
+  test('NelmioSecurityBundle configured, and a project without it', async () => {
+    const app = appWith('nelmio-security-bundle', {
+      'config/packages/nelmio_security.yaml': `nelmio_security:
+    clickjacking:
+        paths:
+            '^/.*': DENY
+    content_type:
+        nosniff: true
+    xss_protection:
+        enabled: true
+    forced_ssl:
+        enabled: true
+        hsts_max_age: 31536000
+        hsts_subdomains: true
+`,
+    });
+
+    const text = await runModule('nelmio-security-bundle.js', app);
+
+    expect(text).toContain('lickjacking');
+  });
+
+  test('a project with no NelmioSecurityBundle', async () => {
+    const app = appWith('nelmio-security-absent', {});
+
+    const text = await runModule('nelmio-security-bundle.js', app);
+
+    expect(text).toContain('not found');
+  });
+
+  test('an NGINX Unit application with its processes', async () => {
+    const app = appWith('nginx-unit-config', {
+      'unit.json': JSON.stringify({
+        listeners: { '*:8080': { pass: 'applications/acme' } },
+        applications: {
+          acme: {
+            type: 'php',
+            root: '/var/www/public',
+            script: 'index.php',
+            processes: { max: 20, spare: 2 },
+            user: 'root',
+          },
+        },
+      }, null, 4) + '\n',
+    });
+
+    const text = await runModule('nginx-unit-config.js', app);
+
+    expect(text).toContain('nit');
+  });
+
+  test('OpenTelemetry through a bundle', async () => {
+    const app = appWith('opentelemetry-config', {
+      'composer.json': JSON.stringify({ require: { 'open-telemetry/sdk': '^1.0', 'glpichon/opentelemetry-bundle': '^0.5' } }, null, 4) + '\n',
+      '.env': 'APP_ENV=prod\nOTEL_SERVICE_NAME=acme\nOTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318\nOTEL_TRACES_SAMPLER=always_on\n',
+    });
+
+    const text = await runModule('opentelemetry-config.js', app);
+
+    expect(text).toContain('glpichon');
+  });
+
+  test('closures that bind and rebind their scope', async () => {
+    const app = appWith('php-closures-binding', {
+      'src/Service/Binder.php': `<?php
+
+namespace App\\Service;
+
+class Binder
+{
+    public function bind(object $target): \\Closure
+    {
+        $closure = function (): string {
+            return $this->secret;
+        };
+
+        return \\Closure::bind($closure, $target, $target::class);
+    }
+
+    public function rebind(\\Closure $closure, object $target): \\Closure
+    {
+        return $closure->bindTo($target, $target::class);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-closures.js', app);
+
+    expect(text).toContain('losure');
+  });
+
+  test('constants exposed with no visibility of their own', async () => {
+    const app = appWith('php-constant-visibility', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.1' } }, null, 4) + '\n',
+      'src/Config/LimitsInterface.php': `<?php
+
+namespace App\\Config;
+
+interface LimitsInterface
+{
+    const MAX_ROWS = 1000;
+}
+`,
+      'src/Config/Limits.php': `<?php
+
+namespace App\\Config;
+
+class Limits implements LimitsInterface
+{
+    final const DEFAULT_PAGE = 1;
+
+    private const MAX_ROWS = 1000;
+}
+`,
+      'src/Config/LimitsTrait.php': `<?php
+
+namespace App\\Config;
+
+trait LimitsTrait
+{
+    private const INTERNAL_SEED = 'acme';
+}
+`,
+    });
+
+    const text = await runModule('php-constant-visibility.js', app);
+
+    expect(text).toContain('MAX_ROWS');
+  });
+});

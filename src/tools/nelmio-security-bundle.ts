@@ -191,10 +191,9 @@ function buildNelmioSecurityInfos(appPath: string): NelmioSecurityInfo[] {
 
 export function listNelmioSecurityBundle(appPath: string): McpToolResult {
   try {
+    // A missing nelmio_security.yaml is itself one of the entries, so the
+    // list is never empty.
     const infos = buildNelmioSecurityInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No NelmioSecurityBundle configuration found.' }] };
-    }
     const issues = infos.filter((i) => i.issue !== null);
     let text = `NelmioSecurityBundle Analysis\n${'='.repeat(55)}\n\nEntries: ${infos.length}  Issues: ${issues.length}\n`;
     for (const info of infos) {
