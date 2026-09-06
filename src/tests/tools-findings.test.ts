@@ -12462,3 +12462,292 @@ class LoggingClient implements HttpClientInterface
     expect(text).toContain('mock_response_factory');
   });
 });
+
+describe('http middleware', () => {
+  test('a listener with a very high priority, one that sets a response and two at the same priority', async () => {
+    const app = appWith('http-middleware', {
+      'src/EventSubscriber/RequestSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+class RequestSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'kernel.request' => [
+                ['onEarly', 512],
+                ['onNormal', 10],
+                ['onAlso', 10],
+            ],
+            'kernel.response' => ['onResponse'],
+        ];
+    }
+
+    public function onEarly(RequestEvent $event): void
+    {
+        $event->setResponse($this->maintenanceResponse());
+    }
+
+    public function onNormal(RequestEvent $event): void
+    {
+    }
+
+    public function onAlso(RequestEvent $event): void
+    {
+    }
+
+    public function onResponse($event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-middleware.js', app);
+
+    expect(text).toContain('RequestSubscriber');
+  });
+});
+
+describe('kubernetes config maps', () => {
+  test('a config map with a secret in it and env values from a field reference', async () => {
+    const app = appWith('kubernetes-configmap', {
+      'k8s/configmap.yaml': `apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: acme-config
+data:
+    APP_ENV: prod
+    DATABASE_PASSWORD: hunter2
+    APP_URL: https://acme.example.com
+`,
+      'k8s/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: acme
+spec:
+    replicas: 2
+    template:
+        spec:
+            containers:
+                - name: app
+                  image: acme:1.0
+                  env:
+                      - name: POD_NAME
+                        valueFrom:
+                          fieldRef:
+                            fieldPath: metadata.name
+                      - name: APP_ENV
+                        value: prod
+                  resources:
+                      limits:
+                          cpu: 500m
+                          memory: 512Mi
+                  livenessProbe:
+                      httpGet:
+                          path: /health
+                          port: 8080
+                  readinessProbe:
+                      httpGet:
+                          path: /ready
+                          port: 8080
+`,
+      'k8s/broken.yaml': 'not: [valid\n',
+    });
+
+    const text = await runModule('symfony-kubernetes.js', app);
+
+    expect(text).toContain('ConfigMap');
+  });
+});
+
+describe('locale fallbacks', () => {
+  test('a locale with translations that is not enabled, and one with no base fallback', async () => {
+    const app = appWith('locale-config', {
+      'config/packages/translation.yaml': `framework:
+    default_locale: en
+    enabled_locales: ['en', 'es']
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+        fallbacks:
+            es: ['en']
+            '*': ['en']
+`,
+      'translations/messages.en.yaml': `app:
+    title: 'Dashboard'
+`,
+      'translations/messages.es.yaml': `app:
+    title: 'Panel'
+`,
+      'translations/messages.fr_CA.yaml': `app:
+    title: 'Tableau de bord'
+`,
+      'translations/messages.de.yaml': `app:
+    title: 'Ubersicht'
+`,
+    });
+
+    const text = await runModule('symfony-locale-config.js', app);
+
+    expect(text).toContain('fr_CA');
+  });
+});
+
+describe('lock stores in config', () => {
+  test('pdo, zookeeper, in memory and combined stores', async () => {
+    const app = appWith('lock-store-config', {
+      'config/packages/lock.yaml': `framework:
+    lock:
+        default: 'mysql://app:pass@db:3306/acme'
+        zk: 'zookeeper://zk:2181'
+        memory: 'in-memory'
+        combined: 'combined-lock:consensus'
+`,
+    });
+
+    const text = await runModule('symfony-lock-store-config.js', app);
+
+    expect(text).toContain('zookeeper');
+  });
+});
+
+describe('routing table transports', () => {
+  test('a transport list with blank lines and quoted names', async () => {
+    const app = appWith('routing-table-quotes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'doctrine://default'
+            failed: 'doctrine://default?queue_name=failed'
+        routing:
+            'App\\Message\\SendInvoice': "async"
+
+            'App\\Message\\RebuildIndex':
+                - 'async'
+
+                - "failed"
+`,
+      'src/Message/SendInvoice.php': `<?php
+
+namespace App\\Message;
+
+final class SendInvoice
+{
+}
+`,
+      'src/MessageHandler/SendInvoiceHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use App\\Message\\SendInvoice;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+final class SendInvoiceHandler
+{
+    public function __invoke(SendInvoice $message): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text).toContain('RebuildIndex');
+  });
+});
+
+describe('push notifications', () => {
+  test('firebase, onesignal and expo keys written in the config, and a message built from user input', async () => {
+    const app = appWith('notifier-push', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', 'symfony/firebase-notifier': '^7.0' },
+      }, null, 2),
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            firebase: 'firebase://AAAA0123456789:APA91bF@default'
+            onesignal: 'onesignal://APP_ID:api_key=0123456789abcdef@default'
+            expo: 'expo://default'
+`,
+      'src/Notification/PushSender.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Message\\PushMessage;
+
+class PushSender
+{
+    public function send(): PushMessage
+    {
+        return new PushMessage($_GET['title'], $_GET['body'], ['recipient_id' => $_GET['user']]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-notifier-push.js', app);
+
+    expect(text).toContain('firebase');
+  });
+});
+
+describe('rate limiter algorithms', () => {
+  test('each policy in the production configuration', async () => {
+    const app = appWith('limiter-algorithms', {
+      'config/packages/prod/rate_limiter.yaml': `framework:
+    rate_limiter:
+        sliding:
+            policy: 'sliding_window'
+            limit: 100
+            interval: '1 hour'
+        fixed:
+            policy: 'fixed_window'
+            limit: 50
+            interval: '15 minutes'
+        bucket:
+            policy: 'token_bucket'
+            limit: 10
+            rate: { interval: '1 minute', amount: 10 }
+        noop:
+            policy: 'no_limit'
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-algorithms.js', app);
+
+    expect(text).toContain('Rate Limiter');
+  });
+});
+
+describe('scheduler intervals in the config', () => {
+  test('schedules with expressions in iso and in words', async () => {
+    const app = appWith('scheduler-config-intervals', {
+      'config/packages/scheduler.yaml': `framework:
+    scheduler:
+        schedules:
+            default:
+                transport: 'doctrine://default'
+                tasks:
+                    - id: EveryMinutes
+                      expression: 'PT15M'
+                    - id: EveryHours
+                      expression: 'PT6H'
+                    - id: EverySeconds
+                      expression: '90'
+                    - id: Nonsense
+                      expression: 'whenever'
+            broken: ~
+`,
+    });
+
+    const text = await runModule('symfony-scheduler-tasks.js', app);
+
+    expect(text).toContain('EveryMinutes');
+  });
+});
