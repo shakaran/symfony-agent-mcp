@@ -6590,3 +6590,264 @@ class DebugController
     expect(text).toContain('dump');
   });
 });
+
+describe('lazy objects', () => {
+  test('lazy ghosts and proxies, with and without the skip attribute', async () => {
+    const app = appWith('lazy-objects', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.4', 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Service/LazyFactory.php': `<?php
+
+namespace App\\Service;
+
+class LazyFactory
+{
+    public function ghost(): object
+    {
+        $reflector = new \\ReflectionClass(HeavyService::class);
+
+        return $reflector->newLazyGhost(static function (HeavyService $service): void {
+            $service->__construct();
+        });
+    }
+
+    public function proxy(): object
+    {
+        $reflector = new \\ReflectionClass(HeavyService::class);
+
+        return $reflector->newLazyProxy(static fn (): HeavyService => new HeavyService());
+    }
+
+    public function reset(object $service): void
+    {
+        $reflector = new \\ReflectionClass($service);
+        $reflector->resetAsLazyGhost($service, static fn () => null);
+        $reflector->resetAsLazyProxy($service, static fn () => null);
+    }
+}
+`,
+      'src/Service/HeavyService.php': `<?php
+
+namespace App\\Service;
+
+class HeavyService
+{
+    public function __construct()
+    {
+        $this->connection = new \\PDO('sqlite::memory:');
+        file_put_contents('/tmp/acme.log', 'constructed');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-lazy-objects.js', app);
+
+    expect(text).toContain('Lazy');
+  });
+});
+
+describe('regex injection', () => {
+  test('patterns built from variables at every severity', async () => {
+    const app = appWith('regex-injection', {
+      'src/Service/Matcher.php': `<?php
+
+namespace App\\Service;
+
+class Matcher
+{
+    public function fromUser(): bool
+    {
+        return (bool) preg_match('/' . $_GET['pattern'] . '/', 'subject');
+    }
+
+    public function fromVariable(string $pattern): bool
+    {
+        return (bool) preg_match($pattern, 'subject');
+    }
+
+    public function interpolated(string $needle): bool
+    {
+        return (bool) preg_match("/{$needle}/i", 'subject');
+    }
+
+    public function quoted(string $needle): bool
+    {
+        return (bool) preg_match('/' . preg_quote($needle, '/') . '/', 'subject');
+    }
+
+    public function replaced(string $pattern, string $subject): string
+    {
+        return preg_replace($pattern, 'x', $subject);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-regex-injection.js', app);
+
+    expect(text).toContain('Matcher');
+  });
+});
+
+describe('static analysis ignores', () => {
+  test('ignore comments without a rule code, and many of them in one file', async () => {
+    const lines = Array.from({ length: 30 }, (_, i) => `        // @phpstan-ignore-next-line\n        $this->call${i}();`).join('\n');
+    const app = appWith('ignores', {
+      'phpstan.neon': `parameters:
+    level: 8
+    ignoreErrors:
+        - '#Call to an undefined method#'
+`,
+      'psalm.xml': `<?xml version="1.0"?>
+<psalm errorLevel="3">
+    <issueHandlers>
+        <MissingReturnType errorLevel="suppress"/>
+    </issueHandlers>
+</psalm>
+`,
+      'src/Service/Suppressed.php': `<?php
+
+namespace App\\Service;
+
+class Suppressed
+{
+    /** @phpstan-ignore-next-line */
+    public function one(): void
+    {
+    }
+
+    /** @psalm-suppress MissingReturnType */
+    public function two()
+    {
+    }
+
+    /** @phpstan-ignore-line */
+    public function three(): void
+    {
+    }
+
+    public function many(): void
+    {
+${lines}
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-static-analysis-ignore.js', app);
+
+    expect(text).toContain('phpstan-ignore');
+  });
+});
+
+describe('phpspec', () => {
+  test('suites in the config, spec files and a composer script', async () => {
+    const app = appWith('phpspec', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        'require-dev': { 'phpspec/phpspec': '^7.5' },
+        scripts: { spec: 'vendor/bin/phpspec run' },
+      }, null, 2),
+      'phpspec.yml': `suites:
+    app_suite:
+        namespace: App
+        psr4_prefix: App
+        src_path: src
+        spec_path: spec
+    domain_suite:
+        namespace: App\\Domain
+        src_path: src/Domain
+formatter.name: pretty
+`,
+      'spec/Service/InvoiceBuilderSpec.php': `<?php
+
+namespace spec\\App\\Service;
+
+use App\\Service\\InvoiceBuilder;
+use PhpSpec\\ObjectBehavior;
+
+class InvoiceBuilderSpec extends ObjectBehavior
+{
+    public function it_is_initializable(): void
+    {
+        $this->shouldHaveType(InvoiceBuilder::class);
+    }
+}
+`,
+      'spec/notes.md': 'not a spec\n',
+    });
+
+    const text = await runModule('phpspec-config.js', app);
+
+    expect(text).toContain('namespace-mapping');
+  });
+});
+
+describe('http2 push', () => {
+  test('preload links of every kind and a web_link config', async () => {
+    const app = appWith('http2-push', {
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\WebLink\\Link;
+
+class HomeController
+{
+    public function index(): void
+    {
+        $this->preload('/build/app.css');
+        $this->preload('/build/app.js');
+        $this->preload('/build/font.woff2');
+        $this->preload('/build/hero.avif');
+        $this->preload('/build/data.json');
+        $this->prefetch('/build/next.js');
+        $this->dnsPrefetch('https://cdn.example.com');
+        $this->addLink('/build/late.css', rel: 'preload');
+        $response->headers->set('Link', '</build/app.css>; rel=preload; as=style');
+    }
+}
+`,
+      'config/packages/web_link.yaml': `framework:
+    web_link:
+        enabled: true
+`,
+    });
+
+    const text = await runModule('symfony-http2-push.js', app);
+
+    expect(text).toContain('PRELOAD');
+  });
+});
+
+describe('json login', () => {
+  test('json_login with no handlers, stateless, and a check path shared with form_login', async () => {
+    const app = appWith('json-login', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        api:
+            pattern: ^/api
+            stateless: true
+            json_login:
+                check_path: /api/login
+                username_path: email
+                password_path: password
+        main:
+            lazy: true
+            json_login:
+                check_path: /login
+                success_handler: App\\Security\\LoginSuccessHandler
+                failure_handler: App\\Security\\LoginFailureHandler
+            form_login:
+                check_path: /login
+                login_path: /login
+`,
+    });
+
+    const text = await runModule('symfony-json-login.js', app);
+
+    expect(text).toContain('json_login');
+  });
+});
