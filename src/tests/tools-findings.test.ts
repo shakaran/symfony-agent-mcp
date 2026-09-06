@@ -19847,3 +19847,203 @@ when@test:
     expect(text).toContain('json_login');
   });
 });
+
+describe('batch 65: transports, routing loaders, scheduler, IP rules and test kernels', () => {
+  test('transports on Redis and AMQP, retried more often than they should be', async () => {
+    const app = appWith('symfony-messenger-transport-options', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: 'redis://redis:6379/messages'
+                retry_strategy:
+                    max_retries: 25
+                    delay: 1000
+                    multiplier: 2
+            events:
+                dsn: 'amqp://guest:guest@rabbit:5672/%2f/events'
+            local:
+                dsn: 'in-memory://'
+`,
+    });
+
+    const text = await runModule('symfony-messenger-transport-options.js', app);
+
+    expect(text).toContain('max_retries=25');
+    expect(text).toContain('prefetch_count');
+  });
+
+  test('a routing loader that answers to everything and returns nothing', async () => {
+    const app = appWith('symfony-routing-loader', {
+      'src/Routing/LegacyLoader.php': `<?php
+
+namespace App\\Routing;
+
+use Symfony\\Component\\Config\\Loader\\Loader;
+use Symfony\\Component\\Routing\\RouteCollection;
+
+class LegacyLoader extends Loader
+{
+    private bool $loaded = false;
+
+    public function load(mixed $resource, ?string $type = null): mixed
+    {
+        if ($this->loaded) {
+            return null;
+        }
+
+        $this->loaded = true;
+
+        return null;
+    }
+
+    public function supports(mixed $resource, ?string $type = null): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-routing-loader.js', app);
+
+    expect(text).toContain('supports()');
+  });
+
+  test('routing files that import each other in a circle', async () => {
+    const app = appWith('symfony-routing-sub-collections', {
+      'config/routes.yaml': `admin:
+    resource: routes/admin.yaml
+    prefix: /{_locale}/admin
+
+api:
+    resource: routes/api.yaml
+    prefix: /api
+`,
+      'config/routes/admin.yaml': `admin_api:
+    resource: ../routes/api.yaml
+    prefix: /admin-api
+`,
+      'config/routes/api.yaml': `api_admin:
+    resource: ../routes.yaml
+    prefix: /nested
+`,
+    });
+
+    const text = await runModule('symfony-routing-sub-collections.js', app);
+
+    expect(text).toContain('_locale');
+  });
+
+  test('scheduled tasks written in every notation', async () => {
+    const app = appWith('symfony-scheduler-tasks', {
+      'src/Scheduler/MainSchedule.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsSchedule;
+use Symfony\\Component\\Scheduler\\RecurringMessage;
+use Symfony\\Component\\Scheduler\\Schedule;
+use Symfony\\Component\\Scheduler\\ScheduleProviderInterface;
+
+#[AsSchedule('main')]
+class MainSchedule implements ScheduleProviderInterface
+{
+    public function getSchedule(): Schedule
+    {
+        return (new Schedule())->add(
+            RecurringMessage::cron('*/5 8-18 * * mon', new SendReminders()),
+            RecurringMessage::every('30 seconds', new PollQueue()),
+            RecurringMessage::every('PT15M', new RefreshCache()),
+            RecurringMessage::cron('bogus expression here', new BrokenTask()),
+        );
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-scheduler-tasks.js', app);
+
+    expect(text).toContain('Schedule');
+  });
+
+  test('an IP rule with a public address and no path', async () => {
+    const app = appWith('symfony-security-ip-access', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { ips: [203.0.113.4, '2001:db8::1', 192.168.1.0/24], roles: ROLE_ADMIN }
+        - { path: ^/admin, roles: ROLE_ADMIN }
+        - { roles: PUBLIC_ACCESS }
+`,
+    });
+
+    const text = await runModule('symfony-security-ip-access.js', app);
+
+    expect(text).toContain('Public IP');
+  });
+
+  test('a serializer context built and never used', async () => {
+    const app = appWith('symfony-serializer-context-builder', {
+      'src/Service/Exporter.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Serializer\\Context\\Normalizer\\ObjectNormalizerContextBuilder;
+use Symfony\\Component\\Serializer\\Normalizer\\AbstractNormalizer;
+use Symfony\\Component\\Serializer\\SerializerInterface;
+
+class Exporter
+{
+    public function __construct(private SerializerInterface $serializer)
+    {
+    }
+
+    public function export(object $invoice): string
+    {
+        $context = (new ObjectNormalizerContextBuilder())
+            ->withContext([AbstractNormalizer::GROUPS => ['invoice:read'], AbstractNormalizer::ATTRIBUTES => ['id']]);
+
+        return $this->serializer->serialize($invoice, 'json');
+    }
+
+    public function inline(object $invoice): string
+    {
+        return $this->serializer->serialize($invoice, 'json', [
+            AbstractNormalizer::GROUPS => ['invoice:read'],
+            AbstractNormalizer::ATTRIBUTES => ['id'],
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-context-builder.js', app);
+
+    expect(text).toContain('AbstractNormalizer');
+  });
+
+  test('a kernel test that builds a client and logs in twice', async () => {
+    const app = appWith('symfony-test-http-kernel', {
+      'tests/Integration/AccountTest.php': `<?php
+
+namespace App\\Tests\\Integration;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+class AccountTest extends KernelTestCase
+{
+    public function testLoginThenProfile(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/login', ['email' => 'acme@example.com']);
+        $client->request('GET', '/profile');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-test-http-kernel.js', app);
+
+    expect(text).toContain('createClient');
+  });
+});
