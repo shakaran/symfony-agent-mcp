@@ -2085,3 +2085,302 @@ describe('prometheus alerting rules', () => {
     expect(text).toContain('highErrorRate');
   });
 });
+
+describe('preload hints', () => {
+  test('links of every kind in a template, and a preload built in php', async () => {
+    const app = appWith('preload-hints', {
+      'templates/base.html.twig': `<!doctype html>
+<html>
+    <head>
+        <link rel="preload" href="/build/app.css" as="style">
+        <link rel="preload" href="/build/app.js">
+        <link rel="preload" href="/build/font.woff2" crossorigin>
+        <link rel="prefetch" href="/build/hero.webp">
+        <link rel="modulepreload" href="/build/module.mjs">
+        <link rel="stylesheet" href="/build/other.css">
+        <link rel="preload">
+        {{ preload('/build/late.css', { as: 'style' }) }}
+    </head>
+    <body></body>
+</html>
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\WebLink\\Link;
+
+class HomeController
+{
+    public function index(): void
+    {
+        $this->addLink(new Link('preload', '/build/app.js'));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-asset-preload-hints.js', app);
+
+    expect(text).toContain('app.css');
+  });
+});
+
+describe('terraform', () => {
+  test('providers, a hardcoded secret in a resource and one in a variable default', async () => {
+    const app = appWith('terraform', {
+      'terraform/main.tf': `terraform {
+  required_version = ">= 1.5"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    random = {
+      source = "hashicorp/random"
+    }
+  }
+}
+
+resource "aws_db_instance" "acme" {
+  identifier = "acme"
+  password   = "hunter2-in-the-state-file"
+  username   = "acme"
+}
+
+variable "api_token" {
+  type    = string
+  default = "abcdef0123456789abcdef"
+}
+
+variable "region" {
+  type    = string
+  default = "eu-west-1"
+}
+`,
+      'root.tf': `resource "aws_s3_bucket" "assets" {
+  bucket = "acme-assets"
+}
+`,
+    });
+
+    const text = await runModule('terraform-config.js', app);
+
+    expect(text).toContain('aws');
+    expect(text).not.toContain('hunter2-in-the-state-file');
+  });
+});
+
+describe('caddy', () => {
+  test('a Caddyfile with tls and a proxy without health checks, and a caddy.json', async () => {
+    const app = appWith('caddy', {
+      'Caddyfile': `acme.example.com {
+    tls admin@example.com
+    root * /srv/app/public
+    php_fastcgi php:9000
+    reverse_proxy /api/* backend:8080
+    encode gzip
+}
+`,
+      'caddy.json': JSON.stringify({
+        apps: {
+          http: {
+            servers: {
+              srv0: {
+                listen: [':443'],
+                routes: [{ handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: 'backend:8080' }] }] }],
+              },
+            },
+          },
+        },
+      }, null, 2),
+      'docker/Caddyfile': `:80 {
+    root * /srv/app/public
+    php_fastcgi php:9000
+}
+`,
+      'docker/Caddyfile.dev': `:8080 {
+    root * /srv/app/public
+}
+`,
+    });
+
+    const text = await runModule('caddy-server-config.js', app);
+
+    expect(text).toContain('reverse_proxy');
+  });
+
+  test('a caddy.json that does not parse', async () => {
+    const app = appWith('caddy-broken', { 'caddy.json': '{ nope\n' });
+
+    const text = await runModule('caddy-server-config.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('ssrf', () => {
+  test('requests built from user input, from a variable, and one with a filter check', async () => {
+    const app = appWith('ssrf', {
+      'src/Service/Fetcher.php': `<?php
+
+namespace App\\Service;
+
+class Fetcher
+{
+    public function fromUser(): void
+    {
+        $ch = curl_init($_GET['url']);
+        curl_exec($ch);
+    }
+
+    public function optUser(): void
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $_POST['target']);
+        curl_exec($ch);
+    }
+
+    public function optVariable(string $url): void
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_exec($ch);
+    }
+
+    public function optFiltered(string $url): void
+    {
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return;
+        }
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_exec($ch);
+    }
+
+    public function contentsFiltered(string $url): string
+    {
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return '';
+        }
+
+        return file_get_contents($url);
+    }
+
+    public function contentsVariable(string $url): string
+    {
+        return file_get_contents($url);
+    }
+}
+`,
+    });
+
+    const unchecked = appWith('ssrf-unchecked', {
+      'src/Service/PlainFetcher.php': `<?php
+
+namespace App\\Service;
+
+class PlainFetcher
+{
+    public function init(string $url): void
+    {
+        $ch = curl_init($url);
+        curl_exec($ch);
+    }
+
+    public function contents(string $url): string
+    {
+        return file_get_contents($url);
+    }
+
+    public function fromUser(): string
+    {
+        return file_get_contents($_GET['url']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ssrf-patterns.js', app);
+    const uncheckedText = await runModule('php-ssrf-patterns.js', unchecked);
+
+    expect(text).toContain('curl');
+    expect(uncheckedText).toContain('file_get_contents');
+  });
+});
+
+describe('xsl', () => {
+  test('a stylesheet that includes a path built from a variable', async () => {
+    const app = appWith('xsl', {
+      'templates/report.xsl': `<?xml version="1.0"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+    <xsl:include href="{$base}/common.xsl"/>
+    <xsl:import href="header.xsl"/>
+
+    <xsl:template match="/">
+        <html><body><xsl:value-of select="report/title"/></body></html>
+    </xsl:template>
+</xsl:stylesheet>
+`,
+      'src/Report/Renderer.php': `<?php
+
+namespace App\\Report;
+
+class Renderer
+{
+    public function render(string $xml, string $xslPath): string
+    {
+        $xsl = new \\DOMDocument();
+        $xsl->load($xslPath);
+
+        $proc = new \\XSLTProcessor();
+        $proc->registerPHPFunctions();
+        $proc->importStylesheet($xsl);
+
+        $doc = new \\DOMDocument();
+        $doc->loadXML($xml);
+
+        return $proc->transformToXml($doc);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-xsl-transformation.js', app);
+
+    expect(text).toContain('xsl');
+  });
+});
+
+describe('asset packages', () => {
+  test('every versioning strategy, a manifest that is not there and two packages on one path', async () => {
+    const app = appWith('asset-packages', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version: 'v42'
+        json_manifest_path: '%kernel.project_dir%/public/build/manifest.json'
+        packages:
+            static:
+                base_path: /static
+                version_strategy: 'Symfony\\Component\\Asset\\VersionStrategy\\JsonManifestVersionStrategy'
+                json_manifest_path: '%kernel.project_dir%/public/build/missing.json'
+            images:
+                base_path: /static
+                version: '%env(APP_VERSION)%'
+            docs:
+                base_path: /docs
+                version: '1.0.0'
+            cdn:
+                base_urls: ['https://cdn.example.com']
+                version_strategy: 'App\\Asset\\CustomVersionStrategy'
+            empty: ~
+`,
+      'public/build/manifest.json': JSON.stringify({ 'app.js': '/build/app.123.js' }, null, 2),
+    });
+
+    const text = await runModule('symfony-asset-packages.js', app);
+
+    expect(text).toContain('static');
+  });
+});

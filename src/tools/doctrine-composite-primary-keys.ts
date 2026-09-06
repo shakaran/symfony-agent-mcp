@@ -82,7 +82,7 @@ function extractIdFields(content: string): string[] {
 }
 
 function extractGeneratedValueStrategy(content: string): string {
-  const attrMatch = /#\[GeneratedValue\s*\(\s*strategy\s*:\s*['"](\w+)['"]/i.exec(content) ??
+  const attrMatch = /#\[(?:\w{1,40}\\)?GeneratedValue\s*\(\s*strategy\s*:\s*['"](\w+)['"]/i.exec(content) ??
                     /@GeneratedValue\s*\(\s*strategy\s*=\s*['"](\w+)['"]/i.exec(content) ??
                     /GeneratedValue\s*\(["'](\w+)['"]\)/i.exec(content);
   return attrMatch ? attrMatch[1].toUpperCase() : '';

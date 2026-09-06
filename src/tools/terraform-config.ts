@@ -49,7 +49,11 @@ function parseTerraformFile(content: string, relPath: string): TerraformConfigIn
   const results: TerraformConfigInfo[] = [];
 
   // terraform block — required_version
-  const terraformBlockMatch = content.match(/\bterraform\s*\{([^}]{0,2000})\}/s);
+  // The terraform block holds required_providers, which holds a block per
+  // provider; [^}] stopped at the first inner brace and cut the block short.
+  const terraformBlockMatch = content.match(
+    /\bterraform\s*\{((?:[^{}]|\{(?:[^{}]|\{[^{}]{0,500}\}){0,1000}\}){0,3000})\}/s,
+  );
   if (terraformBlockMatch) {
     const tfBlock = terraformBlockMatch[1];
 
@@ -76,7 +80,9 @@ function parseTerraformFile(content: string, relPath: string): TerraformConfigIn
     }
 
     // required_providers
-    const reqProvMatch = tfBlock.match(/required_providers\s*\{([^}]{0,1000})\}/s);
+    // Each provider inside required_providers is a block of its own, and
+    // [^}] could not cross the first one, so no provider was ever listed.
+    const reqProvMatch = tfBlock.match(/required_providers\s*\{((?:[^{}]|\{[^{}]{0,500}\}){0,2000})\}/s);
     if (reqProvMatch) {
       const provBlock = reqProvMatch[1];
       const provPattern = /(\w[\w-]{0,40})\s*=\s*\{/g;

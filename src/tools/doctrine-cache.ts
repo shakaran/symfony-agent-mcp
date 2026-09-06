@@ -132,7 +132,7 @@ function scanCachedEntities(appPath: string): CachedEntity[] {
                     /#\[(?:ORM\\)?Cache[^)]*CacheUsage::(\w+)/.exec(content);
 
     const hasCachedAssociations =
-      /#\[Cache[^)]*\)\s*#\[(?:ManyToOne|OneToMany|ManyToMany|OneToOne)/.test(content);
+      /#\[(?:\w{1,40}\\)?Cache[^)]*\)\s*#\[(?:\w{1,40}\\)?(?:ManyToOne|OneToMany|ManyToMany|OneToOne)/.test(content);
 
     results.push({
       class: classM[1],

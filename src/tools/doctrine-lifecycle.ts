@@ -117,7 +117,7 @@ function parseEntityLifecycle(filePath: string): EntityLifecycle | null {
 
   // Detect entity listeners
   const entityListeners: string[] = [];
-  for (const m of content.matchAll(/#\[EntityListeners?\s*\(\s*\[([^\]]+)\]/g)) {
+  for (const m of content.matchAll(/#\[(?:\w{1,40}\\)?EntityListeners?\s*\(\s*\[([^\]]+)\]/g)) {
     for (const lm of m[1].matchAll(/[\w\\]+::class|['"][\w\\]+'['"]/g)) {
       const listener = lm[0].replace(/::class|['"]/g, '').split('\\').pop() ?? '';
       if (listener) entityListeners.push(listener);
