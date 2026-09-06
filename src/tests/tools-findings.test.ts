@@ -37672,3 +37672,308 @@ class Address
     expect(text).toContain('alid');
   });
 });
+
+describe('batch 120: the last analysers — sequences, workflows, ICU, Twilio and servers', () => {
+  test('a group sequence holding one group', async () => {
+    const app = appWith('symfony-validator-group-sequence', {
+      'src/Entity/Registration.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+use Symfony\\Component\\Validator\\Constraints\\GroupSequence;
+
+#[GroupSequence(['Basic'])]
+class Registration
+{
+    #[Assert\\NotBlank(groups: ['Basic'])]
+    private string $email = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-group-sequence.js', app);
+
+    expect(text).toContain('single group');
+  });
+
+  test('a unique entity constraint on the class', async () => {
+    const app = appWith('symfony-validator-unique-entity', {
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Bridge\\Doctrine\\Validator\\Constraints\\UniqueEntity;
+
+#[ORM\\Entity]
+#[UniqueEntity(fields: ['email'], message: 'That email is taken.')]
+class User
+{
+    #[ORM\\Column(length: 180)]
+    private string $email = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-unique-entity.js', app);
+
+    expect(text).toContain('UniqueEntity');
+  });
+
+  test('a workflow marked in a single place', async () => {
+    const app = appWith('symfony-workflow-marking', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        article:
+            type: workflow
+            marking_store:
+                type: method
+                property: marking
+            supports:
+                - App\\Entity\\Article
+            places: [draft, published]
+            transitions:
+                publish:
+                    from: draft
+                    to: published
+`,
+    });
+
+    const text = await runModule('symfony-workflow-marking.js', app);
+
+    expect(text).toContain('marking');
+  });
+
+  test('a workflow with its history kept in an entity', async () => {
+    const app = appWith('symfony-workflow-persistence', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        article:
+            type: workflow
+            marking_store:
+                type: method
+                property: currentPlace
+            supports:
+                - App\\Entity\\Article
+            places: [draft, published]
+            transitions:
+                publish:
+                    from: draft
+                    to: published
+`,
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Article
+{
+    #[ORM\\Column]
+    private string $currentPlace = 'draft';
+}
+`,
+      'src/Entity/WorkflowHistory.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class WorkflowHistory
+{
+    #[ORM\\Column]
+    private string $transition = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-persistence.js', app);
+
+    expect(text).toContain('orkflow');
+  });
+
+  test('ICU messages in the catalogue', async () => {
+    const app = appWith('translation-icu-format', {
+      'translations/messages+intl-icu.en.yaml': `invoice.count: '{count, plural, =0 {No invoices} one {One invoice} other {# invoices}}'
+invoice.gender: '{gender, select, male {He} female {She} other {They}} paid'
+invoice.plain: 'A plain message'
+`,
+      'translations/messages.en.yaml': "home.title: 'Welcome'\n",
+    });
+
+    const text = await runModule('translation-icu-format.js', app);
+
+    expect(text).toContain('ICU');
+  });
+
+  test('Twilio built with its credentials in the code', async () => {
+    const app = appWith('twilio-integration', {
+      'composer.json': JSON.stringify({ require: { 'twilio/sdk': '^7.0' } }, null, 4) + '\n',
+      'src/Sms/TwilioSender.php': `<?php
+
+namespace App\\Sms;
+
+use Twilio\\Rest\\Client;
+
+class TwilioSender
+{
+    public function client(): Client
+    {
+        return new Client('ACabcdefghijklmnopqrstuvwxyz012345', 'abcdefghijklmnopqrstuvwxyz012345');
+    }
+
+    public function send(string $to, string $body): void
+    {
+        $this->client()->messages->create($to, ['from' => '+441234567890', 'body' => $body]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('twilio-integration.js', app);
+
+    expect(text).toContain('Twilio');
+  });
+
+  test('a validated class with groups and cascading', async () => {
+    const app = appWith('validation-flags', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Order
+{
+    #[Assert\\NotBlank(groups: ['checkout'])]
+    private string $number = '';
+
+    #[Assert\\Valid]
+    private ?Address $address = null;
+}
+`,
+      'src/Entity/Address.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Address
+{
+    #[Assert\\NotBlank]
+    private string $street = '';
+}
+`,
+    });
+
+    const text = await runModule('validation.js', app, ['Order']);
+
+    expect(text).toContain('Order');
+  });
+
+  test('a Varnish configuration for the application', async () => {
+    const app = appWith('varnish-config', {
+      'docker/varnish/default.vcl': `vcl 4.1;
+
+backend default {
+    .host = "php";
+    .port = "8080";
+}
+
+sub vcl_recv {
+    if (req.http.Cookie) {
+        return (pass);
+    }
+}
+
+sub vcl_backend_response {
+    set beresp.ttl = 1h;
+}
+`,
+    });
+
+    const text = await runModule('varnish-config.js', app);
+
+    expect(text).toContain('arnish');
+  });
+
+  test('Vault reached over plain HTTP', async () => {
+    const app = appWith('vault-integration', {
+      '.env': 'APP_ENV=prod\nVAULT_ADDR=http://vault.acme.internal:8200\nVAULT_TOKEN=hvs.abcdefghijklmnop\n',
+      'src/Secrets/VaultClient.php': `<?php
+
+namespace App\\Secrets;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class VaultClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function read(string $path): array
+    {
+        return $this->client->request('GET', $_ENV['VAULT_ADDR'] . '/v1/' . $path, [
+            'headers' => ['X-Vault-Token' => $_ENV['VAULT_TOKEN']],
+        ])->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('vault-integration.js', app);
+
+    expect(text).toContain('VAULT_ADDR');
+  });
+
+  test('a Vercel deployment configuration', async () => {
+    const app = appWith('vercel-deploy-config', {
+      'vercel.json': JSON.stringify({
+        version: 2,
+        framework: null,
+        builds: [{ src: 'api/index.php', use: 'vercel-php@0.6.0' }],
+        routes: [{ src: '/(.*)', dest: '/api/index.php' }],
+        env: { APP_ENV: 'prod' },
+      }, null, 4) + '\n',
+      'api/index.php': "<?php\n\nrequire dirname(__DIR__) . '/public/index.php';\n",
+    });
+
+    const text = await runModule('vercel-deploy-config.js', app);
+
+    expect(text).toContain('ercel');
+  });
+
+  test('an nginx virtual host and an Apache one side by side', async () => {
+    const app = appWith('webserver-config', {
+      'docker/site.conf': `server {
+    listen 80;
+    server_name acme.example.com;
+    root /var/www/public;
+
+    location ~ ^/index\\.php(/|$) {
+        fastcgi_pass php:9000;
+        include fastcgi_params;
+    }
+}
+`,
+      'docker/vhost.conf': `<VirtualHost *:80>
+    ServerName acme.example.com
+    DocumentRoot /var/www/public
+
+    <Directory /var/www/public>
+        AllowOverride None
+        Require all granted
+    </Directory>
+</VirtualHost>
+`,
+    });
+
+    const text = await runModule('webserver-config.js', app);
+
+    expect(text).toContain('acme.example.com');
+  });
+});
