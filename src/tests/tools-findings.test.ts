@@ -16614,7 +16614,7 @@ final class UserFactory extends ModelFactory
 
 describe('batch 57: versioning, secrets, CI, Codeception, commands, layers, Deptrac', () => {
   test('more versioned routes than the report prints, and versioned groups', async () => {
-    const app = appWith('api-versioning', {
+    const app = appWith('api-versioning-2', {
       'src/Controller/Api/V1Controller.php': `<?php
 
 namespace App\\Controller\\Api;
@@ -18540,7 +18540,7 @@ parameters:
 
 describe('batch 62: PHPUnit extensions and tests, PWA, limiters, repositories, voters', () => {
   test('a PHPUnit extension registered in the configuration', async () => {
-    const app = appWith('phpunit-extensions', {
+    const app = appWith('phpunit-extensions-2', {
       'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
 <phpunit bootstrap="tests/bootstrap.php">
     <extensions>
@@ -20437,7 +20437,7 @@ functions:
   });
 
   test('Behat tags declared in the suite and used in the features', async () => {
-    const app = appWith('behat-tags', {
+    const app = appWith('behat-tags-2', {
       'behat.yaml': `default:
     suites:
         default:
@@ -21065,7 +21065,7 @@ class Invoice
   });
 
   test('a package configured for dev and never for prod', async () => {
-    const app = appWith('env-config-diff', {
+    const app = appWith('env-config-diff-2', {
       'config/bundles.php': `<?php
 
 return [
@@ -24856,7 +24856,7 @@ class Customer
   });
 
   test('Behat suites that point outside the application', async () => {
-    const app = appWith('behat-config', {
+    const app = appWith('behat-config-2', {
       'behat.yaml': `default:
     suites:
         default:
@@ -25073,7 +25073,7 @@ class AdminController extends AbstractController
   });
 
   test('CORS configured tightly enough to have nothing to report', async () => {
-    const app = appWith('cors-clean', {
+    const app = appWith('cors-clean-2', {
       'config/packages/nelmio_cors.yaml': `nelmio_cors:
     defaults:
         allow_credentials: false
@@ -25781,7 +25781,7 @@ newrelic.distributed_tracing_enabled = false
   });
 
   test('an OAuth client redirected over plain HTTP', async () => {
-    const app = appWith('oauth-sso', {
+    const app = appWith('oauth-sso-2', {
       'composer.json': JSON.stringify({ require: { 'knpuniversity/oauth2-client-bundle': '^2.0' } }, null, 4) + '\n',
       'config/packages/knpu_oauth2_client.yaml': `knpu_oauth2_client:
     clients:
@@ -26127,7 +26127,7 @@ class CountryLabel
 
 describe('batch 88: FFI, callables, FTP, GD, heredocs, integers, LDAP and named arguments', () => {
   test('FFI used with the extension switched off', async () => {
-    const app = appWith('php-ffi', {
+    const app = appWith('php-ffi-2', {
       'php.ini': `[PHP]
 ffi.enable = false
 `,
@@ -26802,7 +26802,7 @@ class XslRenderer
   });
 
   test('a suite that mixes annotations with attributes', async () => {
-    const app = appWith('phpunit-attributes', {
+    const app = appWith('phpunit-attributes-2', {
       'tests/Unit/InvoiceTest.php': `<?php
 
 namespace App\\Tests\\Unit;
@@ -28605,7 +28605,7 @@ class Invoice
   });
 
   test('rate limits declared per route with a burst', async () => {
-    const app = appWith('api-rate-limits', {
+    const app = appWith('api-rate-limits-2', {
       'config/packages/rate_limiter.yaml': `framework:
     rate_limiter:
         api:
@@ -28891,7 +28891,7 @@ class Kernel extends BaseKernel
   });
 
   test('a custom authenticator on a firewall with no throttling', async () => {
-    const app = appWith('custom-authenticators', {
+    const app = appWith('custom-authenticators-2', {
       'config/packages/security.yaml': `security:
     firewalls:
         main:
@@ -34119,7 +34119,7 @@ class CheckoutTest extends PantherTestCase
 
 describe('batch 113: hashers, Pest, closures, dates, deprecations, fibers and matches', () => {
   test('password hashers configured per user class', async () => {
-    const app = appWith('password-hashers', {
+    const app = appWith('password-hashers-2', {
       'config/packages/security.yaml': `security:
     password_hashers:
         App\\Entity\\User:
