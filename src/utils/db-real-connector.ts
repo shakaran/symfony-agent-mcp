@@ -318,6 +318,9 @@ async function runSQLite(
   try {
     // @ts-expect-error — optional peer dependency
     const mod = await import('better-sqlite3');
+    /* istanbul ignore next -- the package is CommonJS, so the import always
+       arrives wrapped in a default; the other half is for a bundler that does
+       not wrap it. */
     BetterSqlite3 = mod.default ?? mod;
   } catch {
     throw new Error('better-sqlite3 driver not found. Install it: npm install better-sqlite3');

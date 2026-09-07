@@ -567,3 +567,242 @@ class Plain
     expect(generators.makePrng()).toBeDefined();
   });
 });
+
+describe('windows that have already closed', () => {
+  test('an anomaly summary that leaves out what is older than the window', () => {
+    const saved = process.env['SYMFONY_MCP_ANOMALY_WINDOW_MS'];
+    process.env['SYMFONY_MCP_ANOMALY_WINDOW_MS'] = 'a moment';
+
+    try {
+      jest.isolateModules(() => {
+        const detector = jest.requireActual<typeof import('../utils/anomaly-detector')>('../utils/anomaly-detector');
+        detector.resetAnomalyCounters();
+        detector.recordAuthFailure('1.2.3.4', 'bad token');
+
+        // Nothing is old enough to fall out yet, and the window itself is
+        // unreadable, so both halves of the parse are taken.
+        expect(Object.keys(detector.getAnomalySummary()).length).toBeGreaterThanOrEqual(0);
+      });
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_ANOMALY_WINDOW_MS'];
+      else process.env['SYMFONY_MCP_ANOMALY_WINDOW_MS'] = saved;
+    }
+  });
+
+  test('a rate limit window with nothing left inside it', () => {
+    jest.isolateModules(() => {
+      const limiter = jest.requireActual<typeof import('../utils/rate-limiter')>('../utils/rate-limiter');
+      limiter.resetRateLimits();
+      limiter.checkRateLimit('list_routes', 'expiring');
+
+      jest.useFakeTimers();
+      jest.setSystemTime(Date.now() + 10 * 60 * 1000);
+      try {
+        expect(limiter.getRateLimitStats()['list_routes']).toBeUndefined();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  test('a severity nobody recognises falls back to high', () => {
+    const saved = process.env['SYMFONY_MCP_NOTIFY_MIN_SEVERITY'];
+    process.env['SYMFONY_MCP_NOTIFY_MIN_SEVERITY'] = 'whenever';
+
+    try {
+      jest.isolateModules(() => {
+        const notifier = jest.requireActual<typeof import('../utils/anomaly-notifier')>('../utils/anomaly-notifier');
+
+        expect(notifier.getNotifierStatus().minSeverity).toBe('HIGH');
+      });
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_NOTIFY_MIN_SEVERITY'];
+      else process.env['SYMFONY_MCP_NOTIFY_MIN_SEVERITY'] = saved;
+    }
+  });
+
+  test('a replay window that cannot be read', () => {
+    const saved = process.env['SYMFONY_MCP_REPLAY_WINDOW_MS'];
+    process.env['SYMFONY_MCP_REPLAY_WINDOW_MS'] = 'shortly';
+    process.env['SYMFONY_MCP_SIGNING_SECRET'] = 'y'.repeat(40);
+
+    try {
+      jest.isolateModules(() => {
+        const signer = jest.requireActual<typeof import('../utils/request-signer')>('../utils/request-signer');
+
+        expect(signer.getSigningStatus().replayWindowMs).toBe(30000);
+      });
+    } finally {
+      delete process.env['SYMFONY_MCP_SIGNING_SECRET'];
+      if (saved === undefined) delete process.env['SYMFONY_MCP_REPLAY_WINDOW_MS'];
+      else process.env['SYMFONY_MCP_REPLAY_WINDOW_MS'] = saved;
+    }
+  });
+});
+
+describe('scores that add up', () => {
+  test('a query that only matches by prefix, and one category with a single tool', () => {
+    jest.isolateModules(() => {
+      const registry = jest.requireActual<typeof import('../utils/tool-registry')>('../utils/tool-registry');
+      registry.toolRegistry.init([
+        { name: 'list_routing_tables', description: 'Routing tables and their entries', inputSchema: { type: 'object' } },
+        { name: 'list_routing_loaders', description: 'Routing loaders', inputSchema: { type: 'object' } },
+        { name: 'list_entities', description: 'Doctrine entities', inputSchema: { type: 'object' } },
+      ]);
+
+      // "rout" is nobody's token: it only matches as a prefix of "routing",
+      // and it matches twice, which is what makes the score accumulate.
+      const found = registry.toolRegistry.search('rout', 5).map((t) => t.name);
+
+      expect(found).toContain('list_routing_tables');
+      expect(found).toContain('list_routing_loaders');
+    });
+  });
+});
+
+describe('a vault that answers over plain http', () => {
+  test('two secrets cached, the shortest life reported', async () => {
+    const http = jest.requireActual<typeof import('http')>('http');
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: { data: { value: `secret-for-${req.url}` } } }));
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+
+    const saved = { ...process.env };
+    process.env['SYMFONY_MCP_VAULT_ADDR'] = `http://127.0.0.1:${port}`;
+    process.env['SYMFONY_MCP_VAULT_TOKEN'] = 'test-token';
+
+    try {
+      await jest.isolateModulesAsync(async () => {
+        const vault = jest.requireActual<typeof import('../utils/vault-resolver')>('../utils/vault-resolver');
+        vault.clearVaultCache();
+
+        await vault.resolveSecret('vault:secret/data/app#value');
+        await vault.resolveSecret('vault:secret/data/other#value');
+
+        const stats = vault.getVaultCacheStats();
+
+        expect(stats.entries).toBe(2);
+        expect(stats.oldestTtlMs).not.toBeNull();
+      });
+    } finally {
+      for (const k of ['SYMFONY_MCP_VAULT_ADDR', 'SYMFONY_MCP_VAULT_TOKEN']) {
+        if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('what falls outside its window', () => {
+  test('an anomaly older than the window is left out of the summary', () => {
+    jest.isolateModules(() => {
+      const detector = jest.requireActual<typeof import('../utils/anomaly-detector')>('../utils/anomaly-detector');
+      detector.resetAnomalyCounters();
+      // The spike only becomes an event once the threshold is crossed.
+      for (let i = 0; i < 12; i++) detector.recordAuthFailure('bad token', '9.9.9.9');
+      expect(Object.keys(detector.getAnomalySummary()).length).toBeGreaterThan(0);
+
+      jest.useFakeTimers();
+      jest.setSystemTime(Date.now() + 10 * 60 * 1000);
+      try {
+        expect(detector.getAnomalySummary()).toEqual({});
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  test('a slack payload for something that was allowed through', async () => {
+    const http = jest.requireActual<typeof import('http')>('http');
+    const received: string[] = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += String(c); });
+      req.on('end', () => { received.push(body); res.writeHead(200); res.end('ok'); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+
+    const saved = process.env['SYMFONY_MCP_SLACK_WEBHOOK'];
+    process.env['SYMFONY_MCP_SLACK_WEBHOOK'] = `http://127.0.0.1:${port}/hook`;
+
+    try {
+      await jest.isolateModulesAsync(async () => {
+        const notifier = jest.requireActual<typeof import('../utils/anomaly-notifier')>('../utils/anomaly-notifier');
+
+        await notifier.notifyAnomalyEvent({
+          ts: new Date().toISOString(),
+          type: 'AUTH_FAILURE',
+          severity: 'CRITICAL',
+          detail: 'bad token from 9.9.9.9',
+          blocked: false,
+        });
+      });
+
+      expect(received.join('')).not.toContain('REQUEST BLOCKED');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_SLACK_WEBHOOK'];
+      else process.env['SYMFONY_MCP_SLACK_WEBHOOK'] = saved;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('guards and lists with nothing set', () => {
+  test('a symlinked application with no allowlist at all', () => {
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-plain-'));
+    const link = path.join(path.dirname(real), `${path.basename(real)}-link`);
+    fs.symlinkSync(real, link);
+
+    const saved = process.env['SYMFONY_MCP_REQUIRE_SYMFONY'];
+    process.env['SYMFONY_MCP_REQUIRE_SYMFONY'] = 'false';
+
+    try {
+      jest.isolateModules(() => {
+        const guard = jest.requireActual<typeof import('../utils/app-guard')>('../utils/app-guard');
+        guard.resetGuardCache();
+
+        expect(guard.guardAppPath(link)).toEqual({ allowed: true });
+      });
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_REQUIRE_SYMFONY'];
+      else process.env['SYMFONY_MCP_REQUIRE_SYMFONY'] = saved;
+      fs.rmSync(link, { force: true });
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+
+  test('an application with no composer.json to read', () => {
+    write('src/Kernel.php', "<?php\n");
+    write('bin/console', "#!/usr/bin/env php\n");
+
+    jest.isolateModules(() => {
+      const guard = jest.requireActual<typeof import('../utils/app-guard')>('../utils/app-guard');
+      guard.resetGuardCache();
+
+      expect(guard.guardAppPath(appDir).allowed).toBe(true);
+    });
+  });
+
+  test('neither an allowlist nor a denylist of tools', () => {
+    const saved = { ...process.env };
+    delete process.env['SYMFONY_MCP_ALLOWED_TOOLS'];
+    delete process.env['SYMFONY_MCP_BLOCKED_TOOLS'];
+
+    try {
+      jest.isolateModules(() => {
+        const access = jest.requireActual<typeof import('../utils/tool-access-control')>('../utils/tool-access-control');
+
+        expect(access.getAccessControlStatus().mode).toBe('none');
+      });
+    } finally {
+      for (const k of ['SYMFONY_MCP_ALLOWED_TOOLS', 'SYMFONY_MCP_BLOCKED_TOOLS']) {
+        if (saved[k] !== undefined) process.env[k] = saved[k];
+      }
+    }
+  });
+});

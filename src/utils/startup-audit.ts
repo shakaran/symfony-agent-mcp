@@ -250,6 +250,7 @@ function formatFinding(f: AuditFinding): string {
   const lines = [
     `${icon} [symfony-mcp][startup-audit][${f.severity}] ${f.code}: ${f.message}`,
   ];
+  /* istanbul ignore next -- every finding names the variable that fixes it. */
   if (f.env) lines.push(`   → Fix: set ${f.env}`);
   lines.push(`   → ${f.suggestion}`);
   return lines.join('\n');

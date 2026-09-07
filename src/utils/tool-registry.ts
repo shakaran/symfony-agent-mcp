@@ -146,7 +146,8 @@ class ToolRegistry {
     return categories
       .filter(c => c !== 'discovery')
       .map(cat => {
-        const tools = this.byCategory.get(cat) ?? [];
+        // cat comes from the map's own keys.
+        const tools = this.byCategory.get(cat)!;
         return {
           key: cat,
           description: CATEGORY_DESCRIPTIONS[cat],

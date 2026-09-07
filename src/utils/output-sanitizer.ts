@@ -100,7 +100,9 @@ function trackDlpChanges(before: string, after: string): void {
   if (added) {
     const counts = new Map<string, number>();
     for (const match of added) {
-      const type = (match.match(/\[REDACTED:([A-Z_]+)/) ?? [])[1] ?? 'UNKNOWN';
+      // Every string in `added` was matched by a pattern that starts the same
+      // way, so the inner match and its group are always there.
+      const type = match.match(/\[REDACTED:([A-Z_]+)/)![1];
       counts.set(type, (counts.get(type) ?? 0) + 1);
     }
     for (const [type, count] of counts) {

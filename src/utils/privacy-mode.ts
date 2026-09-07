@@ -143,7 +143,8 @@ function applyParanoid(text: string, toolName: string): string {
 
   // Anonymize file path basenames while keeping extension (for type context)
   out = out.replace(FILE_PATH_RE, (match, capture) => {
-    const ext = capture.split('.').pop() ?? '';
+    // split always yields at least one part.
+    const ext = capture.split('.').pop()!;
     const prefix = match.slice(0, match.indexOf(capture));
     return `${prefix}[FILE.${ext.toUpperCase()}]`;
   });

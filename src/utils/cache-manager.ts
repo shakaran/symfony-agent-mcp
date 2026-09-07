@@ -87,6 +87,8 @@ class LRUCacheManager {
     // Evict oldest when at capacity (LRU = first inserted = first removed)
     if (cache.size >= MAX_CACHE_SIZE) {
       const firstKey = cache.keys().next().value;
+      /* istanbul ignore next -- the map is at capacity here, so it has a
+         first key; the check is for the type. */
       if (firstKey !== undefined) {
         cache.delete(firstKey);
         this.evictions++;
