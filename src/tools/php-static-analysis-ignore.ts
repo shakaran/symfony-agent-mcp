@@ -66,13 +66,18 @@ interface SuppressionMatch {
   reason?: string;
 }
 
+// The rule code sits on the same line as the annotation. Asking for \s+ let
+// the capture cross the newline and take the suppressed line as the reason,
+// so a bare @phpstan-ignore-next-line never looked bare.
+const H = '[^\\S\\n]';
+
 const SUPPRESSION_PATTERNS: Array<{ re: RegExp; type: string }> = [
-  { re: /@phpstan-ignore-next-line(?:\s+([^\n]{0,120}))?/g,     type: 'phpstan-ignore-next-line' },
-  { re: /@phpstan-ignore(?:\s+([^\n]{0,120}))?/g,               type: 'phpstan-ignore' },
-  { re: /@psalm-suppress\s+([\w]{1,80})(?:\s+([^\n]{0,100}))?/g, type: 'psalm-suppress' },
-  { re: /@phpcs:ignore(?:\s+([^\n]{0,120}))?/g,                  type: 'phpcs:ignore' },
-  { re: /@phpcs:disable(?:\s+([^\n]{0,120}))?/g,                 type: 'phpcs:disable' },
-  { re: /@phpcs:enable(?:\s+([^\n]{0,120}))?/g,                  type: 'phpcs:enable' },
+  { re: new RegExp(`@phpstan-ignore-next-line(?:${H}+([^\\n]{0,120}))?`, 'g'), type: 'phpstan-ignore-next-line' },
+  { re: new RegExp(`@phpstan-ignore(?:${H}+([^\\n]{0,120}))?`, 'g'),           type: 'phpstan-ignore' },
+  { re: new RegExp(`@psalm-suppress${H}+(\\w{1,80})(?:${H}+([^\\n]{0,100}))?`, 'g'), type: 'psalm-suppress' },
+  { re: new RegExp(`@phpcs:ignore(?:${H}+([^\\n]{0,120}))?`, 'g'),             type: 'phpcs:ignore' },
+  { re: new RegExp(`@phpcs:disable(?:${H}+([^\\n]{0,120}))?`, 'g'),            type: 'phpcs:disable' },
+  { re: new RegExp(`@phpcs:enable(?:${H}+([^\\n]{0,120}))?`, 'g'),             type: 'phpcs:enable' },
   { re: /@SuppressWarnings\s*\(\s*"([^"]{1,80})"\s*\)/g,        type: 'SuppressWarnings' },
 ];
 

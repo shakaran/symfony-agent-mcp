@@ -42359,3 +42359,299 @@ class Plain
     expect(text).toContain('No PHP_CodeSniffer configuration found');
   });
 });
+
+describe('batch 151: hashes, routing tables and empty sections', () => {
+  test('md5 next to a password variable', async () => {
+    const app = appWith('php-hash-near-sensitive', {
+      'src/Security/LegacyHasher.php': `<?php
+
+namespace App\\Security;
+
+class LegacyHasher
+{
+    public function check(string $plain, string $stored): bool
+    {
+        $password = trim($plain);
+        $digest = md5($password);
+
+        return hash_equals($stored, $digest);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-hash-algorithm-security.js', app);
+
+    expect(text).toContain('md5');
+  });
+
+  test('a routing entry whose transport is written as a list', async () => {
+    const app = appWith('symfony-messenger-routing-list', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            failed: 'doctrine://default?queue_name=failed'
+        routing:
+            'App\\Message\\SendEmail':
+                - async
+                - failed
+            'App\\Message\\Report': async  # goes to the worker
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text).toContain('async');
+  });
+
+  test('a messenger section with transports but nothing under them', async () => {
+    const app = appWith('symfony-messenger-routing-empty', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+        routing:
+            'App\\Message\\Ping': sync
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('batch 152: runtimes and workers', () => {
+  test('a roadrunner runtime with no restart limit and APP_RUNTIME committed', async () => {
+    const app = appWith('symfony-runtime-env-roadrunner', {
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "symfony/runtime": "^7.0", "baldinof/roadrunner-bundle": "^3.0" }
+}
+`,
+      '.env': `APP_ENV=prod
+APP_RUNTIME=Baldinof\\RoadRunnerBundle\\Runtime\\Runtime
+`,
+
+    });
+
+    const text = await runModule('symfony-runtime-env.js', app);
+
+    expect(text).toContain('APP_RUNTIME');
+  });
+});
+
+describe('batch 153: a profile with more queries than it prints', () => {
+  test('a token whose collector records twenty queries', async () => {
+    const profile = JSON.stringify({
+      db: {
+        time: 0.42,
+        // The profiler prints the first twenty and counts the rest.
+        queries: Array.from({ length: 25 }, (_, i) => ({
+          sql: `SELECT * FROM orders WHERE id = ${i + 1}`,
+          executionMs: 1.5 + i,
+        })),
+      },
+      request: { method: 'GET', url: 'http://localhost/orders', statusCode: 200 },
+      time: { duration: 120 },
+    });
+
+    const app = appWith('profiler-more-queries', {
+      'var/cache/dev/profiler/index.csv': 'abcd12,127.0.0.1,GET,http://localhost/orders,1767225600,200\n',
+      'var/cache/dev/profiler/12/cd/abcd12': profile,
+    });
+
+    const text = await runModule('profiler.js', app, ['abcd12']);
+
+    expect(text).toContain('more queries');
+  });
+});
+
+describe('batch 154: a schema derived from entities', () => {
+  test('a one-to-one relation gives the foreign key a unique index', async () => {
+    const app = appWith('database-one-to-one', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'orders')]
+class Order
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue]
+    #[ORM\\Column]
+    private int $id;
+
+    #[ORM\\Column(length: 40)]
+    private string $reference;
+
+    #[ORM\\Column(nullable: true)]
+    private ?string $note;
+
+    #[ORM\\OneToOne(targetEntity: Invoice::class, inversedBy: 'order')]
+    private Invoice $invoice;
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'invoices')]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue]
+    #[ORM\\Column]
+    private int $id;
+}
+`,
+    });
+
+    const text = await runModule('database.js', app, ['orders']);
+
+    expect(text).toContain('UNIQUE');
+  });
+});
+
+describe('batch 155: loops, buffers and phpstan comments', () => {
+  test('a method whose loops nest three deep', async () => {
+    const app = appWith('php-cognitive-nested-loops', {
+      'src/Service/Matrix.php': `<?php
+
+namespace App\\Service;
+
+class Matrix
+{
+    public function walk(array $rows): int
+    {
+        $total = 0;
+
+        foreach ($rows as $row) {
+            for ($i = 0; $i < count($row); $i++) {
+                while ($i < 10) {
+                    do {
+                        $total += 0;
+                    } while (false);
+
+                    switch ($row[$i]) {
+                        case 1:
+                            $total++;
+                            break;
+                        default:
+                            $total--;
+                    }
+                    $i++;
+                }
+            }
+        }
+
+        return $total;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-cognitive-complexity.js', app);
+
+    expect(text).toContain('walk');
+  });
+
+  test('a buffer flushed inside a loop and started inside a catch', async () => {
+    const app = appWith('php-output-buffering-misuse', {
+      'src/Stream/Exporter.php': `<?php
+
+namespace App\\Stream;
+
+class Exporter
+{
+    public function export(array $rows): void
+    {
+        ob_start();
+
+        foreach ($rows as $row) {
+            echo $row;
+            ob_flush();
+        }
+
+        ob_end_flush();
+    }
+
+    public function recover(): void
+    {
+        try {
+            $this->export([]);
+        } catch (\\Throwable $e) {
+            ob_start();
+            echo 'failed';
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-output-buffering.js', app);
+
+    expect(text).toContain('ob_flush');
+  });
+
+  test('a phpstan ignore with no rule code beside a baseline', async () => {
+    const app = appWith('php-static-analysis-ignore-bare', {
+      'src/Service/Legacy.php': `<?php
+
+namespace App\\Service;
+
+class Legacy
+{
+    public function run(array $input): int
+    {
+        // @phpstan-ignore-next-line
+        return $input['count'];
+    }
+
+    public function other(array $input): int
+    {
+        /** @phpstan-ignore-next-line */
+        return $input['other'];
+    }
+
+    // @phpcs:disable Generic.Files.LineLength
+    public function wide(): string
+    {
+        /** @psalm-suppress MixedAssignment reading the legacy payload */
+        $a = $this->payload['a'];
+        /** @psalm-suppress MixedArrayAccess still the legacy payload */
+        $b = $this->payload['b'];
+        /** @psalm-suppress MixedReturnStatement legacy again */
+        $c = $this->payload['c'];
+        /** @psalm-suppress MixedInferredReturnType legacy again */
+        $d = $this->payload['d'];
+        /** @psalm-suppress MixedArgument legacy again */
+        $e = $this->payload['e'];
+        /** @psalm-suppress MixedOperand legacy again */
+        $f = $this->payload['f'];
+
+        return $a . $b . $c . $d . $e . $f;
+    }
+}
+`,
+      'phpstan.dist.neon': `parameters:
+    level: 5
+    paths:
+        - src
+    ignoreErrors:
+        - '#Access to an undefined property#'
+        - '#Cannot access offset#'
+`,
+    });
+
+    const text = await runModule('php-static-analysis-ignore.js', app);
+
+    expect(text).toContain('phpstan-ignore');
+  });
+});
