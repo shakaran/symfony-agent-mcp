@@ -69,13 +69,18 @@ function parseCriteriaFile(filePath: string): DoctrineCriteriaInfo | null {
   const classM = /class\s+(\w{1,100})/.exec(content);
   if (!classM) return null;
 
-  const hasArrayCollection = content.includes('ArrayCollection') ||
-    content.includes('new ArrayCollection') ||
-    content.includes('$this->') && content.includes('->matching(');
-
-  const hasRepositoryMatching = content.includes('EntityRepository') ||
+  // A repository calling $this->matching() is using Doctrine's Selectable
+  // against the database; only an entity or service filtering a collection it
+  // holds is doing the work in memory.
+  const looksLikeRepository = content.includes('EntityRepository') ||
     content.includes('ServiceEntityRepository') ||
-    content.includes('implements SelectableRepository') ||
+    content.includes('implements SelectableRepository');
+
+  const hasArrayCollection = !looksLikeRepository &&
+    (content.includes('ArrayCollection') ||
+      (content.includes('$this->') && content.includes('->matching(')));
+
+  const hasRepositoryMatching = looksLikeRepository ||
     (content.includes('->matching(') && !content.includes('ArrayCollection'));
 
   const context: 'collection' | 'repository' | 'unknown' = hasArrayCollection

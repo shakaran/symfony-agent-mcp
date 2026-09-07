@@ -57,27 +57,50 @@ afterEach(() => {
   }
 });
 
+/** Lines written to the audit log so far. */
+function lineCount(): number {
+  try {
+    return fs.readFileSync(logPath, 'utf-8').split('\n').filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The writer flushes on its own schedule. A fixed sleep is enough on an idle
+ * machine and not enough on a busy one, so wait for the line to actually land.
+ */
+async function settle(before: number): Promise<void> {
+  for (let i = 0; i < 300; i++) {
+    if (lineCount() > before) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 /** Runs one successful tool call through the audit pipeline. */
 async function ok(tool = 'list_routes'): Promise<void> {
+  const before = lineCount();
   await withAudit(tool, '/var/www/app', async () => ({ content: [{ type: 'text', text: 'x' }] }));
-  await new Promise((r) => setTimeout(r, 30));
+  await settle(before);
 }
 
 /** Runs one failing tool call. */
 async function fail(tool = 'list_routes', msg = 'boom'): Promise<void> {
+  const before = lineCount();
   await expect(
     withAudit(tool, '/var/www/app', async () => { throw new Error(msg); })
   ).rejects.toThrow(msg);
-  await new Promise((r) => setTimeout(r, 30));
+  await settle(before);
 }
 
 /** Runs a call that takes longer than the CEF "slow" threshold. */
 async function slow(tool = 'slow_tool'): Promise<void> {
+  const before = lineCount();
   await withAudit(tool, '/var/www/app', async () => {
     await new Promise((r) => setTimeout(r, 2100));
     return { content: [{ type: 'text', text: 'x' }] };
   });
-  await new Promise((r) => setTimeout(r, 30));
+  await settle(before);
 }
 
 describe('CEF output', () => {

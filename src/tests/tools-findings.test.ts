@@ -39811,3 +39811,154 @@ class PrefixNameConverter implements NameConverterInterface
     expect(text).toContain('PrefixNameConverter');
   });
 });
+
+describe('batch 129: leftovers, kernels and fixtures', () => {
+  test('files that name a controller, a form type and a command without declaring one', async () => {
+    const app = appWith('dead-code-prose', {
+      'src/Controller/notes.php': `<?php
+
+// The Controller for the old admin lived here before the rewrite.
+return [];
+`,
+      'src/Form/notes.php': `<?php
+
+// This one used to extends AbstractType, and now nothing does.
+return [];
+`,
+      'src/Command/notes.php': `<?php
+
+// It once did extends Command; the logic moved into a handler.
+return [];
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class HomeController
+{
+    #[Route('/', name: 'home')]
+    public function index(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('dead-code.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('a bundle enabled in two environments but not in all of them', async () => {
+    const app = appWith('kernel-analysis-partial-envs', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Symfony\\Bundle\\WebProfilerBundle\\WebProfilerBundle::class => ['dev' => true, 'test' => true, 'prod' => true],
+    Symfony\\Bundle\\DebugBundle\\DebugBundle::class => ['dev' => true],
+    Symfony\\Bundle\\MonologBundle\\MonologBundle::class => ['prod' => true],
+];
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;
+
+class Kernel extends BaseKernel
+{
+    use MicroKernelTrait;
+}
+`,
+    });
+
+    const text = await runModule('kernel-analysis.js', app);
+
+    expect(text).toContain('WebProfilerBundle');
+  });
+
+  test('a factory that creates two hundred rows at a time', async () => {
+    const app = appWith('doctrine-entity-factory-large', {
+      'src/Factory/ArticleFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+class ArticleFactory extends ModelFactory
+{
+    public static function load(): void
+    {
+        ArticleFactory::createMany(500);
+        ArticleFactory::createMany(20);
+    }
+
+    protected function getDefaults(): array
+    {
+        return ['title' => self::faker()->sentence()];
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-factory.js', app);
+
+    expect(text).toContain('createMany(500)');
+  });
+
+  test('a repository filtering with a contains expression', async () => {
+    const app = appWith('doctrine-criteria-like', {
+      'src/Repository/ArticleRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Common\\Collections\\Criteria;
+use Doctrine\\ORM\\EntityRepository;
+
+class ArticleRepository extends EntityRepository
+{
+    public function search(string $term): array
+    {
+        $criteria = Criteria::create()
+            ->where(Criteria::expr()->contains('title', $term))
+            ->orderBy(['publishedAt' => 'DESC']);
+
+        return $this->matching($criteria)->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-criteria-api.js', app);
+
+    expect(text).toContain('LIKE');
+  });
+
+  test('a resource whose serialization groups are declared empty', async () => {
+    const app = appWith('api-platform-serialization-empty-groups', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(
+    normalizationContext: ['groups' => []],
+    denormalizationContext: ['groups' => []],
+)]
+class Article
+{
+    public string $title = '';
+}
+`,
+    });
+
+    const text = await runModule('api-platform-serialization-context.js', app);
+
+    expect(text).toContain('without groups');
+  });
+});
