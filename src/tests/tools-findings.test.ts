@@ -42655,3 +42655,172 @@ class Legacy
     expect(text).toContain('phpstan-ignore');
   });
 });
+
+describe('batch 156: an application with nothing wrong', () => {
+  test('cors restricted to one origin, with a preflight cache', async () => {
+    const app = appWith('cors-tight', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        origin_regex: true
+        allow_origin: ['^https://app\\.example\\.com$']
+        allow_headers: ['Content-Type', 'Authorization']
+        allow_methods: ['GET', 'POST']
+        max_age: 3600
+    paths:
+        '^/health':
+            allow_origin:
+            # written as a mapping by mistake, which is neither a list nor a string
+            allow_headers: { name: 'Content-Type' }
+            allow_methods: ['GET']
+            max_age: 600
+        '^/api/':
+            allow_origin: ['^https://app\\.example\\.com$']
+            allow_headers: ['Content-Type', 'Authorization']
+            allow_methods: ['GET', 'POST', 'PUT']
+            allow_credentials: true
+            max_age: 3600
+`,
+    });
+
+    const text = await runModule('cors.js', app);
+
+    expect(text).toContain('No obvious CORS risks');
+  });
+
+  test('a session on redis, secure and short lived', async () => {
+    const app = appWith('session-config-tight', {
+      'config/packages/framework.yaml': `framework:
+    session:
+        handler_id: 'redis://localhost:6379'
+        cookie_secure: true
+        cookie_httponly: true
+        cookie_samesite: lax
+        cookie_lifetime: 3600
+        gc_maxlifetime: 3600
+`,
+    });
+
+    const text = await runModule('session-config.js', app);
+
+    expect(text).toContain('no issues found');
+  });
+
+  test('a profiler stored outside temp, only for main requests', async () => {
+    const app = appWith('symfony-profiler-storage-tidy', {
+      'config/packages/dev/web_profiler.yaml': `framework:
+    profiler:
+        enabled: true
+        dsn: 'file:%kernel.project_dir%/var/profiler'
+        collect: true
+        only_main_requests: true
+        only_exceptions: false
+`,
+    });
+
+    const text = await runModule('symfony-profiler-storage.js', app);
+
+    expect(text).toContain('No issues detected');
+  });
+
+  test('migrations that all know how to go back', async () => {
+    const app = appWith('symfony-migration-rollback-complete', {
+      'migrations/Version20260101000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE orders (id INT NOT NULL, PRIMARY KEY(id))');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE orders');
+    }
+}
+`,
+      'migrations/Version20260102000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260102000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE orders ADD reference VARCHAR(40) NOT NULL');
+    }
+
+    public function down(Schema $schema): void
+    {
+        if ($this->connection->getDatabasePlatform()->getName() === 'postgresql') {
+            $this->addSql('ALTER TABLE orders DROP COLUMN reference');
+        } else {
+            $this->addSql('ALTER TABLE orders DROP reference');
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-doctrine-migration-rollback.js', app);
+
+    expect(text).toContain('All migrations have implemented down()');
+  });
+});
+
+describe('batch 157: templates that cost more than they look', () => {
+  test('a template counting a repository collection inside a loop, with four includes', async () => {
+    const app = appWith('symfony-twig-profiling-heavy', {
+      'templates/order/list.html.twig': `{% extends 'base.html.twig' %}
+
+{% block body %}
+    {% for order in orders %}
+        <h2>{{ order.reference }}</h2>
+        <p>{{ order.repository.lines|length }} lines</p>
+        {% include 'order/_line.html.twig' %}
+    {% endfor %}
+
+    {% include 'order/_summary.html.twig' %}
+    {% include 'order/_totals.html.twig' %}
+    {% include 'order/_footer.html.twig' %}
+{% endblock %}
+`,
+      'templates/order/_line.html.twig': '<span>{{ line }}</span>\n',
+      'templates/order/_summary.html.twig': '<div>summary</div>\n',
+      'templates/order/_totals.html.twig': '<div>totals</div>\n',
+      'templates/order/_footer.html.twig': '<div>footer</div>\n',
+    });
+
+    const text = await runModule('symfony-twig-profiling.js', app);
+
+    expect(text).toContain('include');
+  });
+});
+
+describe('batch 158: reading the log', () => {
+  test('a log with lines in it, tailed and searched', async () => {
+    const app = appWith('logs-with-content', {
+      'var/log/prod.log': `[2026-01-01T10:00:00+00:00] request.INFO: Matched route "app_home". [] []
+[2026-01-01T10:00:01+00:00] app.ERROR: Payment declined for order 42 [] []
+[2026-01-01T10:00:02+00:00] app.WARNING: Retry scheduled [] []
+[2026-01-01T10:00:03+00:00] doctrine.DEBUG: SELECT * FROM orders [] []
+`,
+    });
+
+    const text = await runModule('logs.js', app, ['prod.log', '../etc/passwd']);
+
+    expect(text).toContain('prod.log');
+  });
+});
