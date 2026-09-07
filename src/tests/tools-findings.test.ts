@@ -39367,3 +39367,214 @@ class SearchController
     expect(text.length).toBeGreaterThan(0);
   });
 });
+
+describe('batch 127: listeners, edge config and form themes', () => {
+  test('a listener attribute on the class, a helpers file and one too large to read', async () => {
+    const app = appWith('events-attribute-shapes', {
+      'src/EventListener/RequestListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+#[AsEventListener(event: 'kernel.request', method: 'onKernelRequest', priority: 10)]
+class RequestListener
+{
+    public function onKernelRequest(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventListener/helpers.php': `<?php
+
+// getSubscribedEvents() is built by the compiler pass, nothing declared here.
+return [];
+`,
+      'src/EventSubscriber/EmptySubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+#[AsEventListener(event: 'kernel.response', method: 'onKernelResponse', priority: -5)]
+class EmptySubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [];
+    }
+
+    public function onKernelResponse(): void
+    {
+    }
+}
+`,
+      'src/EventListener/Generated.php': `<?php\n\nnamespace App\\EventListener;\n\n// getSubscribedEvents\n${'// padding for a file nobody should read whole\n'.repeat(12000)}`,
+    });
+
+    const text = await runModule('events.js', app);
+
+    expect(text).toContain('kernel.request');
+  });
+
+  test('a netlify file with header values, a dev section and a production context', async () => {
+    const app = appWith('netlify-deploy-config-sections', {
+      'netlify.toml': `[build]
+  command = "npm run build"
+  publish = "public"
+  environment = { NODE_VERSION = "20" }
+
+[[headers]]
+  for = "/*"
+  values_documented = "see the netlify docs"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    Content-Security-Policy = "default-src 'self'"
+    Permissions-Policy = "geolocation=()"
+    X-Content-Type-Options = "nosniff"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[dev]
+  autoLaunch
+  framework = "#custom"
+
+[context.production]
+  published
+  API_TOKEN = "abcdef1234567890abcdef"
+`,
+    });
+
+    const text = await runModule('netlify-deploy-config.js', app);
+
+    expect(text).toContain('X-Frame-Options');
+    expect(text).toContain('[dev]');
+  });
+
+  test('traefik configured in its own directory and under docker', async () => {
+    const app = appWith('traefik-config-directories', {
+      '.traefik/dynamic.yml': `http:
+  routers:
+    app:
+      rule: "Host(\`app.example.com\`)"
+      service: app
+      tls: {}
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: "http://app:8000"
+`,
+      '.traefik/empty.yml': '',
+      'docker/empty.yaml': '',
+      'docker/traefik.yaml': `# traefik static configuration
+entryPoints:
+  web:
+    address: ":80"
+api:
+  insecure: true
+  dashboard: true
+`,
+      'docker/unrelated.yaml': `version: "3.8"
+services:
+  db:
+    image: postgres:16
+`,
+    });
+
+    const text = await runModule('traefik-config.js', app);
+
+    expect(text).toContain('traefik');
+  });
+
+  test('form themes declared in the framework config and used file by file', async () => {
+    const app = appWith('symfony-form-themes-declared', {
+      'config/packages/framework.yaml': `framework:
+    templating:
+        form:
+            resources:
+                - 'bootstrap_5_layout.html.twig'
+                - 'form/fields.html.twig'
+`,
+      'templates/order/new.html.twig': `{% form_theme form 'form/fields.html.twig' %}
+{{ form(form) }}
+`,
+      'templates/order/edit.html.twig': `{% form_theme form 'form/fields.html.twig' %}
+{{ form(form) }}
+`,
+      'templates/user/new.html.twig': `{% form_theme form 'form/fields.html.twig' %}
+{{ form(form) }}
+`,
+      'templates/user/edit.html.twig': `{% form_theme form 'form/fields.html.twig' %}
+{{ form(form) }}
+`,
+      'templates/user/show.html.twig': `{% form_theme form 'form/fields.html.twig' %}
+{{ form(form) }}
+`,
+    });
+
+    const text = await runModule('symfony-form-themes.js', app);
+
+    expect(text).toContain('form/fields.html.twig');
+  });
+
+  test('form themes declared through twig instead', async () => {
+    const app = appWith('symfony-form-themes-twig-key', {
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+twig:
+    form_themes:
+        - 'bootstrap_5_horizontal_layout.html.twig'
+`,
+    });
+
+    const text = await runModule('symfony-form-themes.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('a document manager naming its database', async () => {
+    const app = appWith('doctrine-odm-config-database', {
+      'config/packages/doctrine_mongodb.yaml': `doctrine_mongodb:
+    connections:
+        default:
+            server: '%env(MONGODB_URL)%'
+    default_database: '%env(MONGODB_DB)%'
+    document_managers:
+        default:
+            database: catalogue
+            auto_mapping: true
+            mappings:
+                App:
+                    type: attribute
+                    dir: '%kernel.project_dir%/src/Document'
+                    prefix: 'App\\Document'
+`,
+      'src/Document/Product.php': `<?php
+
+namespace App\\Document;
+
+use Doctrine\\ODM\\MongoDB\\Mapping\\Annotations as MongoDB;
+
+#[MongoDB\\Document]
+class Product
+{
+    #[MongoDB\\Id]
+    private string $id;
+
+    #[MongoDB\\EmbedMany(targetDocument: Variant::class)]
+    private array $variants = [];
+}
+`,
+    });
+
+    const text = await runModule('doctrine-odm-config.js', app);
+
+    expect(text).toContain('catalogue');
+  });
+});

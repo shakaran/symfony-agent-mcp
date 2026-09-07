@@ -185,12 +185,6 @@ export function listDoctrineOdmConfig(appPath: string): McpToolResult {
     const issues = [...configIssues];
 
     for (const doc of documents) {
-      if (doc.hasReferenceMany) {
-        const hasLazy = true;
-        if (!hasLazy) {
-          issues.push(`${doc.class}: #[ReferenceMany] may load entire referenced collection eagerly — use fetch="LAZY" or add cursor`);
-        }
-      }
       if (!doc.hasIndex && doc.hasEmbedded) {
         issues.push(`${doc.class}: document with embedded documents has no index defined — queries on embedded fields will cause full collection scans`);
       }

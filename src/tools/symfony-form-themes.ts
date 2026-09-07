@@ -66,7 +66,7 @@ function loadGlobalThemes(appPath: string): string[] {
 
     const framework = raw['framework'] as Record<string, unknown> | undefined ?? raw;
     const templating = framework['templating'] as Record<string, unknown> | undefined;
-    const twig = framework['twig'] as Record<string, unknown> | undefined;
+    const twig = (framework['twig'] ?? raw['twig']) as Record<string, unknown> | undefined;
 
     // Check framework.templating.form.resources
     const formSection = templating?.['form'] as Record<string, unknown> | undefined;
