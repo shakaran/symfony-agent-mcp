@@ -26,6 +26,9 @@ function buildPreloadingInfos(appPath: string): PreloadingInfo[] {
   const candidates = [
     path.join(appPath, 'config', 'preload.php'),
     path.join(appPath, 'var', 'cache', 'prod', 'App_KernelProdContainer.preload.php'),
+    // The dev container writes one too, and pointing opcache at it is the
+    // mistake the warning below is about.
+    path.join(appPath, 'var', 'cache', 'dev', 'App_KernelDevContainer.preload.php'),
     path.join(appPath, 'preload.php'),
   ];
   const preloadFile = candidates.find((c) => fs.existsSync(c)) ?? null;

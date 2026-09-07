@@ -68,9 +68,7 @@ function parseEmbeddable(filePath: string): Embeddable | null {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  // Written with the mapping alias in practice: #[ORM\\Embeddable].
-  if (!/#\[[\w\\]{0,40}Embeddable\b/.test(content) && !content.includes('@Embeddable')) return null;
-
+  // The caller has already matched the attribute.
   const className = extractClassName(content);
   if (!className) return null;
 
@@ -95,8 +93,7 @@ function parseEntityEmbedded(filePath: string): EntityWithEmbedded | null {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  if (!/#\[[\w\\]{0,40}Embedded\b/.test(content) && !content.includes('@Embedded')) return null;
-
+  // Likewise: the caller matched #[ORM\\Embedded] before calling.
   const className = extractClassName(content);
   if (!className) return null;
 

@@ -40998,3 +40998,276 @@ return [];
     expect(text).toContain('catch block');
   });
 });
+
+describe('batch 135: collections in memory, state machines and extractors', () => {
+  test('an entity filtering the collection it holds', async () => {
+    const app = appWith('doctrine-criteria-in-memory', {
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\ArrayCollection;
+use Doctrine\\Common\\Collections\\Criteria;
+
+class Order
+{
+    private ArrayCollection $lines;
+
+    public function __construct()
+    {
+        $this->lines = new ArrayCollection();
+    }
+
+    public function recentLines(): array
+    {
+        $criteria = Criteria::create()
+            ->orderBy(['createdAt' => 'DESC'])
+            ->setMaxResults(10);
+
+        return $this->lines->matching($criteria)->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-criteria-api.js', app);
+
+    expect(text).toContain('ArrayCollection');
+    expect(text).toContain('setMaxResults');
+  });
+
+  test('criteria built where nothing says how they will be run', async () => {
+    const app = appWith('doctrine-criteria-unknown-context', {
+      'src/Query/StatusFilter.php': `<?php
+
+namespace App\\Query;
+
+use Doctrine\\Common\\Collections\\Criteria;
+
+class StatusFilter
+{
+    public function build(array $statuses): Criteria
+    {
+        return Criteria::create()
+            ->where(Criteria::expr()->in('status', $statuses));
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-criteria-api.js', app);
+
+    expect(text).toContain('Unknown context');
+  });
+
+  test('a state machine with an inline audit trail and places written as a mapping', async () => {
+    const app = appWith('symfony-workflow-state-machine-mapping', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        pull_request:
+            type: state_machine
+            audit_trail: { enabled: true }
+            marking_store:
+                type: method
+                property: currentPlace
+            supports:
+                - App\\Entity\\PullRequest
+            places:
+                start:
+                    metadata:
+                        title: Start
+                review:
+                    metadata:
+                        title: Review
+                merged:
+                    metadata:
+                        title: Merged
+            transitions:
+                submit:
+                    from: start
+                    to: review
+                merge:
+                    from: review
+                    to: merged
+`,
+    });
+
+    const text = await runModule('symfony-workflow-state-machine.js', app);
+
+    expect(text).toContain('pull_request');
+  });
+
+  test('nested translation keys, and templates that turn out to be a file', async () => {
+    const app = appWith('symfony-translation-extractors-nested', {
+      'translations/messages.en.yaml': `app:
+    order:
+        title: Your order
+        subtitle: Thanks
+    account:
+        title: Your account
+top_level: Plain
+`,
+      'templates': 'this path is a file, not a directory\n',
+    });
+
+    const text = await runModule('symfony-translation-extractors.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('translations that turn out to be a file as well', async () => {
+    const app = appWith('symfony-translation-extractors-file', {
+      'translations': 'not a directory either\n',
+      'templates/home.html.twig': `<h1>{{ 'app.order.title'|trans }}</h1>
+`,
+    });
+
+    const text = await runModule('symfony-translation-extractors.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('batch 136: embeddables, enums and ini files', () => {
+  test('an entity that is neither embeddable nor embedding anything', async () => {
+    const app = appWith('doctrine-embeddable-plain-entity', {
+      'src/Entity/Address.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Embeddable]
+class Address
+{
+    #[ORM\\Column(length: 120)]
+    private string $street = '';
+}
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\Embedded(class: Address::class)]
+    private Address $address;
+}
+`,
+      'src/Entity/Plain.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Plain
+{
+    #[ORM\\Column]
+    private string $name = '';
+}
+`,
+    });
+
+    const text = await runModule('doctrine-embeddable.js', app);
+
+    expect(text).toContain('Address');
+  });
+
+  test('an enum with a readonly property and one stored without its value', async () => {
+    const app = appWith('php-backed-enum-readonly', {
+      'src/Enum/Status.php': `<?php
+
+namespace App\\Enum;
+
+enum Status: string
+{
+    case Draft = 'draft';
+    case Published = 'published';
+
+    public readonly string $label;
+}
+`,
+      'src/Repository/ArticleRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Enum\\Status;
+
+class ArticleRepository
+{
+    public function save(object $article, string $raw): void
+    {
+        $status = Status::from($raw);
+        $this->connection->setParameter('status', $status);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-backed-enum-patterns.js', app);
+
+    expect(text).toContain('Status');
+  });
+
+  test('a php.ini with a memory limit given in kilobytes', async () => {
+    const app = appWith('php-ini-kilobytes', {
+      'docker/php/conf.d/app.ini': `memory_limit = 65536K
+upload_max_filesize = 8M
+post_max_size = 8M
+max_execution_time = 30
+display_errors = On
+opcache.enable = 0
+`,
+    });
+
+    const text = await runModule('php-ini-analysis.js', app);
+
+    expect(text).toContain('memory_limit');
+  });
+
+  test('a preload file written by the dev container, with too much in it', async () => {
+    const app = appWith('php-preloading-dev-container', {
+      'var/cache/dev/App_KernelDevContainer.preload.php': `<?php\n\n${"require_once dirname(__DIR__, 3).'/vendor/symfony/thing.php';\n".repeat(2100)}`,
+      'docker/php.ini': `opcache.enable = 1
+opcache.preload = /app/var/cache/dev/App_KernelDevContainer.preload.php
+opcache.preload_user = www-data
+`,
+    });
+
+    const text = await runModule('php-preloading-config.js', app);
+
+    expect(text).toContain('dev environment');
+  });
+
+  test('a curl handle pointed at a variable url with nothing checking it', async () => {
+    const app = appWith('php-ssrf-curl-variable', {
+      'src/Http/Fetcher.php': `<?php
+
+namespace App\\Http;
+
+class Fetcher
+{
+    public function fetch(string $target): string
+    {
+        $url = $this->buildUrl($target);
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $body = curl_exec($ch);
+        curl_close($ch);
+
+        return (string) $body;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-ssrf-patterns.js', app);
+
+    expect(text).toContain('CURLOPT_URL');
+  });
+});
