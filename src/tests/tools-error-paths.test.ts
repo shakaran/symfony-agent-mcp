@@ -21,7 +21,7 @@
  */
 
 /** Flipped per test; the mocks below read it on every call. */
-let failMode: 'none' | 'read' | 'stat' | 'exists' | 'path' | 'escape' | 'symlink' | 'huge' = 'none';
+let failMode: 'none' | 'read' | 'read-file' | 'stat' | 'exists' | 'path' | 'escape' | 'resolve' | 'resolve-dir' | 'symlink' | 'huge' = 'none';
 // Only the first few reads of a call are oversized: a module that walks a
 // tree would otherwise scan hundreds of megabytes to reach one size guard.
 let hugeReads = 0;
@@ -52,10 +52,28 @@ jest.mock('path', () => {
 
     return real.join('/outside-the-application', ...args.slice(1));
   };
+  // What a symlinked directory produces: the file is read from where it was
+  // asked for, but resolving it lands outside the application, which is the
+  // comparison every module makes before reading.
+  const escapingResolve = (...args: string[]): string => {
+    const resolved = real.resolve(...args);
+    const looksLikeFile = /\.[A-Za-z0-9]{1,10}$/.test(resolved);
+    if (failMode === 'resolve' && looksLikeFile) {
+      return real.join('/outside-the-application', real.basename(resolved));
+    }
+    // The same for a directory: the walk is refused before it starts, which
+    // is a different guard from the one in front of a read.
+    if (failMode === 'resolve-dir' && !looksLikeFile && resolved.includes('symfony-errors-')) {
+      return real.join('/outside-the-application', real.basename(resolved));
+    }
+
+    return resolved;
+  };
+
   return {
     ...real,
     join: guard(escaping),
-    resolve: guard(real.resolve),
+    resolve: guard(escapingResolve),
     relative: guard(real.relative),
   };
 });
@@ -68,7 +86,9 @@ jest.mock('fs', () => {
   return {
     ...real,
     readFileSync: (...args: Parameters<typeof real.readFileSync>) => {
-      if (failMode === 'read') return raise('EIO', 'read');
+      // 'read' fails every filesystem call; 'read-file' fails only the read
+      // itself, so the walk still finds the files whose read is then refused.
+      if (failMode === 'read' || failMode === 'read-file') return raise('EIO', 'read');
       // A file above the size every module refuses to read.
       if (failMode === 'huge' && hugeReads < 3) {
         hugeReads += 1;
@@ -316,6 +336,32 @@ describe('every module survives a failing filesystem', () => {
       // Every module guards the reads it builds; this is the branch that
       // refuses one, and the reason a traversal in configuration is inert.
       failMode = 'escape';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        await expect(Promise.resolve(fn(appPath))).resolves.toBeDefined();
+      }
+    });
+
+    test('the files are found and every read of them fails', async () => {
+      failMode = 'read-file';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        await expect(Promise.resolve(fn(appPath))).resolves.toBeDefined();
+      }
+    });
+
+    test('a path that resolves outside the application is refused', async () => {
+      // The read is asked for by a path that resolves elsewhere: the guard in
+      // front of it is what refuses the file.
+      failMode = 'resolve';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        await expect(Promise.resolve(fn(appPath))).resolves.toBeDefined();
+      }
+    });
+
+    test('a directory that resolves outside the application is refused', async () => {
+      failMode = 'resolve-dir';
 
       for (const [, fn] of pathFunctions(mod)) {
         await expect(Promise.resolve(fn(appPath))).resolves.toBeDefined();
