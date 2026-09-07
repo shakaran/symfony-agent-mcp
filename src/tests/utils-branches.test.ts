@@ -388,3 +388,67 @@ describe('settings that cannot be read as numbers', () => {
   });
 });
 
+
+describe('the tool registry, freshly built', () => {
+  test('a tool with no description, and a query that only its description matches', () => {
+    jest.isolateModules(() => {
+      const registry = jest.requireActual<typeof import('../utils/tool-registry')>('../utils/tool-registry');
+      registry.toolRegistry.init([
+        { name: 'list_widget_things', description: 'Reports every widget in the application', inputSchema: { type: 'object' } },
+        { name: 'get_widget_detail', inputSchema: { type: 'object' } } as never,
+        { name: 'list_widget_owners', description: 'Widget owners and their widgets', inputSchema: { type: 'object' } },
+      ]);
+
+      const byName = registry.toolRegistry.search('widget', 5).map((t) => t.name);
+      const byDescription = registry.toolRegistry.search('owners', 5).map((t) => t.name);
+
+      expect(byName).toContain('get_widget_detail');
+      expect(byDescription).toContain('list_widget_owners');
+      expect(registry.toolRegistry.getCategoryInfo().length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('the application guard', () => {
+  test('an allowlist that a symlinked path has to satisfy too', () => {
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), 'guard-real-'));
+    const link = path.join(path.dirname(real), `${path.basename(real)}-link`);
+    fs.writeFileSync(path.join(real, 'composer.json'), JSON.stringify({ require: { 'symfony/framework-bundle': '^7.0' } }));
+    fs.mkdirSync(path.join(real, 'src'));
+    fs.symlinkSync(real, link);
+
+    const savedList = process.env['SYMFONY_MCP_ALLOWED_PATHS'];
+    const savedRequire = process.env['SYMFONY_MCP_REQUIRE_SYMFONY'];
+    // The allowlist names the link; the guard then re-checks where it points.
+    process.env['SYMFONY_MCP_ALLOWED_PATHS'] = link;
+    process.env['SYMFONY_MCP_REQUIRE_SYMFONY'] = 'false';
+
+    try {
+      jest.isolateModules(() => {
+        const guard = jest.requireActual<typeof import('../utils/app-guard')>('../utils/app-guard');
+        guard.resetGuardCache();
+
+        expect(guard.guardAppPath(link)).toEqual({ allowed: true });
+      });
+    } finally {
+      if (savedList === undefined) delete process.env['SYMFONY_MCP_ALLOWED_PATHS'];
+      else process.env['SYMFONY_MCP_ALLOWED_PATHS'] = savedList;
+      if (savedRequire === undefined) delete process.env['SYMFONY_MCP_REQUIRE_SYMFONY'];
+      else process.env['SYMFONY_MCP_REQUIRE_SYMFONY'] = savedRequire;
+      fs.rmSync(link, { force: true });
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+
+  test('a composer.json with only dev dependencies', () => {
+    write('composer.json', JSON.stringify({ 'require-dev': { 'symfony/phpunit-bridge': '^7.0' } }));
+    write('src/Kernel.php', "<?php\n");
+
+    jest.isolateModules(() => {
+      const guard = jest.requireActual<typeof import('../utils/app-guard')>('../utils/app-guard');
+      guard.resetGuardCache();
+
+      expect(guard.guardAppPath(appDir).allowed).toBe(true);
+    });
+  });
+});

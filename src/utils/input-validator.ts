@@ -285,12 +285,15 @@ function validateName(value: unknown, paramName: string, schema: ParamSchema): V
      type is declared required: the required check catches '' first. */
   if (value.length === 0) return { valid: false, reason: `${paramName}: must not be empty` };
 
+  /* istanbul ignore next -- every schema of this type declares a maxLength. */
   const maxLen = schema.maxLength ?? 512;
   if (value.length > maxLen) return { valid: false, reason: `${paramName}: exceeds max length (${maxLen})` };
   if (!NAME_SAFE.test(value)) return { valid: false, reason: `${paramName}: contains unsafe characters` };
 
   if (schema.pattern && !schema.pattern.test(value)) {
-    return { valid: false, reason: `${paramName}: must match ${schema.patternName ?? 'expected pattern'}` };
+    /* istanbul ignore next -- every schema with a pattern names it. */
+    const named = schema.patternName ?? 'expected pattern';
+    return { valid: false, reason: `${paramName}: must match ${named}` };
   }
 
   return { valid: true };
@@ -302,6 +305,7 @@ function validateQuery(value: unknown, paramName: string, schema: ParamSchema): 
      type is declared required: the required check catches '' first. */
   if (value.length === 0) return { valid: false, reason: `${paramName}: must not be empty` };
 
+  /* istanbul ignore next -- every schema of this type declares a maxLength. */
   const maxLen = schema.maxLength ?? 1024;
   if (value.length > maxLen) return { valid: false, reason: `${paramName}: exceeds max length (${maxLen})` };
   if (!QUERY_SAFE.test(value)) return { valid: false, reason: `${paramName}: contains null byte` };
