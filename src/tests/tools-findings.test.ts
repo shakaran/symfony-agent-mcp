@@ -38573,3 +38573,194 @@ class ${name}${parent}
     expect(text).toContain('epth');
   });
 });
+
+describe('batch 123: listeners, expressions, processes, schedules and problem details', () => {
+  test('the same event and method listed twice, once with a priority', async () => {
+    const app = appWith('events-priority-replace', {
+      'src/EventSubscriber/OrderSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+class OrderSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'kernel.request' => 'onRequest',
+            'kernel.request' => ['onRequest', 64],
+        ];
+    }
+
+    public function onRequest(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventListener/AuditListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\Event\\ResponseEvent;
+
+#[AsEventListener(event: 'kernel.response', method: 'onResponse', priority: -10)]
+class AuditListener
+{
+    public function onResponse(ResponseEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('events.js', app);
+
+    expect(text).toContain('kernel.request');
+  });
+
+  test('an expression long enough to be unreadable, reaching a private property', async () => {
+    const app = appWith('symfony-form-callback-constraint-long', {
+      'src/Entity/Booking.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+use Symfony\\Component\\Validator\\Mapping\\ClassMetadata;
+
+class Booking
+{
+    private \\DateTimeImmutable $start;
+
+    private int $guests = 0;
+
+    public static function loadValidatorMetadata(ClassMetadata $metadata): void
+    {
+        $metadata->addConstraint(new Assert\\Expression('this.start < this.end and this.guests > 0 and this.guests <= this.capacity and this.deposit >= 0 and this.currency in ["EUR"]'));
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-callback-constraint.js', app);
+
+    expect(text).toContain('chars');
+  });
+
+  test('a Process class that imports the component and never runs anything', async () => {
+    const app = appWith('symfony-process-import-only', {
+      'src/Service/ProcessFactory.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class ProcessFactory
+{
+    public function describe(): string
+    {
+        return Process::class;
+    }
+}
+`,
+      'src/Service/Runner.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Runner
+{
+    public function run(): void
+    {
+        $process = new Process(['ls', '-la']);
+        $process->run();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-process.js', app);
+
+    expect(text).toContain('Runner');
+  });
+
+  test('scheduled tasks in configuration, one of them nonsense', async () => {
+    const app = appWith('symfony-scheduler-tasks-config', {
+      'config/packages/scheduler.yaml': `framework:
+    scheduler:
+        schedules:
+            default:
+                tasks:
+                    - trigger: cron
+                      expression: '99 * * * *'
+                      message: 'App\\Message\\PollQueue'
+                    - trigger: every
+                      expression: '30 seconds'
+                      message: 'App\\Message\\Heartbeat'
+                      transport: async
+`,
+      'config/packages/broken.yaml': "framework: [unclosed\n",
+    });
+
+    const text = await runModule('symfony-scheduler-tasks.js', app);
+
+    expect(text).toContain('task');
+  });
+
+  test('a workflow section with nothing usable in it', async () => {
+    const app = appWith('workflow-empty-shapes', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        empty_places:
+            type: workflow
+            supports: 'App\\Entity\\Article'
+            places: ~
+            transitions: ~
+        odd_transitions:
+            type: state_machine
+            supports: []
+            places:
+                draft: ~
+            transitions:
+                broken: ~
+`,
+    });
+
+    const text = await runModule('workflow.js', app);
+
+    expect(text).toContain('empty_places');
+  });
+
+  test('a problem response whose body and status disagree', async () => {
+    const app = appWith('api-problem-details-mismatch', {
+      'src/Controller/ErrorController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+
+class ErrorController
+{
+    public function notFound(): JsonResponse
+    {
+        $body = [
+            'type' => 'https://acme.example.com/errors/not-found',
+            'title' => 'Not found',
+            'status' => 404,
+            'detail' => 'No invoice with that number',
+        ];
+
+        return new JsonResponse($body, 500);
+    }
+}
+`,
+    });
+
+    const text = await runModule('api-problem-details.js', app);
+
+    expect(text).toContain('contradictory');
+  });
+});
