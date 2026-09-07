@@ -25,6 +25,7 @@
     "start": "node dist/server.js",
     "test": "jest",
     "test:coverage": "jest --coverage",
+    "test:low-memory": "node scripts/test-low-memory.mjs",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "lint:md": "markdownlint-cli2 \"*.md\"",

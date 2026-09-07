@@ -9,6 +9,11 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   maxWorkers: 1,
+  // The sweep imports all 820 tool modules, and with coverage instrumentation
+  // the worker grows past 3 GB, which on a workstation is the difference
+  // between a run in the background and a machine that cannot open anything
+  // else. Recycling the worker when it goes over keeps the peak bounded.
+  workerIdleMemoryLimit: '900MB',
   forceExit: true,
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
