@@ -51,7 +51,16 @@ module.exports = {
   // does not. Raise them when coverage genuinely improves.
   coverageThreshold: {
     './src/utils/': {
-      branches: 90,
+      // Every branch in src/utils is either taken by a test or marked as
+      // unreachable with the reason; the margin is for the handful that only
+      // the failing-filesystem sweep reaches, so a partial run still passes.
+      branches: 99,
+      functions: 100,
+      lines: 100,
+      statements: 100,
+    },
+    './src/transport/': {
+      branches: 100,
       functions: 100,
       lines: 100,
       statements: 100,
