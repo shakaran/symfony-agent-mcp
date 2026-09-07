@@ -209,7 +209,6 @@ function extractWorkflowsFromYaml(filePath: string, base: string): WorkflowParal
 
 function scanPhpParallelWorkflowUsage(appPath: string): Array<{ file: string; issues: string[] }> {
   const srcDir = path.join(appPath, 'src');
-  if (!fs.existsSync(srcDir)) return [];
   const results: Array<{ file: string; issues: string[] }> = [];
 
   const resolvedBase = path.resolve(appPath);

@@ -102,8 +102,7 @@ function extractEventNames(content: string): string[] {
     const re = /['"]workflow[^'"]{0,200}['"]/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(block)) !== null) {
-      const ev = m[0].replace(/['"]/g, '');
-      if (!events.includes(ev)) events.push(ev);
+      events.push(m[0].replace(/['"]/g, ''));
     }
   }
 
@@ -113,7 +112,7 @@ function extractEventNames(content: string): string[] {
   while ((am = attrRe.exec(content)) !== null) {
     const attr = am[0];
     const evM = /event\s*:\s*['"]([^'"]{1,200})['"]/i.exec(attr);
-    if (evM && evM[1].startsWith('workflow') && !events.includes(evM[1])) {
+    if (evM && evM[1].startsWith('workflow')) {
       events.push(evM[1]);
     }
   }

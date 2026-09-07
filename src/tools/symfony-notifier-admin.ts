@@ -80,7 +80,7 @@ function parseNotificationFile(filePath: string, adminRecipientsCount: number): 
   if (!classM) return null;
 
   const hasAdminNotifier = content.includes('AdminNotifier');
-  const hasGetChannels = content.includes('getChannels()') || content.includes('getChannels ():');
+  const hasGetChannels = /function\s+getChannels\s*\(/.test(content);
   const hasAdminChannel = content.includes("'admin'") || content.includes('"admin"') ||
     content.includes("Channels::ADMIN") || content.includes('admin');
 

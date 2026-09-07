@@ -39578,3 +39578,236 @@ class Product
     expect(text).toContain('catalogue');
   });
 });
+
+describe('batch 128: schedules, workflow events and admin notifications', () => {
+  test('a schedule transport written inline', async () => {
+    const app = appWith('symfony-scheduler-transport-inline', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        routing:
+            'App\\Message\\Report': async
+    scheduler:
+        schedule.transport: 'doctrine://default?queue_name=schedule'
+`,
+    });
+
+    const text = await runModule('symfony-scheduler-transport-config.js', app);
+
+    expect(text).toContain('schedule.transport');
+  });
+
+  test('a workflow event subscribed twice and one nobody classifies', async () => {
+    const app = appWith('symfony-workflow-events-duplicated', {
+      'src/EventSubscriber/ArticleWorkflowSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class ArticleWorkflowSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'workflow.article.custom' => 'onCustom',
+            'workflow.article.audit' => ['onAudit', 'workflow.article.audit'],
+        ];
+    }
+
+    public function onCustom(): void
+    {
+    }
+
+    public function onAudit(): void
+    {
+    }
+
+    public function onAuditAgain(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-events.js', app);
+
+    expect(text).toContain('workflow.article');
+  });
+
+  test('a rollback in the last catch that swallows the exception', async () => {
+    const app = appWith('doctrine-dbal-transactions-swallowed', {
+      'src/Repository/LedgerRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\DBAL\\Connection;
+
+class LedgerRepository
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function transfer(int $from, int $to, int $amount): void
+    {
+        $this->connection->beginTransaction();
+        try {
+            $this->connection->executeStatement('UPDATE account SET balance = balance - ? WHERE id = ?', [$amount, $from]);
+            $this->connection->executeStatement('UPDATE account SET balance = balance + ? WHERE id = ?', [$amount, $to]);
+            $this->connection->commit();
+        } catch (\\Throwable $e) {
+            $this->connection->rollBack();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-dbal-transactions.js', app);
+
+    expect(text).toContain('rollBack');
+  });
+
+  test('admin recipients as a mapping, and a notification that forgets the channel', async () => {
+    const app = appWith('symfony-notifier-admin-mapping', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        admin_recipients:
+            email: ops@example.com
+`,
+      'src/Notification/DeployNotification.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+use Symfony\\Component\\Notifier\\Notification\\NotificationInterface;
+
+class DeployNotification extends Notification implements NotificationInterface
+{
+    /** Delivered through the AdminNotifier chain. */
+    public function getChannels(object $recipient): array
+    {
+        return ['chat', 'browser'];
+    }
+}
+`,
+      'src/Notification/notes.php': `<?php
+
+// A class - the notion, not the keyword - held the AdminNotifier wiring here.
+return [];
+`,
+    });
+
+    const text = await runModule('symfony-notifier-admin.js', app);
+
+    expect(text).toContain('DeployNotification');
+  });
+
+  test('a synchronisation whose guard names only one of the branches', async () => {
+    const app = appWith('symfony-workflow-parallel-guard', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        publication:
+            type: workflow
+            marking_store:
+                type: method
+                property: marking
+            supports:
+                - App\\Entity\\Article
+            places:
+                - draft
+                - review_legal
+                - review_editorial
+                - published
+            transitions:
+                submit:
+                    from: draft
+                    to: [review_legal, review_editorial]
+                publish:
+                    guard: "is_granted('ROLE_EDITOR') and subject.hasPassed('review_legal')"
+                    from: [review_legal, review_editorial]
+                    to: published
+`,
+      'src/Service/Publisher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Workflow\\WorkflowInterface;
+
+class Publisher
+{
+    public function __construct(private WorkflowInterface $publicationWorkflow)
+    {
+    }
+
+    // the workflow decides whether this one may go
+    public function publish(object $article): void
+    {
+        if ($this->publicationWorkflow->can($article, 'publish')) {
+            $this->publicationWorkflow->apply($article, 'publish');
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-parallel-transitions.js', app);
+
+    expect(text).toContain('publish');
+  });
+
+  test('a workflow with parallel places and no application code at all', async () => {
+    const app = appWith('symfony-workflow-parallel-no-src', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        onboarding:
+            type: workflow
+            places: [start, forms, checks, done]
+            transitions:
+                begin:
+                    from: start
+                    to: [forms, checks]
+                finish:
+                    from: [forms, checks]
+                    to: done
+`,
+    });
+
+    const text = await runModule('symfony-workflow-parallel-transitions.js', app);
+
+    expect(text).toContain('onboarding');
+  });
+
+  test('a name converter registered in services next to an unreadable candidate', async () => {
+    const app = appWith('symfony-serializer-name-converter-registered', {
+      'config/services.yaml': `services:
+    App\\Serializer\\PrefixNameConverter:
+        decorates: serializer.name_converter.metadata_aware
+`,
+      'config/services_test.yaml': '',
+      'src/Serializer/PrefixNameConverter.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\NameConverter\\NameConverterInterface;
+
+class PrefixNameConverter implements NameConverterInterface
+{
+    public function normalize(string $propertyName): string
+    {
+        return 'x_' . $propertyName;
+    }
+
+    public function denormalize(string $propertyName): string
+    {
+        return substr($propertyName, 2);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-name-converter.js', app);
+
+    expect(text).toContain('PrefixNameConverter');
+  });
+});
