@@ -38242,3 +38242,334 @@ class Order
     expect(text).toContain('Order');
   });
 });
+
+describe('batch 122: hidden commands, invokables, layers, graphs and inheritance', () => {
+  test('a command class that nothing registers', async () => {
+    const app = appWith('symfony-console-hidden-commands-untagged', {
+      'src/Command/OrphanCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+
+class OrphanCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        return Command::SUCCESS;
+    }
+}
+`,
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+`,
+    });
+
+    const text = await runModule('symfony-console-hidden-commands.js', app);
+
+    expect(text).toContain('OrphanCommand');
+  });
+
+  test('commands that are all in order', async () => {
+    const app = appWith('symfony-console-hidden-commands-healthy', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputInterface;
+use Symfony\\Component\\Console\\Output\\OutputInterface;
+
+#[AsCommand(name: 'app:import', description: 'Import the catalogue')]
+class ImportCommand extends Command
+{
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-hidden-commands.js', app);
+
+    expect(text).toContain('app:import');
+  });
+
+  test('an invokable controller with six parameters, beside multi-action ones', async () => {
+    const app = appWith('symfony-controller-invokable-mixed', {
+      'src/Controller/ShowController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ShowController
+{
+    #[Route('/invoices/{p0}', name: 'invoice_show')]
+    public function __invoke(int $p0, int $p1, int $p2, int $p3, int $p4, int $p5): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/ListController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ListController
+{
+    #[Route('/invoices', name: 'invoice_list')]
+    public function __invoke(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/AccountController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class AccountController extends AbstractController
+{
+    public function show(): Response
+    {
+        return new Response('');
+    }
+
+    public function edit(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/notes.php': "<?php\n\n// A note with no class and no mention of the word above.\n",
+    });
+
+    const text = await runModule('symfony-controller-invokable.js', app);
+
+    expect(text).toContain('parameters');
+  });
+
+  test('a parallel workflow whose guard misses a place, and code that never checks the marking', async () => {
+    const app = appWith('symfony-workflow-parallel-guard', {
+      'config/packages/workflow.yaml': `framework:
+  workflows:
+    publication:
+      type: workflow
+      marking_store:
+        type: multiple_state
+      supports:
+        - App\Entity\Article
+      places:
+        - draft
+        - legal_review
+        - copy_review
+        - approved
+      transitions:
+        start_reviews:
+          from: draft
+          to: [legal_review, copy_review]
+        approve:
+          from: [legal_review, copy_review]
+          to: approved
+          guard: "is_granted('ROLE_LEGAL') and subject.isInPlace('legal_review')"
+`,
+      'src/Service/Publisher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Workflow\\WorkflowInterface;
+
+class Publisher
+{
+    public function __construct(private WorkflowInterface $publicationWorkflow)
+    {
+    }
+
+    public function approve(object $article): void
+    {
+        if ($this->publicationWorkflow->can($article, 'approve')) {
+            $this->publicationWorkflow->apply($article, 'approve');
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-parallel-transitions.js', app);
+
+    expect(text).toContain('marking');
+  });
+
+  test('an entity that depends on a repository and a service', async () => {
+    const app = appWith('dependency-graph-violations', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use App\\Repository\\InvoiceRepository;
+use App\\Service\\Totals;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    public function __construct(
+        private InvoiceRepository $repository,
+        private Totals $totals,
+    ) {
+    }
+}
+`,
+      'src/Repository/InvoiceRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+
+class InvoiceRepository extends ServiceEntityRepository
+{
+}
+`,
+      'src/Service/Totals.php': `<?php
+
+namespace App\\Service;
+
+class Totals
+{
+    public function total(): int
+    {
+        return 0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('dependency-graph.js', app);
+
+    expect(text).toContain('Layer Violations');
+  });
+
+  test('Deptrac layers listed one after another with a ruleset', async () => {
+    const app = appWith('deptrac-config-layers', {
+      'deptrac.yaml': `parameters:
+  paths:
+    - ./src
+  layers:
+    - name: Controller
+      collectors:
+        - type: directory
+          value: src/Controller/.*
+    - name: Service
+      collectors:
+        - type: directory
+          value: src/Service/.*
+  ruleset:
+    Controller:
+      - Service
+    Service: ~
+`,
+    });
+
+    const text = await runModule('deptrac-config.js', app);
+
+    expect(text).toContain('layer');
+  });
+
+  test('entities chained deeper than the graph follows', async () => {
+    const files: Record<string, string> = {
+      'src/Entity/notes.php': "<?php\n\n// The entities live here.\n",
+    };
+    const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+    names.forEach((name, i) => {
+      const next = names[i + 1];
+      const relation = next
+        ? `
+    #[ORM\\ManyToOne(targetEntity: ${next}::class)]
+    private ?${next} $next = null;
+`
+        : '';
+      files[`src/Entity/${name}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class ${name}
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+${relation}}
+`;
+    });
+    const chain = ['Base', 'Level1', 'Level2', 'Level3', 'Level4'];
+    chain.forEach((name, i) => {
+      const parent = i === 0 ? '' : ` extends ${chain[i - 1]}`;
+      files[`src/Entity/${name}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class ${name}${parent}
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`;
+    });
+
+    const app = appWith('doctrine-entity-graph-deep', files);
+
+    const text = await runModule('doctrine-entity-graph.js', app);
+
+    expect(text).toContain('Entity');
+  });
+
+  test('a hierarchy deeper than five levels', async () => {
+    const files: Record<string, string> = {};
+    const chain = ['Root', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'];
+    chain.forEach((name, i) => {
+      const parent = i === 0 ? '' : ` extends ${chain[i - 1]}`;
+      files[`src/Entity/${name}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\InheritanceType('JOINED')]
+#[ORM\\DiscriminatorColumn(name: 'kind', type: 'string')]
+#[ORM\\DiscriminatorMap(['root' => Root::class, 'one' => One::class])]
+class ${name}${parent}
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+}
+`;
+    });
+
+    const app = appWith('doctrine-inheritance-depth', files);
+
+    const text = await runModule('doctrine-inheritance.js', app);
+
+    expect(text).toContain('epth');
+  });
+});
