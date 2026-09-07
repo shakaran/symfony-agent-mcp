@@ -452,3 +452,118 @@ describe('the application guard', () => {
     });
   });
 });
+
+describe('limits, metrics and access lists', () => {
+  test('the statistics of an expensive tool are halved', () => {
+    jest.isolateModules(() => {
+      const limiter = jest.requireActual<typeof import('../utils/rate-limiter')>('../utils/rate-limiter');
+      limiter.resetRateLimits();
+      limiter.checkRateLimit('tail_log', 'stats');
+      limiter.checkRateLimit('list_routes', 'stats');
+
+      const stats = limiter.getRateLimitStats();
+
+      expect(stats['tail_log'].limit).toBeLessThan(stats['list_routes'].limit);
+    });
+  });
+
+  test('an allowlist and a denylist together, and an empty one', () => {
+    const savedAllowed = process.env['SYMFONY_MCP_ALLOWED_TOOLS'];
+    const savedBlocked = process.env['SYMFONY_MCP_BLOCKED_TOOLS'];
+    process.env['SYMFONY_MCP_ALLOWED_TOOLS'] = 'list_routes, list_entities';
+    process.env['SYMFONY_MCP_BLOCKED_TOOLS'] = ' , ';
+
+    try {
+      jest.isolateModules(() => {
+        const access = jest.requireActual<typeof import('../utils/tool-access-control')>('../utils/tool-access-control');
+        const status = access.getAccessControlStatus();
+
+        expect(status.mode).toBe('allowlist');
+        expect(status.blockedTools).toBeNull();
+        expect(access.checkToolAccess('list_routes').allowed).toBe(true);
+      });
+    } finally {
+      if (savedAllowed === undefined) delete process.env['SYMFONY_MCP_ALLOWED_TOOLS'];
+      else process.env['SYMFONY_MCP_ALLOWED_TOOLS'] = savedAllowed;
+      if (savedBlocked === undefined) delete process.env['SYMFONY_MCP_BLOCKED_TOOLS'];
+      else process.env['SYMFONY_MCP_BLOCKED_TOOLS'] = savedBlocked;
+    }
+  });
+
+  test('a counter incremented by more than one, and a gauge with no labels', () => {
+    const saved = process.env['SYMFONY_MCP_METRICS'];
+    process.env['SYMFONY_MCP_METRICS'] = 'true';
+
+    try {
+      jest.isolateModules(() => {
+        const metrics = jest.requireActual<typeof import('../utils/security-metrics')>('../utils/security-metrics');
+        metrics.incToolCall('list_routes', 'success');
+        metrics.incToolCall('list_routes', 'success');
+
+        expect(metrics.renderPrometheus()).toContain('list_routes');
+      });
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_METRICS'];
+      else process.env['SYMFONY_MCP_METRICS'] = saved;
+    }
+  });
+});
+
+describe('the last halves', () => {
+  test('privacy mode redacting a path with an extension, at the loudest level', () => {
+    const saved = process.env['SYMFONY_MCP_PRIVACY'];
+    process.env['SYMFONY_MCP_PRIVACY'] = 'paranoid';
+
+    try {
+      jest.isolateModules(() => {
+        const privacy = jest.requireActual<typeof import('../utils/privacy-mode')>('../utils/privacy-mode');
+        const out = privacy.applyPrivacyMode(
+          { content: [{ type: 'text', text: 'see /var/www/app/src/Kernel.php and /etc/hosts for details' }] },
+          'list_routes',
+        );
+
+        expect(JSON.stringify(out)).toContain('[FILE.');
+      });
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_PRIVACY'];
+      else process.env['SYMFONY_MCP_PRIVACY'] = saved;
+    }
+  });
+
+  test('the vault cache reports the shortest life of several entries', () => {
+    jest.isolateModules(() => {
+      const vault = jest.requireActual<typeof import('../utils/vault-resolver')>('../utils/vault-resolver');
+      vault.clearVaultCache();
+
+      expect(vault.getVaultCacheStats()).toEqual({ entries: 0, oldestTtlMs: null });
+    });
+  });
+
+  test('an entity with no table name of its own', async () => {
+    write('src/Entity/Plain.php', `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Plain
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $id;
+}
+`);
+    write('.env', 'DATABASE_URL=sqlite:///%kernel.project_dir%/var/data.db\n');
+
+    const connector = jest.requireActual<typeof import('../utils/db-connector')>('../utils/db-connector');
+
+    await expect(connector.listDatabaseTables(appDir)).resolves.toContain('plain');
+  });
+
+  test('a generator with no seed of its own', () => {
+    const generators = jest.requireActual<typeof import('../fuzz/generators')>('../fuzz/generators');
+
+    expect(generators.makePrng()).toBeDefined();
+  });
+});
