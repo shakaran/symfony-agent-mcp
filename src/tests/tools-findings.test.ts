@@ -41271,3 +41271,844 @@ class Fetcher
     expect(text).toContain('CURLOPT_URL');
   });
 });
+
+describe('batch 137: temporal tables, mapping formats and serializer cycles', () => {
+  test('an entity with a validity range and nothing guarding it', async () => {
+    const app = appWith('doctrine-temporal-unguarded', {
+      'src/Entity/PriceRow.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'price_row')]
+class PriceRow
+{
+    #[ORM\\Column(name: 'valid_from', type: 'datetime_immutable')]
+    private $validFrom;
+
+    #[ORM\\Column(name: 'valid_to', type: 'datetime_immutable', nullable: true)]
+    private $validTo;
+
+    #[ORM\\Column(name: 'created_at', type: 'datetime_immutable')]
+    private $createdAt;
+
+    #[ORM\\Column(name: 'updated_at', type: 'datetime_immutable')]
+    private $updatedAt;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-temporal-tables.js', app);
+
+    expect(text).toContain('valid_from');
+  });
+
+  test('a mapping directory holding xml, yaml and attributes at once', async () => {
+    const app = appWith('doctrine-mapping-format-mixed', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        mappings:
+            App:
+                type: attribute
+                dir: '%kernel.project_dir%/src/Entity'
+                prefix: 'App\\Entity'
+`,
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Order
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $id;
+}
+`,
+      'src/Entity/Order.orm.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<doctrine-mapping xmlns="http://doctrine-project.org/schemas/orm/doctrine-mapping">
+    <entity name="App\\Entity\\Order" table="orders"/>
+</doctrine-mapping>
+`,
+      'src/Entity/Order.orm.yml': `App\\Entity\\Order:
+    type: entity
+    table: orders
+`,
+    });
+
+    const text = await runModule('doctrine-mapping-format.js', app);
+
+    expect(text).toContain('Mixed');
+  });
+
+  test('an entity directory with xml beside attributes and no doctrine config', async () => {
+    const app = appWith('doctrine-mapping-format-inferred', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $id;
+}
+`,
+      'src/Entity/Invoice.orm.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<doctrine-mapping>
+    <entity name="App\\Entity\\Invoice" table="invoice"/>
+</doctrine-mapping>
+`,
+    });
+
+    const text = await runModule('doctrine-mapping-format.js', app);
+
+    expect(text).toContain('Mixed XML + attribute mapping');
+  });
+
+  test('a circular reference handler that returns null, and an entity with neither', async () => {
+    const app = appWith('symfony-serializer-circular-null', {
+      'config/packages/serializer.yaml': `framework:
+    serializer:
+        enable_annotations: true
+        mapping:
+            paths: ['%kernel.project_dir%/config/serialization']
+`,
+      'src/Serializer/OrderNormalizer.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Normalizer\\AbstractNormalizer;
+use Symfony\\Component\\Serializer\\Normalizer\\NormalizerInterface;
+
+class OrderNormalizer
+{
+    public function __construct(private NormalizerInterface $inner)
+    {
+    }
+
+    public function normalize(object $object): array
+    {
+        return $this->inner->normalize($object, null, [
+            AbstractNormalizer::CIRCULAR_REFERENCE_HANDLER => function ($o) { return null; },
+        ]);
+    }
+}
+`,
+      'src/Entity/Author.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Component\\Serializer\\Normalizer\\AbstractNormalizer;
+
+#[ORM\\Entity]
+class Author
+{
+    #[ORM\\OneToMany(mappedBy: 'author', targetEntity: Book::class)]
+    private $books;
+
+    public function serialize(): string
+    {
+        return AbstractNormalizer::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-serializer-circular-reference.js', app);
+
+    expect(text).toContain('circular reference handler');
+  });
+
+  test('an api property pointing at schema.org over plain http', async () => {
+    const app = appWith('api-json-ld-http-property', {
+      'src/Entity/Product.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiProperty;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(types: ['https://schema.org/Product'])]
+class Product
+{
+    #[ApiProperty(iri: 'http://schema.org/name')]
+    public string $name = '';
+}
+`,
+    });
+
+    const text = await runModule('api-json-ld-context.js', app);
+
+    expect(text).toContain('HTTPS');
+  });
+
+  test('environment values printed when the server is told to show them', async () => {
+    const app = appWith('env-diff-shown-values', {
+      '.env': `APP_ENV=dev
+APP_SECRET=0123456789abcdef0123456789abcdef
+DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/app?serverVersion=16&charset=utf8&application_name=acme
+`,
+      '.env.prod': `APP_ENV=prod
+APP_SECRET=fedcba9876543210fedcba9876543210
+`,
+    });
+
+    const saved = process.env['SYMFONY_MCP_SHOW_ENV_VALUES'];
+    process.env['SYMFONY_MCP_SHOW_ENV_VALUES'] = 'true';
+    jest.resetModules();
+
+    try {
+      const text = await runModule('env-diff.js', app);
+
+      expect(text).toContain('APP_ENV');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_SHOW_ENV_VALUES'];
+      else process.env['SYMFONY_MCP_SHOW_ENV_VALUES'] = saved;
+      jest.resetModules();
+    }
+  });
+});
+
+describe('batch 138: pools, heredocs and named arguments', () => {
+  test('an fpm pool with too few workers and another with too many', async () => {
+    const app = appWith('php-fpm-config-extremes', {
+      'docker/php-fpm.conf': `[www]
+pm = dynamic
+pm.max_children = 3
+pm.start_servers = 1
+pm.min_spare_servers = 1
+pm.max_spare_servers = 2
+slowlog = /var/log/fpm-slow.log
+request_slowlog_timeout = 5s
+`,
+      'docker/php/www.conf': `[api]
+pm = dynamic
+pm.max_children = 120
+pm.start_servers = 10
+pm.min_spare_servers = 5
+pm.max_spare_servers = 20
+`,
+    });
+
+    const text = await runModule('php-fpm-config.js', app);
+
+    expect(text).toContain('max_children');
+  });
+
+  test('a heredoc holding sql with nothing interpolated', async () => {
+    const app = appWith('php-heredoc-plain-sql', {
+      'src/Repository/ReportRepository.php': `<?php
+
+namespace App\\Repository;
+
+class ReportRepository
+{
+    public function totals(): string
+    {
+        $sql = <<<SQL
+        SELECT id, total
+        FROM orders
+        WHERE status = 'sent'
+        SQL;
+
+        return $sql;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-heredoc-nowdoc.js', app);
+
+    expect(text).toContain('parameterized');
+  });
+
+  test('a class that names more than twenty arguments', async () => {
+    const app = appWith('php-named-arguments-many', {
+      'src/Factory/ThingFactory.php': `<?php
+
+namespace App\\Factory;
+
+class ThingFactory
+{
+    public function build(): array
+    {
+        return [
+${Array.from({ length: 24 }, (_, i) => `            $this->make(name${i}: 'v${i}'),`).join('\n')}
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-named-arguments.js', app);
+
+    expect(text).toContain('high coupling');
+  });
+});
+
+describe('batch 139: envelopes, stubs and skipped checks', () => {
+  test('a delay measured in days and a stamp that implements nothing', async () => {
+    const app = appWith('symfony-messenger-envelope-long-delay', {
+      'src/Message/DispatchLater.php': `<?php
+
+namespace App\\Message;
+
+use Symfony\\Component\\Messenger\\Envelope;
+use Symfony\\Component\\Messenger\\Stamp\\DelayStamp;
+
+class DispatchLater
+{
+    public function send(object $message): Envelope
+    {
+        return new Envelope($message, [new DelayStamp(172800000)]);
+    }
+}
+`,
+      'src/Message/TenantStamp.php': `<?php
+
+namespace App\\Message;
+
+use Symfony\\Component\\Messenger\\Stamp\\DelayStamp;
+
+class TenantStamp
+{
+    public function __construct(public readonly string $tenant)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-envelope.js', app);
+
+    expect(text).toContain('TenantStamp');
+  });
+
+  test('a stub given call expectations', async () => {
+    const app = appWith('phpunit-test-doubles-stub-expects', {
+      'tests/Unit/PaymentTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class PaymentTest extends TestCase
+{
+    public function testItCharges(): void
+    {
+        $gateway = $this->createStub(Gateway::class);
+        $gateway->expects($this->once())->method('charge')->willReturn(true);
+
+        $this->assertTrue($gateway->charge(100));
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-doubles.js', app);
+
+    expect(text).toContain('createMock');
+  });
+
+  test('an enlightn config that skips everything, with debug left on', async () => {
+    const app = appWith('symfony-enlighten-skip-all', {
+      'config/enlightn.php': `<?php
+
+return [
+    'skip_checks' => ['all'],
+    'analyzers' => [],
+];
+`,
+      '.env': `APP_ENV=dev
+APP_DEBUG=true
+`,
+      'composer.json': `{
+  "name": "app/app",
+  "require-dev": { "enlightn/enlightn": "^2.0" }
+}
+`,
+    });
+
+    const text = await runModule('symfony-enlighten-analysis.js', app);
+
+    expect(text).toContain('skip_checks');
+  });
+});
+
+describe('batch 140: schedules, lazy services and serializer groups', () => {
+  test('a periodic task with a timezone and jitter', async () => {
+    const app = appWith('scheduler-timezone-jitter', {
+      'src/Scheduler/CleanupTask.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsPeriodicTask;
+
+#[AsPeriodicTask(frequency: '5 minutes', timezone: 'Europe/Madrid', jitter: 60)]
+class CleanupTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('scheduler.js', app);
+
+    expect(text).toContain('Europe/Madrid');
+  });
+
+  test('a lazy service dragging five dependencies behind it', async () => {
+    const app = appWith('symfony-di-lazy-heavy', {
+      'src/Service/ReportBuilder.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\Lazy;
+
+#[Lazy]
+class ReportBuilder implements ReportBuilderInterface
+{
+    public function __construct(
+        private LoggerInterface $logger,
+        private CacheInterface $cache,
+        private HttpClientInterface $client,
+        private MailerInterface $mailer,
+        private EntityManagerInterface $entityManager,
+    ) {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-di-lazy-ghost.js', app);
+
+    expect(text).toContain('constructor deps');
+  });
+
+  test('a serialized class with some properties left out of every group', async () => {
+    const app = appWith('serializer-ungrouped-properties', {
+      'src/Dto/CustomerDto.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Serializer\\Annotation\\Groups;
+use Symfony\\Component\\Serializer\\Annotation\\MaxDepth;
+use Symfony\\Component\\Serializer\\Annotation\\SerializedName;
+
+class CustomerDto
+{
+    #[Groups(['read'])]
+    public string $name = '';
+
+    #[SerializedName('notes')]
+    public string $internalNotes = '';
+
+    #[MaxDepth(1)]
+    public string $vatNumber = '';
+}
+`,
+    });
+
+    const text = await runModule('serializer.js', app);
+
+    expect(text).toContain('internalNotes');
+  });
+});
+
+describe('batch 141: xliff, webhooks and tagged locators', () => {
+  test('an xliff file with no version and nothing in it', async () => {
+    const app = appWith('translation-xliff-versionless', {
+      'translations/messages.fr.xlf': `<?xml version="1.0" encoding="UTF-8"?>
+<xliff srcLang="en" trgLang="fr">
+  <file id="messages">
+    <body>
+    </body>
+  </file>
+</xliff>
+`,
+    });
+
+    const text = await runModule('translation-xliff-format.js', app);
+
+    expect(text).toContain('version');
+  });
+
+  test('a webhook endpoint with a parser and a request matcher', async () => {
+    const app = appWith('webhooks-parser-matcher', {
+      'config/packages/webhook.yaml': `framework:
+    webhook:
+        routing:
+            stripe:
+                service: 'App\\Webhook\\StripeParser'
+                parser: 'App\\Webhook\\StripeParser'
+                secret: '%env(STRIPE_WEBHOOK_SECRET)%'
+                request_matcher: 'App\\Webhook\\StripeRequestMatcher'
+`,
+    });
+
+    const text = await runModule('webhooks.js', app);
+
+    expect(text).toContain('matcher');
+  });
+
+  test('a tagged locator read without asking whether the service is there', async () => {
+    const app = appWith('symfony-tagged-locator-unchecked', {
+      'src/Handler/HandlerRegistry.php': `<?php
+
+namespace App\\Handler;
+
+use Psr\\Container\\ContainerInterface;
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireLocator;
+use Symfony\\Component\\DependencyInjection\\Attribute\\TaggedLocator;
+
+class HandlerRegistry
+{
+    public function __construct(
+        #[TaggedLocator('app.handler', indexAttribute: 'key', defaultIndexMethod: 'getKey', defaultPriorityMethod: 'getPriority')]
+        private ContainerInterface $handlers,
+    ) {
+    }
+
+    public function run(string $key): void
+    {
+        $this->handlers->get($key)->handle();
+    }
+}
+`,
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+    App\\Handler\\EmailHandler:
+        tags: ['app.handler']
+`,
+    });
+
+    const text = await runModule('symfony-tagged-iterator.js', app);
+
+    expect(text).toContain('has()');
+  });
+});
+
+describe('batch 142: a file that names everything and declares nothing', () => {
+  // Every analyser that looks for a marker and then for the class carrying it
+  // has a guard for the file that has the first without the second. One file
+  // of prose reaches all of them.
+  const prose = `<?php
+
+// A class - the word, not a declaration - used to live here. What is left is
+// the list of what it carried, so the tooling still recognises the file:
+//
+//   extends AbstractFixture, implements FixtureInterface, Fixture
+//   #[ORM\\Entity], #[ORM\\Table(name: 'thing')]
+//   #[Test], extends TestCase, function testSomething()
+//   #[Cache(smaxage: 60)], setMaxAge(60), setSharedMaxAge(60)
+//   #[OA\\Schema], #[OA\\Property], use OpenApi\\Attributes as OA
+//   implements Rule, PHPStan rule
+//   extends Assert, assertThat(), public static function assertSomething()
+//   expectException(), expectExceptionMessage()
+//   assertMatchesSnapshot()
+//   extends AbstractRector, RectorInterface
+//   extends EntityRepository, RepositoryInterface, Repository
+//   Passport, authenticate(), extends AbstractAuthenticator
+//   EncoderInterface, DecoderInterface
+//   Stopwatch $stopwatch, ->start('section'), ->stop('section')
+//   Behat\\Behat\\Context\\Context, @Given, @When, @Then
+//   extends AbstractType, buildForm()
+//   #[MapRequestPayload], #[MapQueryString]
+//   extends AbstractDataCollector, DataCollectorInterface
+
+return [];
+`;
+
+  const modules = [
+    'database-fixture-groups.js',
+    'doctrine-entity-graph.js',
+    'doctrine-change-tracking.js',
+    'fixtures.js',
+    'phpunit-attributes.js',
+    'phpunit-assertions-custom.js',
+    'phpunit-expect-exception.js',
+    'phpunit-snapshot.js',
+    'phpunit-test-groups.js',
+    'phpunit-performance.js',
+    'http-response-cache.js',
+    'openapi.js',
+    'phpstan-custom-rules.js',
+    'rector-custom-rules.js',
+    'repository-analyzer.js',
+    'symfony-security-passport.js',
+    'symfony-serializer-encoders.js',
+    'symfony-stopwatch.js',
+    'behat-contexts.js',
+    'forms.js',
+    'input-dto.js',
+    'symfony-debug-profiler-panels.js',
+  ];
+
+  test.each(modules)('%s reads it without finding a class', async (moduleName) => {
+    const app = appWith(`prose-only-${moduleName.replace('.js', '')}`, {
+      'src/Support/prose.php': prose,
+      'tests/Support/prose.php': prose,
+      'features/bootstrap/prose.php': prose,
+    });
+
+    const text = await runModule(moduleName, app);
+
+    expect(typeof text).toBe('string');
+  });
+});
+
+describe('batch 143: configuration entries that are not mappings', () => {
+  test('cache pools and doctrine entries written as scalars or left empty', async () => {
+    const app = appWith('config-scalar-entries-doctrine', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        pools:
+            app.plain: ~
+            app.scalar: 'cache.adapter.array'
+            app.real:
+                adapter: cache.adapter.filesystem
+`,
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        mappings:
+            Legacy: ~
+            App:
+                type: attribute
+                dir: '%kernel.project_dir%/src/Entity'
+        filters:
+            soft_deleted: ~
+            tenant:
+                class: 'App\\Filter\\TenantFilter'
+                enabled: true
+`,
+    });
+
+    const cache = await runModule('cache-pools.js', app);
+    const orm = await runModule('doctrine-orm-config.js', app);
+
+    expect(cache).toContain('app.real');
+    expect(orm.length).toBeGreaterThan(0);
+  });
+
+  test('a graphql type file whose entries are scalars, beside an empty one', async () => {
+    const app = appWith('config-scalar-entries-graphql', {
+      'config/graphql/types/Article.yaml': `Article:
+    type: object
+    config:
+        fields:
+            title:
+                type: 'String!'
+Legacy: ~
+Other: 'alias'
+`,
+      'config/graphql/types/empty.yaml': '',
+    });
+
+    const text = await runModule('graphql.js', app);
+
+    expect(text).toContain('Article');
+  });
+
+  test('a schedule and a webhook route that are not mappings', async () => {
+    const app = appWith('config-scalar-entries-schedule', {
+      'config/packages/scheduler.yaml': `framework:
+    scheduler:
+        schedules:
+            default:
+                transport: 'doctrine://default'
+            legacy: ~
+`,
+      'config/packages/webhook.yaml': `framework:
+    webhook:
+        routing:
+            stripe: ~
+            mailer:
+                service: 'App\\Webhook\\MailerParser'
+                secret: '%env(MAILER_WEBHOOK_SECRET)%'
+`,
+    });
+
+    const schedule = await runModule('symfony-scheduler-tasks.js', app);
+    const webhook = await runModule('webhooks.js', app);
+
+    expect(schedule.length).toBeGreaterThan(0);
+    expect(webhook).toContain('mailer');
+  });
+
+  test('an oauth client entry that is a scalar', async () => {
+    const app = appWith('config-scalar-entries-oauth', {
+      'config/packages/knpu_oauth2_client.yaml': `knpu_oauth2_client:
+    clients:
+        legacy: ~
+        google:
+            type: google
+            client_id: '%env(GOOGLE_ID)%'
+            client_secret: '%env(GOOGLE_SECRET)%'
+            redirect_route: connect_google_check
+`,
+    });
+
+    const text = await runModule('oauth-sso.js', app);
+
+    expect(text).toContain('google');
+  });
+});
+
+describe('batch 144: sections without the block below them', () => {
+  test('a cache section with no pools, a webhook with no routing, a scheduler with no schedules', async () => {
+    const app = appWith('config-sections-empty', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        default_redis_provider: 'redis://localhost'
+`,
+      'config/packages/webhook.yaml': `framework:
+    webhook:
+        enabled: true
+`,
+      'config/packages/scheduler.yaml': `framework:
+    scheduler:
+        enabled: true
+`,
+    });
+
+    const cache = await runModule('cache-pools.js', app);
+    const webhook = await runModule('webhooks.js', app);
+    const schedule = await runModule('symfony-scheduler-tasks.js', app);
+
+    expect(cache.length).toBeGreaterThan(0);
+    expect(webhook.length).toBeGreaterThan(0);
+    expect(schedule.length).toBeGreaterThan(0);
+  });
+
+  test('an hwi resource owner that is a scalar', async () => {
+    const app = appWith('oauth-hwi-scalar-owner', {
+      'config/packages/hwi_oauth.yaml': `hwi_oauth:
+    firewall_names: [main]
+    resource_owners:
+        legacy: ~
+        github:
+            type: github
+            client_id: '%env(GITHUB_ID)%'
+            client_secret: '%env(GITHUB_SECRET)%'
+            scope: 'user:email,read:org'
+`,
+    });
+
+    const text = await runModule('oauth-sso.js', app);
+
+    expect(text).toContain('github');
+  });
+
+  test('a mock that only ever returns, and an environment value long enough to cut', async () => {
+    const app = appWith('doubles-and-long-values', {
+      'tests/Unit/CatalogueTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class CatalogueTest extends TestCase
+{
+    public function testItReads(): void
+    {
+        $repository = $this->createMock(CatalogueRepository::class);
+        $repository->method('findAll')->willReturn([]);
+
+        $this->assertSame([], $repository->findAll());
+    }
+}
+`,
+      '.env': `APP_ENV=dev
+CORS_ALLOW_ORIGIN=^https?://(localhost|127\\.0\\.0\\.1|app\\.example\\.com|staging\\.example\\.com)(:[0-9]+)?$
+`,
+      '.env.prod': `APP_ENV=prod
+`,
+    });
+
+    const doubles = await runModule('phpunit-test-doubles.js', app);
+
+    const saved = process.env['SYMFONY_MCP_SHOW_ENV_VALUES'];
+    process.env['SYMFONY_MCP_SHOW_ENV_VALUES'] = 'true';
+    jest.resetModules();
+
+    try {
+      const env = await runModule('env-diff.js', app);
+
+      expect(doubles).toContain('stub');
+      expect(env).toContain('CORS_ALLOW_ORIGIN');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_SHOW_ENV_VALUES'];
+      else process.env['SYMFONY_MCP_SHOW_ENV_VALUES'] = saved;
+      jest.resetModules();
+    }
+  });
+});
+
+describe('batch 145: cron parts and lazy prose', () => {
+  test('a cron expression with a part nothing recognises', async () => {
+    const app = appWith('symfony-scheduler-cron-words', {
+      'src/Scheduler/WeeklyTask.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsCronTask;
+
+#[AsCronTask('30 4 * * MON')]
+class WeeklyTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-scheduler-tasks.js', app);
+
+    expect(text).toContain('WeeklyTask');
+  });
+
+  test('a lazy attribute in prose with no class under it', async () => {
+    const app = appWith('symfony-di-lazy-prose', {
+      'src/Service/notes.php': `<?php
+
+// A class - the word only - carried #[Lazy] and Symfony\\Component\\DependencyInjection\\Attribute\\Lazy.
+return [];
+`,
+      'config/services.yaml': `services:
+    App\\Service\\ReportBuilder:
+        lazy: true
+`,
+      'src/Service/ReportFactory.php': `<?php
+
+namespace App\\Service;
+
+class ReportFactory
+{
+    public function make(): ReportBuilder
+    {
+        return new ReportBuilder(new \\stdClass());
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-di-lazy-ghost.js', app);
+
+    expect(typeof text).toBe('string');
+  });
+});

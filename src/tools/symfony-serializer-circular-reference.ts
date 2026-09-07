@@ -94,7 +94,7 @@ function parseCircularReferenceFile(filePath: string, appPath: string): Circular
 
   // Check for null id serialization risk (common workaround that can cause issues)
   if (content.includes('CIRCULAR_REFERENCE_HANDLER') && content.includes('null')) {
-    const handlerBody = /CIRCULAR_REFERENCE_HANDLER['"]\s*=>\s*function[^}]{0,200}/s.exec(content);
+    const handlerBody = /CIRCULAR_REFERENCE_HANDLER['"]?\s*=>\s*(?:static\s+)?(?:function|fn)[^}]{0,200}/s.exec(content);
     if (handlerBody && handlerBody[0].includes('null')) {
       issues.push('Circular reference handler returning null — may cause data loss; prefer returning getId() or a scalar identifier');
     }

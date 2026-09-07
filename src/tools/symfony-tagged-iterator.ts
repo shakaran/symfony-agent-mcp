@@ -43,7 +43,9 @@ function parseTaggedIteratorFile(filePath: string, appPath: string, knownTags: S
   const results: TaggedIteratorInfo[] = [];
 
   // Match #[TaggedIterator('tag.name')] on constructor params
-  const iteratorRegex = /#\[TaggedIterator\s*\(\s*['"]([^'"]{1,100})['"]((?:[^)]{0,200}))\)\s*\]\s*(?:\w+\s+)?\$(\w{1,80})/g;
+  // A promoted constructor property carries a visibility and a type before
+  // the variable, so one optional word was never enough.
+  const iteratorRegex = /#\[TaggedIterator\s*\(\s*['"]([^'"]{1,100})['"]((?:[^)]{0,200}))\)\s*\]\s*(?:[\w\\|?]{1,80}\s+){0,4}\$(\w{1,80})/g;
   for (const m of content.matchAll(iteratorRegex)) {
     const tag = m[1];
     const attrs = m[2];
@@ -80,7 +82,7 @@ function parseTaggedIteratorFile(filePath: string, appPath: string, knownTags: S
   }
 
   // Match #[TaggedLocator('tag.name')]
-  const locatorRegex = /#\[TaggedLocator\s*\(\s*['"]([^'"]{1,100})['"]((?:[^)]{0,200}))\)\s*\]\s*(?:\w+\s+)?\$(\w{1,80})/g;
+  const locatorRegex = /#\[TaggedLocator\s*\(\s*['"]([^'"]{1,100})['"]((?:[^)]{0,200}))\)\s*\]\s*(?:[\w\\|?]{1,80}\s+){0,4}\$(\w{1,80})/g;
   for (const m of content.matchAll(locatorRegex)) {
     const tag = m[1];
     const attrs = m[2];

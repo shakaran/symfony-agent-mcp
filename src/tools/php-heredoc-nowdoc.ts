@@ -100,7 +100,9 @@ function extractHeredocBlocks(content: string, relFile: string): HeredocInfo[] {
 function collectHeredocBody(lines: string[], startLine: number, label: string): string {
   const bodyLines: string[] = [];
   for (let i = startLine; i < Math.min(lines.length, startLine + 200); i++) {
-    const trimmed = lines[i].trimEnd();
+    // PHP 7.3 allows the closing marker to be indented, which is how it is
+    // written now; comparing the line without trimming the front never matched.
+    const trimmed = lines[i].trim();
     if (trimmed === label || trimmed === label + ';') break;
     bodyLines.push(lines[i]);
   }

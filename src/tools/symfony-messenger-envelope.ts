@@ -64,8 +64,10 @@ const KNOWN_STAMPS = [
 ];
 
 function extractDelaySeconds(content: string): number | undefined {
-  const m = /new\s+DelayStamp\s*\(\s*(\d{1,8})\s*\)/.exec(content);
-  return m ? parseInt(m[1], 10) : undefined;
+  // DelayStamp takes milliseconds, and a delay of a day or more has more
+  // than eight digits.
+  const m = /new\s+DelayStamp\s*\(\s*(\d{1,15})\s*\)/.exec(content);
+  return m ? Math.round(parseInt(m[1], 10) / 1000) : undefined;
 }
 
 function hasNullCheckAfterLast(content: string): boolean {

@@ -42,8 +42,10 @@ function parseNamedArgs(filePath: string, appPath: string): NamedArgUsage | null
     const lineContent = withoutAttributes.substring(lineStart, Math.min(lineStart + 120, withoutAttributes.length));
     // Must be inside a function call context
     if (!/\([^)]{0,200}$/.test(withoutAttributes.substring(Math.max(0, m.index - 200), m.index))) continue;
-    // Skip property/array declarations
-    if (/^\s*(public|protected|private|readonly|static|\$|\/\/)/.test(lineContent.trim())) continue;
+    // Skip property declarations and comments. A line starting with a
+    // variable is the common case for a call ($this->make(name: ...)), not
+    // something to skip.
+    if (/^\s*(public|protected|private|readonly|static|\/\/)/.test(lineContent.trim())) continue;
     count++;
     if (examples.length < 5) examples.push(`${m[1]}: ...`);
   }

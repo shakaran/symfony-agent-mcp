@@ -20,6 +20,17 @@
  * lives in its own file with its own mock.
  */
 
+/**
+ * A guard around a read that a caller has already made itself is only reached
+ * when the first read works and a later one does not: failing every read
+ * sends the module home before it gets there. These two make the failure
+ * start at the n-th call instead, and are reset before every function call.
+ */
+let failFromRead = 0;
+let readCount = 0;
+let failFromStat = 0;
+let statCount = 0;
+
 /** Flipped per test; the mocks below read it on every call. */
 let failMode: 'none' | 'read' | 'read-file' | 'stat' | 'exists' | 'path' | 'escape' | 'resolve' | 'resolve-dir' | 'symlink' | 'huge' = 'none';
 // Only the first few reads of a call are oversized: a module that walks a
@@ -89,6 +100,8 @@ jest.mock('fs', () => {
       // 'read' fails every filesystem call; 'read-file' fails only the read
       // itself, so the walk still finds the files whose read is then refused.
       if (failMode === 'read' || failMode === 'read-file') return raise('EIO', 'read');
+      readCount += 1;
+      if (failFromRead > 0 && readCount >= failFromRead) return raise('EIO', 'read');
       // A file above the size every module refuses to read.
       if (failMode === 'huge' && hugeReads < 3) {
         hugeReads += 1;
@@ -122,6 +135,8 @@ jest.mock('fs', () => {
       (failMode === 'exists' ? raise('EIO', 'stat') : real.existsSync(...args)),
     statSync: (...args: Parameters<typeof real.statSync>) => {
       if (failMode === 'stat') return raise('EACCES', 'stat');
+      statCount += 1;
+      if (failFromStat > 0 && statCount >= failFromStat) return raise('EACCES', 'stat');
       const st = real.statSync(...args);
       if (failMode === 'symlink') {
         return Object.assign(Object.create(Object.getPrototypeOf(st)), st, {
@@ -134,6 +149,8 @@ jest.mock('fs', () => {
     },
     lstatSync: (...args: Parameters<typeof real.lstatSync>) => {
       if (failMode === 'stat') return raise('EACCES', 'lstat');
+      statCount += 1;
+      if (failFromStat > 0 && statCount >= failFromStat) return raise('EACCES', 'lstat');
       const st = real.lstatSync(...args);
       if (failMode === 'symlink') {
         return Object.assign(Object.create(Object.getPrototypeOf(st)), st, {
@@ -195,6 +212,229 @@ beforeAll(() => {
   write('.env', 'APP_ENV=prod\nAPP_SECRET=value\n');
   write('phpunit.xml.dist', '<?xml version="1.0"?>\n<phpunit bootstrap="tests/bootstrap.php"/>\n');
 
+  // A handful of files carrying the attributes and shapes the analysers look
+  // for. Without them most modules stop at their own pre-filter and the read
+  // this file exists to break is never attempted.
+  write('src/Entity/Money.php', [
+    '<?php',
+    '',
+    'namespace App\\Entity;',
+    '',
+    'use Doctrine\\ORM\\Mapping as ORM;',
+    '',
+    '#[ORM\\Embeddable]',
+    'class Money',
+    '{',
+    '    #[ORM\\Column(type: "integer")]',
+    '    private int $amount = 0;',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Entity/Order.php', [
+    '<?php',
+    '',
+    'namespace App\\Entity;',
+    '',
+    'use Doctrine\\Common\\Collections\\ArrayCollection;',
+    'use Doctrine\\ORM\\Mapping as ORM;',
+    '',
+    '#[ORM\\Entity(repositoryClass: OrderRepository::class)]',
+    '#[ORM\\Table(name: "orders")]',
+    '#[ORM\\Index(columns: ["status"], name: "idx_status")]',
+    'class Order',
+    '{',
+    '    #[ORM\\Id]',
+    '    #[ORM\\GeneratedValue]',
+    '    #[ORM\\Column]',
+    '    private int $id;',
+    '',
+    '    #[ORM\\Embedded(class: Money::class)]',
+    '    private Money $total;',
+    '',
+    '    #[ORM\\ManyToOne(targetEntity: User::class, inversedBy: "orders")]',
+    '    private User $customer;',
+    '',
+    '    #[ORM\\OneToMany(mappedBy: "order", targetEntity: Money::class, cascade: ["persist"])]',
+    '    private ArrayCollection $lines;',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Enum/Status.php', [
+    '<?php',
+    '',
+    'namespace App\\Enum;',
+    '',
+    'enum Status: string',
+    '{',
+    '    case Draft = "draft";',
+    '    case Sent = "sent";',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Command/ImportCommand.php', [
+    '<?php',
+    '',
+    'namespace App\\Command;',
+    '',
+    'use Symfony\\Component\\Console\\Attribute\\AsCommand;',
+    'use Symfony\\Component\\Console\\Command\\Command;',
+    'use Symfony\\Component\\Console\\Helper\\ProgressBar;',
+    '',
+    '#[AsCommand(name: "app:import", description: "Imports")]',
+    'class ImportCommand extends Command',
+    '{',
+    '    protected function execute($input, $output): int',
+    '    {',
+    '        $bar = new ProgressBar($output, 10);',
+    '        $bar->advance();',
+    '',
+    '        return Command::SUCCESS;',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/EventSubscriber/AuditSubscriber.php', [
+    '<?php',
+    '',
+    'namespace App\\EventSubscriber;',
+    '',
+    'use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;',
+    '',
+    'class AuditSubscriber implements EventSubscriberInterface',
+    '{',
+    '    public static function getSubscribedEvents(): array',
+    '    {',
+    '        return ["kernel.request" => "onRequest", "workflow.order.completed" => "onCompleted"];',
+    '    }',
+    '',
+    '    public function onRequest(): void',
+    '    {',
+    '    }',
+    '',
+    '    public function onCompleted(): void',
+    '    {',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Security/Voter/OrderVoter.php', [
+    '<?php',
+    '',
+    'namespace App\\Security\\Voter;',
+    '',
+    'use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;',
+    '',
+    'class OrderVoter extends Voter',
+    '{',
+    '    protected function supports(string $attribute, mixed $subject): bool',
+    '    {',
+    '        return true;',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Form/OrderType.php', [
+    '<?php',
+    '',
+    'namespace App\\Form;',
+    '',
+    'use Symfony\\Component\\Form\\AbstractType;',
+    'use Symfony\\Component\\Form\\FormBuilderInterface;',
+    '',
+    'class OrderType extends AbstractType',
+    '{',
+    '    public function buildForm(FormBuilderInterface $builder, array $options): void',
+    '    {',
+    '        $builder->add("reference")->add("total");',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Controller/ApiController.php', [
+    '<?php',
+    '',
+    'namespace App\\Controller;',
+    '',
+    'use Symfony\\Component\\HttpFoundation\\JsonResponse;',
+    'use Symfony\\Component\\HttpFoundation\\Request;',
+    'use Symfony\\Component\\HttpKernel\\Attribute\\MapRequestPayload;',
+    'use Symfony\\Component\\Routing\\Attribute\\Route;',
+    '',
+    'class ApiController',
+    '{',
+    '    #[Route("/api/orders", name: "api_orders", methods: ["POST"])]',
+    '    public function create(Request $request, #[MapRequestPayload] Money $payload): JsonResponse',
+    '    {',
+    '        return new JsonResponse(["ok" => true]);',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/Repository/OrderRepository.php', [
+    '<?php',
+    '',
+    'namespace App\\Repository;',
+    '',
+    'use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;',
+    'use Doctrine\\Common\\Collections\\Criteria;',
+    '',
+    'class OrderRepository extends ServiceEntityRepository',
+    '{',
+    '    public function recent(): array',
+    '    {',
+    '        $criteria = Criteria::create()->orderBy(["id" => "DESC"]);',
+    '',
+    '        return $this->matching($criteria)->toArray();',
+    '    }',
+    '',
+    '    public function search(string $term): array',
+    '    {',
+    '        return $this->createQueryBuilder("o")',
+    '            ->where("o.reference LIKE :term")',
+    '            ->setParameter("term", $term)',
+    '            ->getQuery()',
+    '            ->getResult();',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('src/MessageHandler/SendEmailHandler.php', [
+    '<?php',
+    '',
+    'namespace App\\MessageHandler;',
+    '',
+    'use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;',
+    '',
+    '#[AsMessageHandler]',
+    'class SendEmailHandler',
+    '{',
+    '    public function __invoke(object $message): void',
+    '    {',
+    '    }',
+    '}',
+    '',
+  ].join('\n'));
+  write('templates/order/new.html.twig', [
+    '{% extends "base.html.twig" %}',
+    '',
+    '{% form_theme form "form/fields.html.twig" %}',
+    '',
+    '{% block body %}',
+    '    {% for line in order.lines %}',
+    '        {{ render(controller("App\\\\Controller\\\\ApiController::create")) }}',
+    '    {% endfor %}',
+    '    {{ form(form) }}',
+    '{% endblock %}',
+    '',
+  ].join('\n'));
+  write('config/packages/doctrine.yaml', 'doctrine:\n    dbal:\n        url: "%env(resolve:DATABASE_URL)%"\n    orm:\n        auto_generate_proxy_classes: true\n        mappings:\n            App:\n                type: attribute\n                dir: "%kernel.project_dir%/src/Entity"\n');
+  write('config/packages/messenger.yaml', 'framework:\n    messenger:\n        transports:\n            async: "%env(MESSENGER_TRANSPORT_DSN)%"\n        routing:\n            "App\\\\Message\\\\SendEmail": async\n');
+  write('config/packages/monolog.yaml', 'monolog:\n    handlers:\n        main:\n            type: stream\n            path: "%kernel.logs_dir%/%kernel.environment%.log"\n            level: debug\n');
+  write('config/packages/cache.yaml', 'framework:\n    cache:\n        app: cache.adapter.filesystem\n        pools:\n            doctrine.result_cache_pool:\n                adapter: cache.adapter.filesystem\n');
+  write('config/packages/workflow.yaml', 'framework:\n    workflows:\n        order:\n            type: state_machine\n            marking_store:\n                type: method\n                property: currentPlace\n            supports:\n                - App\\\\Entity\\\\Order\n            places: [draft, sent]\n            transitions:\n                send:\n                    from: draft\n                    to: sent\n');
+  write('config/packages/twig.yaml', 'twig:\n    form_themes:\n        - "bootstrap_5_layout.html.twig"\n');
+  write('config/packages/mailer.yaml', 'framework:\n    mailer:\n        dsn: "%env(MAILER_DSN)%"\n');
+
   // The ecosystem files, so the modules that read only one of them get past
   // their own "nothing here" return and into the guarded read this file is
   // about.
@@ -248,7 +488,7 @@ afterAll(() => {
   realFs.rmSync(appPath, { recursive: true, force: true });
 });
 
-afterEach(() => { failMode = 'none'; });
+afterEach(() => { failMode = 'none'; failFromRead = 0; failFromStat = 0; });
 
 interface ResultLike { content?: Array<{ type?: string; text?: string }> }
 
@@ -372,6 +612,36 @@ describe('every module survives a failing filesystem', () => {
       failMode = 'symlink';
 
       for (const [, fn] of pathFunctions(mod)) {
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
+        }
+      }
+    });
+
+    test.each([2, 3, 4, 5, 7])('the reads after the first %i fail', async (n) => {
+      failFromRead = n;
+
+      for (const [, fn] of pathFunctions(mod)) {
+        readCount = 0;
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
+        }
+      }
+    });
+
+    test('the stats after the first two fail', async () => {
+      failFromStat = 3;
+
+      for (const [, fn] of pathFunctions(mod)) {
+        statCount = 0;
         const returned = await Promise.resolve(fn(appPath));
 
         expect(returned).toBeDefined();

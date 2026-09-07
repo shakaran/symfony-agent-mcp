@@ -187,12 +187,7 @@ function scanSchedulerYaml(appPath: string): SchedulerTaskEntry[] {
   const results: SchedulerTaskEntry[] = [];
 
   for (const candidate of candidates) {
-    let raw: Record<string, unknown> | null = null;
-    try {
-      raw = parseYamlFile(candidate) as Record<string, unknown> | null;
-    } catch {
-      continue;
-    }
+    const raw = parseYamlFile(candidate) as Record<string, unknown> | null;
     if (!raw) continue;
 
     const scheduler = (raw['framework']
