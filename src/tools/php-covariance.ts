@@ -96,8 +96,8 @@ function analyzeCovariance(
   childParams: string[],
   isFinal: boolean,
 ): PhpCovarianceInfo['covarianceType'] | 'unknown' {
-  if (!parentReturn && !childReturn) return 'invariant';
-  if (parentReturn === childReturn) return 'invariant';
+  // The caller skips a method whose return type matches its parent's, so the
+  // two types here always differ.
   if (!parentReturn || !childReturn) return 'unknown';
 
   // If child removes nullable from parent (e.g. parent = ?Foo, child = Foo) → covariant return

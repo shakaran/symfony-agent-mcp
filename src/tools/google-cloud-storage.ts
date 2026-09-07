@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface GoogleCloudStorageInfo {
   source: string;
@@ -11,12 +12,6 @@ interface GoogleCloudStorageInfo {
   issue: string | null;
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  const resolvedBase = path.resolve(base);
-  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function maskSecrets(value: string): string {
   return value.replace(/([A-Za-z_][A-Za-z0-9_]*\s*[=:]\s*)[^\s$#'"]{8,}/g, '$1***');
@@ -113,7 +108,9 @@ function buildGoogleCloudStorageInfos(appPath: string): GoogleCloudStorageInfo[]
       if (line.includes('StorageClient') || line.includes('new StorageClient')) {
         const contextEnd = Math.min(lines.length - 1, i + 10);
         const context = lines.slice(i, contextEnd + 1).join('\n');
-        const hasHardcodedKey = /keyFilePath\s*=>\s*['"][^'"$%]{5,}['"]/i.test(context) || /key_file_path\s*=>\s*['"][^'"$%]{5,}['"]/i.test(context);
+        // The array key is quoted in PHP, and a named argument uses a colon:
+        // asking for the bare name followed by => matched neither.
+        const hasHardcodedKey = /['"]?key_?[fF]ile_?[pP]ath['"]?\s*(?:=>|:)\s*['"][^'"$%]{5,}['"]/.test(context);
         const usesEnvVar = context.includes('getenv(') || context.includes('$_ENV[') || context.includes('$_SERVER[') || context.includes('env(');
         if (hasHardcodedKey && !usesEnvVar) {
           results.push({

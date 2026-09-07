@@ -42112,3 +42112,250 @@ class ReportFactory
     expect(typeof text).toBe('string');
   });
 });
+
+describe('batch 146: dumps, casters and cloud buckets', () => {
+  test('a dd() left in application code and a caster without prefixes', async () => {
+    const app = appWith('symfony-var-dumper-leftovers', {
+      'src/Controller/ReportController.php': `<?php
+
+namespace App\\Controller;
+
+class ReportController
+{
+    public function index(array $rows): void
+    {
+        dump($rows);
+        dd($rows);
+    }
+}
+`,
+      'src/Caster/OrderCaster.php': `<?php
+
+namespace App\\Caster;
+
+use Symfony\\Component\\VarDumper\\Caster\\Caster;
+
+class OrderCaster
+{
+    protected $hidden;
+
+    public static function castOrder($order, array $a, $stub, bool $isNested): array
+    {
+        $a[Caster::EXCLUDE_VERBOSE] = true;
+
+        return $a;
+    }
+}
+`,
+      'config/services.yaml': `services:
+    App\\Caster\\OrderCaster:
+        tags:
+            - name: data_collector
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('dd(');
+  });
+});
+
+describe('batch 147: cloud storage and monitoring', () => {
+  test('a storage client with a key path in the source and a signed url that lasts too long', async () => {
+    const app = appWith('google-cloud-storage-hardcoded', {
+      'src/Storage/Uploader.php': `<?php
+
+namespace App\\Storage;
+
+use Google\\Cloud\\Storage\\StorageClient;
+
+class Uploader
+{
+    public function client(): StorageClient
+    {
+        return new StorageClient([
+            'projectId' => 'acme-prod',
+            'keyFilePath' => '/var/secrets/acme-service-account.json',
+        ]);
+    }
+
+    public function link(string $object): string
+    {
+        return $this->client()
+            ->bucket('acme-assets')
+            ->object($object)
+            ->signedUrl(new \\DateTime('+30 days'), [
+                'expires' => 2592000,
+                'version' => 'v4',
+            ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('google-cloud-storage.js', app);
+
+    expect(text).toContain('keyFilePath');
+  });
+});
+
+describe('batch 148: charsets, pools and coding standards', () => {
+  test('a doctrine connection pinned to the three-byte utf8', async () => {
+    const app = appWith('doctrine-mysql-utf8-collation', {
+      'src/Kernel/Doctrine.php': `<?php
+
+namespace App\\Kernel;
+
+class Doctrine
+{
+    public function options(): array
+    {
+        return [
+            'driver' => 'pdo_mysql',
+            'charset' => 'utf8',
+            'collation' => 'utf8_general_ci',
+        ];
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-mysql-specific.js', app);
+
+    expect(text).toContain('utf8mb4');
+  });
+
+  test('an fpm pool set to static in the nginx bundle', async () => {
+    const app = appWith('nginx-php-fpm-static', {
+      'docker/php/php-fpm.conf': `[www]
+pm = static
+pm.max_children = 40
+listen = 127.0.0.1:9000
+`,
+      'docker/nginx/default.conf': `server {
+    listen 80;
+    root /app/public;
+
+    location ~ ^/index\\.php(/|$) {
+        fastcgi_pass app:9000;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+    }
+}
+`,
+    });
+
+    const text = await runModule('nginx-php-fpm.js', app);
+
+    expect(text).toContain('pm=static');
+  });
+
+  test('a phpcs file with no rules and one still on PSR-2', async () => {
+    const app = appWith('php-codesniffer-empty-ruleset', {
+      'phpcs.xml': `<?xml version="1.0"?>
+<ruleset name="App">
+    <file>src</file>
+    <arg name="colors"/>
+</ruleset>
+`,
+      'phpcs.xml.dist': `<?xml version="1.0"?>
+<ruleset name="App legacy">
+    <rule ref="PSR2"/>
+</ruleset>
+`,
+    });
+
+    const text = await runModule('php-codesniffer-config.js', app);
+
+    expect(text).toContain('PSR');
+  });
+});
+
+describe('batch 149: covariance and first-class callables', () => {
+  test('a child that widens a return type to nullable', async () => {
+    const app = appWith('php-covariance-added-nullable', {
+      'src/Repository/BaseRepository.php': `<?php
+
+namespace App\\Repository;
+
+class BaseRepository
+{
+    public function find(int $id): Entity
+    {
+        return new Entity();
+    }
+
+    public function name(): string
+    {
+        return 'base';
+    }
+}
+`,
+      'src/Repository/OrderRepository.php': `<?php
+
+namespace App\\Repository;
+
+class OrderRepository extends BaseRepository
+{
+    public function find(int $id): ?Entity
+    {
+        return null;
+    }
+
+    public function name(): string
+    {
+        return 'orders';
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-covariance.js', app);
+
+    expect(text).toContain('nullable');
+  });
+
+  test('a nullable property called as a first-class callable', async () => {
+    const app = appWith('php-first-class-callable-nullable', {
+      'src/Service/Dispatcher.php': `<?php
+
+namespace App\\Service;
+
+class Dispatcher
+{
+    public function build(): callable
+    {
+        return fn (?Handler $handler) => $handler->handle(...);
+    }
+
+    public function strlen(): callable
+    {
+        return strlen(...);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-first-class-callables.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('batch 150: an application with none of the tooling', () => {
+  test('no coding standard configuration at all', async () => {
+    const app = appWith('php-codesniffer-absent', {
+      'src/Service/Plain.php': `<?php
+
+namespace App\\Service;
+
+class Plain
+{
+}
+`,
+    });
+
+    const text = await runModule('php-codesniffer-config.js', app);
+
+    expect(text).toContain('No PHP_CodeSniffer configuration found');
+  });
+});
