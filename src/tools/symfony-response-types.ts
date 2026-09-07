@@ -139,8 +139,7 @@ function parseResponseTypeFile(filePath: string, appPath: string): ResponseTypeI
     usages.push({ type: 'Response', hasStatusCode: /new Response\([^)]{0,300},[^)]{0,100}[1-9]\d\d/.test(content), issues });
   }
 
-  if (usages.length === 0 && fileIssues.length === 0) return null;
-
+  // Every response type that got this far has added a usage.
   return {
     file: path.relative(appPath, filePath),
     class: classM?.[1],

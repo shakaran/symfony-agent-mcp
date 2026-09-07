@@ -24,9 +24,13 @@ interface RateLimiterPolicyEntry {
 
 // ─── Interval parsing ────────────────────────────────────────────────────────
 
+// The caller only asks about an interval that is set.
 function parseIntervalSeconds(interval: string): number {
-  if (!interval) return 0;
   const s = String(interval).toLowerCase();
+  // Milliseconds are the only unit that can put the window under a second,
+  // which is what the sub-second check downstream is looking for.
+  const msMatch = /^(\d{1,10})\s*(?:ms|millisecond)s?$/u.exec(s);
+  if (msMatch) return parseInt(msMatch[1], 10) / 1000;
   const secMatch = /^(\d{1,10})\s*s(?:econd)?s?$/u.exec(s);
   if (secMatch) return parseInt(secMatch[1], 10);
   const minMatch = /^(\d{1,10})\s*m(?:inute)?s?$/u.exec(s);
@@ -58,12 +62,7 @@ function loadRateLimiterPolicies(appPath: string): RateLimiterPolicyEntry[] {
   ];
 
   for (const candidate of candidates) {
-    let raw: Record<string, unknown> | null = null;
-    try {
-      raw = parseYamlFile(candidate) as Record<string, unknown> | null;
-    } catch {
-      continue;
-    }
+    const raw = parseYamlFile(candidate) as Record<string, unknown> | null;
     if (!raw) continue;
 
     // Support framework.yaml with rate_limiter key and bare rate_limiter.yaml

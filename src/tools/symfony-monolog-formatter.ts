@@ -154,12 +154,7 @@ function scanYamlForFormatters(appPath: string): YamlFormatterDef[] {
   const seen = new Set<string>();
 
   for (const candidate of candidates) {
-    let raw: Record<string, unknown> | null = null;
-    try {
-      raw = parseYamlFile(candidate) as Record<string, unknown> | null;
-    } catch {
-      continue;
-    }
+    const raw = parseYamlFile(candidate) as Record<string, unknown> | null;
     if (!raw) continue;
 
     const monolog = (raw['monolog'] ?? raw) as Record<string, unknown>;

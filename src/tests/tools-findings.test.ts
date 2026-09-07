@@ -40894,3 +40894,107 @@ class HeaderClient
     expect(text).toContain('Basic auth');
   });
 });
+
+describe('batch 134: limiters, mail transports, formatters and responses', () => {
+  test('a fixed window measured in milliseconds and a bucket with no burst', async () => {
+    const app = appWith('symfony-rate-limiter-sub-second', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        anonymous_api:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '500 milliseconds'
+        authenticated_api:
+            policy: 'token_bucket'
+            limit: 5000
+            rate: { interval: '15 minutes', amount: 500 }
+`,
+    });
+
+    const text = await runModule('symfony-rate-limiter-policy.js', app);
+
+    expect(text).toContain('fixed_window');
+  });
+
+  test('a null transport in production and transports written as plain strings', async () => {
+    const app = appWith('symfony-mailer-transport-null-prod', {
+      'config/packages/prod/mailer.yaml': `framework:
+    mailer:
+        dsn: 'null://null'
+        transports:
+            main: 'smtp://localhost:25'
+            secondary: 'sendmail://default'
+`,
+    });
+
+    const text = await runModule('symfony-mailer-transport.js', app);
+
+    expect(text).toContain('null');
+  });
+
+  test('a json formatter escaping unicode and a line formatter carrying traces', async () => {
+    const app = appWith('symfony-monolog-formatter-noisy', {
+      'src/Logger/JsonLogFormatter.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Formatter\\JsonFormatter;
+
+class JsonLogFormatter extends JsonFormatter
+{
+    public function format(array $record): string
+    {
+        return json_encode($record) . "\\n";
+    }
+}
+`,
+      'src/Logger/TraceFormatter.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Formatter\\LineFormatter;
+
+class TraceFormatter extends LineFormatter
+{
+    protected $includeStacktraces = true;
+}
+`,
+    });
+
+    const text = await runModule('symfony-monolog-formatter.js', app);
+
+    expect(text).toContain('Formatter');
+  });
+
+  test('a json response built in a catch block with no status code', async () => {
+    const app = appWith('symfony-response-types-catch', {
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+
+class ApiController
+{
+    public function show(): JsonResponse
+    {
+        try {
+            return new JsonResponse(['ok' => true]);
+        } catch (\\Throwable $e) {
+            return new JsonResponse(['error' => $e->getMessage()]);
+        }
+    }
+}
+`,
+      'src/Controller/notes.php': `<?php
+
+// The Response shapes are documented in the API reference.
+return [];
+`,
+    });
+
+    const text = await runModule('symfony-response-types.js', app);
+
+    expect(text).toContain('catch block');
+  });
+});
