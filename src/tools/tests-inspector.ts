@@ -59,21 +59,21 @@ function getAllPhpFiles(dir: string): string[] {
 }
 
 function detectLayer(relativePath: string, content: string): TestLayer {
-  const lower = relativePath.toLowerCase().replace(/\\/g, '/');
+  // The path comes in relative to the tests directory, so the first segment
+  // has no slash in front of it and never matched; and the class name has to
+  // be looked for in the file, not in a lowercased path.
+  const lower = `/${relativePath.toLowerCase().replace(/\\/g, '/')}`;
 
   if (lower.includes('/e2e/') || lower.includes('/end-to-end/') || content.includes('Panther'))
     return 'E2E';
-  if (lower.includes('/functional/') || lower.includes('/controller/') || lower.includes('WebTestCase'))
+  if (lower.includes('/functional/') || lower.includes('/controller/') || content.includes('WebTestCase'))
     return 'Functional';
   if (lower.includes('/integration/') || content.includes('KernelTestCase'))
     return 'Integration';
   if (lower.includes('/unit/') || content.includes('extends TestCase') || content.includes('extends MockeryTestCase'))
     return 'Unit';
 
-  // Fallback: if it extends KernelTestCase → Integration, WebTestCase → Functional
-  if (/extends\s+KernelTestCase/.test(content)) return 'Integration';
-  if (/extends\s+WebTestCase/.test(content)) return 'Functional';
-
+  // Both base classes are already caught above by name.
   return 'Other';
 }
 

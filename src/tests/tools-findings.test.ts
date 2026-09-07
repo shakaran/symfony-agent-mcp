@@ -40325,3 +40325,439 @@ return [
     expect(text).toContain('app');
   });
 });
+
+describe('batch 132: cookies, voters, upgraders and progress bars', () => {
+  test('a session cookie that is cross-site, insecure and long lived', async () => {
+    const app = appWith('symfony-csrf-loose-cookie', {
+      'config/packages/framework.yaml': `framework:
+    csrf_protection: true
+    session:
+        handler_id: null
+        cookie_samesite: none
+        cookie_secure: false
+        cookie_httponly: false
+        cookie_lifetime: 5184000
+`,
+    });
+
+    const text = await runModule('symfony-csrf.js', app);
+
+    expect(text).toContain('SameSite');
+  });
+
+  test('a functional test, an integration test and a file of test helpers', async () => {
+    const app = appWith('tests-inspector-layers', {
+      'tests/Functional/CheckoutTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class CheckoutTest extends WebTestCase
+{
+    public function testItPays(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/Integration/RepositoryTest.php': `<?php
+
+namespace App\\Tests\\Integration;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+class RepositoryTest extends KernelTestCase
+{
+    public function testItQueries(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/E2E/JourneyTest.php': `<?php
+
+namespace App\\Tests\\E2E;
+
+use Symfony\\Component\\Panther\\PantherTestCase;
+
+class JourneyTest extends PantherTestCase
+{
+    public function testItBrowses(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/Unit/PriceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class PriceTest extends TestCase
+{
+    public function testItAdds(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+      'tests/helpers.php': `<?php
+
+// Shared between suites; function testHelper() is not a test class.
+function testHelper(): bool
+{
+    return true;
+}
+`,
+    });
+
+    const text = await runModule('tests-inspector.js', app);
+
+    expect(text).toContain('CheckoutTest');
+  });
+
+  test('a unanimous access decision that grants when everybody abstains', async () => {
+    const app = appWith('symfony-security-access-unanimous', {
+      'config/packages/security.yaml': `security:
+    access_decision_manager:
+        strategy: unanimous
+        allow_if_all_abstain: true
+    firewalls:
+        main:
+            lazy: true
+`,
+      'src/Security/Voter/Unanimous0Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Unanimous0Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Unanimous1Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Unanimous1Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Unanimous2Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Unanimous2Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Unanimous3Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Unanimous3Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Unanimous4Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Unanimous4Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Unanimous5Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Unanimous5Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-access-decision.js', app);
+
+    expect(text).toContain('unanimous');
+  });
+
+  test('a consensus access decision', async () => {
+    const app = appWith('symfony-security-access-consensus', {
+      'config/packages/security.yaml': `security:
+    access_decision_manager:
+        strategy: consensus
+    firewalls:
+        main:
+            lazy: true
+`,
+      'src/Security/Voter/Consensus0Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus0Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus1Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus1Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus2Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus2Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus3Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus3Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus4Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus4Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus5Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus5Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus6Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus6Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus7Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus7Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus8Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus8Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus9Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus9Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/Voter/Consensus10Voter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class Consensus10Voter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-access-decision.js', app);
+
+    expect(text).toContain('consensus');
+  });
+
+  test('a rehash that is checked and never applied', async () => {
+    const app = appWith('symfony-security-password-upgrade-missing', {
+      'src/Repository/UserRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Symfony\\Component\\Security\\Core\\User\\PasswordUpgraderInterface;
+
+class UserRepository implements PasswordUpgraderInterface
+{
+    public function login(object $user, object $hasher): void
+    {
+        if ($hasher->needsRehash($user)) {
+            $this->logger->info('rehash needed');
+        }
+    }
+}
+`,
+      'src/Repository/notes.php': `<?php
+
+// The PasswordUpgraderInterface wiring was removed in the rewrite.
+return [];
+`,
+      'src/Repository/legacy.php': `<?php
+
+// A class - one implementing PasswordUpgraderInterface - lived here.
+return [];
+`,
+    });
+
+    const text = await runModule('symfony-security-password-upgrade.js', app);
+
+    expect(text).toContain('needsRehash');
+  });
+
+  test('a progress bar with no steps, verbose format, beside the component copy', async () => {
+    const app = appWith('symfony-console-progress-bar-indeterminate', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Helper\\ProgressBar;
+
+class ImportCommand
+{
+    public function run($output): void
+    {
+        $bar = new ProgressBar($output, 0);
+        $bar->setFormat('very_verbose');
+        $bar->advance();
+    }
+}
+`,
+      'src/Vendor/ProgressBar.php': `<?php
+
+namespace Symfony\\Component\\Console\\Helper;
+
+/** @see ProgressBar::setFormat() */
+class ProgressBar
+{
+    public static function setPlaceholderFormatterDefinition(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-progress-bar.js', app);
+
+    expect(text).toContain('maxSteps=0');
+  });
+});
