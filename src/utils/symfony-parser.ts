@@ -95,7 +95,11 @@ const anyMappingTag = yaml.defineMappingTag<{ tag: string; pairs: Map<unknown, u
   identify: () => false,
 });
 
-const SYMFONY_YAML_SCHEMA = yaml.CORE_SCHEMA.withTags(anyScalarTag, anySequenceTag, anyMappingTag);
+// mergeTag is not in the core schema, and Symfony configuration does use
+// `<<: *defaults` to share a block between services.
+export const SYMFONY_YAML_SCHEMA = yaml.CORE_SCHEMA.withTags(
+  yaml.mergeTag, anyScalarTag, anySequenceTag, anyMappingTag,
+);
 
 export function parseYamlFile(filePath: string): unknown {
   try {
