@@ -43,8 +43,7 @@ function buildAssetIntegrityInfos(appPath: string): AssetIntegrityInfo[] {
     let match: RegExpExecArray | null;
     while ((match = scriptTagRe.exec(content)) !== null) {
       const tag = match[0];
-      const srcMatch = /src\s*=\s*["']([^"']{1,300})["']/.exec(tag);
-      if (!srcMatch) continue;
+      const srcMatch = /src\s*=\s*["']([^"']{1,300})["']/.exec(tag)!;
       const src = srcMatch[1];
       if (!src.startsWith('http') && !src.includes('//')) continue;
 
@@ -65,8 +64,7 @@ function buildAssetIntegrityInfos(appPath: string): AssetIntegrityInfo[] {
     while ((match = linkTagRe.exec(content)) !== null) {
       const tag = match[0];
       if (!tag.includes('stylesheet')) continue;
-      const hrefMatch = /href\s*=\s*["']([^"']{1,300})["']/.exec(tag);
-      if (!hrefMatch) continue;
+      const hrefMatch = /href\s*=\s*["']([^"']{1,300})["']/.exec(tag)!;
       const href = hrefMatch[1];
       if (!href.startsWith('http') && !href.includes('//')) continue;
 

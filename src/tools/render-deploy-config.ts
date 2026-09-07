@@ -98,7 +98,11 @@ function buildRenderDeployInfos(appPath: string): RenderDeployInfo[] {
       let ev: RegExpExecArray | null;
       while ((ev = envVarValuePattern.exec(block)) !== null) {
         const val = ev[1].trim().replace(/^['"]|['"]$/g, '');
-        if (looksLikeHardcodedSecret(val)) {
+        // The name of the variable is what says whether the value is a secret,
+        // and it sits on the line above.
+        const keyMatch = /key\s*:\s*([^\n]{1,200})\s*$/.exec(block.slice(0, ev.index));
+        const key = keyMatch ? keyMatch[1].trim() : '';
+        if (looksLikeHardcodedSecret(val, key)) {
           issues.push(`Service "${svcName}": envVar with plain-text value "***" — use sync: true with Render environment group secrets instead`);
           break;
         }

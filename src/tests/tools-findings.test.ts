@@ -40136,3 +40136,192 @@ scheduler: php bin/console app:cron
     expect(text).toContain('smtp');
   });
 });
+
+describe('batch 131: test tooling, deploy files and runtimes', () => {
+  test('a phpunit extension in an anonymous class beside a real one', async () => {
+    const app = appWith('phpunit-extensions-anonymous', {
+      'tests/Extension/CoverageExtension.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Runner\\BeforeFirstTestHook;
+use PHPUnit\\Runner\\AfterLastTestHook;
+
+class CoverageExtension implements BeforeFirstTestHook, AfterLastTestHook
+{
+    public function executeBeforeFirstTest(): void
+    {
+    }
+
+    public function executeAfterLastTest(): void
+    {
+    }
+}
+`,
+      'tests/Extension/inline.php': `<?php
+
+// Replaces the old BeforeTestHook wiring.
+$extension = new class {
+    public function bootstrap(): void
+    {
+    }
+};
+`,
+      'phpunit.xml.dist': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit>
+    <extensions>
+        <bootstrap class="App\\Tests\\Extension\\CoverageExtension"/>
+    </extensions>
+</phpunit>
+`,
+    });
+
+    const text = await runModule('phpunit-extensions.js', app);
+
+    expect(text).toContain('CoverageExtension');
+  });
+
+  test('a render service without a name and one with a secret in plain sight', async () => {
+    const app = appWith('render-deploy-config-secrets', {
+      'render.yaml': `services:
+  - type: web
+    name: app-web
+    env: docker
+    envVars:
+      - key: APP_ENV
+        value: \${APP_ENV}
+      - key: DATABASE_PASSWORD
+        value: hunter2hunter2
+  - type: worker
+    env: docker
+    plan: starter
+`,
+    });
+
+    const text = await runModule('render-deploy-config.js', app);
+
+    expect(text).toContain('app-web');
+  });
+
+  test('sentry sending everything it can', async () => {
+    const app = appWith('sentry-integration-verbose', {
+      'config/packages/sentry.yaml': `sentry:
+    dsn: '%env(SENTRY_DSN)%'
+    send_default_pii: true
+    traces_sample_rate: 1.0
+    max_breadcrumbs: 200
+    options:
+        environment: '%kernel.environment%'
+`,
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "sentry/sentry-symfony": "^5.0" }
+}
+`,
+    });
+
+    const text = await runModule('sentry-integration.js', app);
+
+    expect(text).toContain('send_default_pii');
+  });
+
+  test('swoole through the symfony runtime and a standard PDO inside it', async () => {
+    const app = appWith('swoole-openswoole-runtime', {
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "symfony/runtime": "^7.0", "runtime/swoole": "^0.4" }
+}
+`,
+      'src/Server/Bootstrap.php': `<?php
+
+namespace App\\Server;
+
+use Swoole\\Http\\Server;
+
+class Bootstrap
+{
+    private static array $shared = [];
+
+    public function run(): void
+    {
+        $server = new Server('0.0.0.0', 9501);
+        $pdo = new PDO('pgsql:host=db;dbname=app');
+        $server->start();
+    }
+}
+`,
+    });
+
+    const saved = process.env['SYMFONY_RUNTIME'];
+    process.env['SYMFONY_RUNTIME'] = 'Runtime\\Swoole\\Runtime';
+    try {
+      const text = await runModule('swoole-openswoole.js', app);
+
+      expect(text).toContain('Swoole');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_RUNTIME'];
+      else process.env['SYMFONY_RUNTIME'] = saved;
+    }
+  });
+
+  test('an importmap with integrity hashes already in place', async () => {
+    const app = appWith('symfony-asset-integrity-importmap', {
+      'importmap.php': `<?php
+
+return [
+    'app' => [
+        'path' => './assets/app.js',
+        'entrypoint' => true,
+    ],
+    'stimulus' => [
+        'version' => '3.2.2',
+        'integrity' => 'sha384-abcdef',
+    ],
+];
+`,
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" href="https://cdn.example.com/app.css">
+        <script src="https://cdn.example.com/app.js"></script>
+    </head>
+    <body></body>
+</html>
+`,
+    });
+
+    const text = await runModule('symfony-asset-integrity.js', app);
+
+    expect(text).toContain('importmap');
+  });
+
+  test('a doctrine cache pool and a default app adapter with nothing pruning them', async () => {
+    const app = appWith('symfony-cache-pool-prune-doctrine', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            doctrine.result_cache_pool:
+                adapter: cache.adapter.doctrine
+            metadata.pool:
+                adapter: cache.adapter.filesystem
+`,
+    });
+
+    const text = await runModule('symfony-cache-pool-prune.js', app);
+
+    expect(text).toContain('prune');
+  });
+
+  test('a default app adapter with no pools of its own', async () => {
+    const app = appWith('symfony-cache-pool-prune-app-only', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+`,
+    });
+
+    const text = await runModule('symfony-cache-pool-prune.js', app);
+
+    expect(text).toContain('app');
+  });
+});

@@ -169,10 +169,9 @@ function buildPruneInfos(appPath: string): CachePoolPruneInfo[] {
     if (isPruneable && !hasPruneScheduled) {
       if (pool.adapter === 'filesystem') {
         issues.push(`Filesystem cache pool "${pool.name}" without prune scheduled — disk fills up with expired entries`);
-      } else if (pool.adapter === 'pdo' || pool.adapter === 'doctrine') {
-        issues.push(`${pool.adapter} cache pool "${pool.name}" without prune scheduled — database table grows with expired entries`);
       } else {
-        issues.push(`Pruneable cache pool "${pool.name}" (${pool.adapter}) without cache:pool:prune scheduled`);
+        // Every name in PRUNEABLE_ADAPTERS resolves to filesystem, pdo or doctrine.
+        issues.push(`${pool.adapter} cache pool "${pool.name}" without prune scheduled — database table grows with expired entries`);
       }
     }
     if (hasPruneableInSrc && !hasPruneScheduled) {
