@@ -39179,3 +39179,191 @@ SLACK_DSN=slack://xoxb\x2d1234-secret@default?channel=general
     expect(text).toContain('rocketchat');
   });
 });
+
+describe('batch 126: translations, interfaces, payloads and locators', () => {
+  test('a slovenian catalogue with a repeated key and a nested one', async () => {
+    const app = appWith('symfony-translation-lint-slovenian', {
+      'translations/messages.sl.yaml': `app:
+    title: Naslov
+    subtitle: Podnaslov
+items: "en element|dva elementa|trije elementi|stiri elementi"
+greeting: Pozdravljeni
+greeting: Zdravo
+`,
+      'translations/messages.fr.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+  <file source-language="en" target-language="fr" datatype="plaintext">
+    <body>
+      <trans-unit id="app.title">
+        <source>Dashboard</source>
+        <target>Dashboard</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+`,
+    });
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+
+    expect(text).toContain('greeting');
+  });
+
+  test('a marker interface, a file with no class and prose that mentions both words', async () => {
+    const app = appWith('php-interface-segregation-shapes', {
+      'src/Contract/Marker.php': `<?php
+
+namespace App\\Contract;
+
+interface Marker
+{
+}
+`,
+      'src/Support/notes.php': `<?php
+
+return ['generated' => true];
+`,
+      'src/Support/legacy.php': `<?php
+
+// The interface, in the old sense, and the class, singular, are both gone.
+return null;
+`,
+      'src/Service/Tagged.php': `<?php
+
+namespace App\\Service;
+
+use App\\Contract\\Marker;
+
+class Tagged implements Marker
+{
+}
+`,
+    });
+
+    const text = await runModule('php-interface-segregation.js', app);
+
+    expect(text).toContain('marker');
+  });
+
+  test('a payload DTO found through its use statement', async () => {
+    const app = appWith('symfony-controller-map-payload-use', {
+      'src/Dto/CreateOrder.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+readonly class CreateOrder
+{
+    public function __construct(
+        #[Assert\\NotBlank]
+        public string $reference = '',
+    ) {
+    }
+}
+`,
+      'src/Controller/OrderController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Dto\\CreateOrder;
+use Symfony\\Component\\HttpFoundation\\Request;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\HttpKernel\\Attribute\\MapQueryParameter;
+use Symfony\\Component\\HttpKernel\\Attribute\\MapRequestPayload;
+
+class OrderController
+{
+    public function create(
+        Request $request,
+        #[MapRequestPayload]
+        CreateOrder $order,
+        #[MapQueryParameter]
+        CreateOrder $filter,
+    ): Response {
+        return new Response('');
+    }
+}
+`,
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "php": "^8.2", "symfony/framework-bundle": "^7.1" }
+}
+`,
+    });
+
+    const text = await runModule('symfony-controller-map-payload.js', app);
+
+    expect(text).toContain('CreateOrder');
+    expect(text).not.toContain('no validation constraints');
+  });
+
+  test('a stimulus controller that listens and never stops listening', async () => {
+    const app = appWith('symfony-ux-stimulus-leaky', {
+      'assets/controllers/menu_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+export default class extends Controller {
+    connect() {
+        window.addEventListener('resize', () => this.reposition());
+    }
+
+    reposition() {
+        this.element.dataset.open = 'yes';
+    }
+}
+`,
+      'assets/controllers/helpers.js': `export function slugify(value) {
+    return value.toLowerCase();
+}
+`,
+    });
+
+    const text = await runModule('symfony-ux-stimulus-values.js', app);
+
+    expect(text).toContain('menu');
+  });
+
+  test('a rest query parameter whose requirement is an open quantifier', async () => {
+    const app = appWith('fos-rest-bundle-quantifier', {
+      'src/Controller/SearchController.php': `<?php
+
+namespace App\\Controller;
+
+use FOS\\RestBundle\\Controller\\Annotations as Rest;
+
+class SearchController
+{
+    #[Rest\\QueryParam(name: "term", requirements=".+", description: "What to look for")]
+    #[Rest\\Get("/search")]
+    public function search(): array
+    {
+        return [];
+    }
+}
+`,
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "friendsofsymfony/rest-bundle": "^3.5" }
+}
+`,
+    });
+
+    const text = await runModule('fos-rest-bundle.js', app);
+
+    expect(text).toContain('ReDoS');
+  });
+
+  test('a tagged locator declared in services.yaml', async () => {
+    const app = appWith('service-locators-tagged', {
+      'config/services.yaml': `services:
+    App\\Handler\\HandlerLocator:
+        arguments:
+            - !tagged_locator { tag: app.handler, index_by: alias }
+`,
+    });
+
+    const text = await runModule('service-locators.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});

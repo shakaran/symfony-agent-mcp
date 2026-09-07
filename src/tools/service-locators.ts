@@ -45,8 +45,13 @@ function loadTaggedLocators(appPath: string): ServiceLocatorInfo[] {
       const args = Array.isArray(d['arguments']) ? d['arguments'] : [];
       for (const arg of args) {
         const a = (arg ?? {}) as Record<string, unknown>;
-        if (typeof a === 'object' && a['!tagged_locator']) {
-          results.push({ name, type: 'tagged_locator', services: [String(a['!tagged_locator'])], issues: [] });
+        const locator = a['!tagged_locator'];
+        if (locator) {
+          // Either `!tagged_locator app.handler` or `!tagged_locator { tag: app.handler }`
+          const tag = typeof locator === 'string'
+            ? locator
+            : String((locator as Record<string, unknown>)['tag'] ?? 'unknown');
+          results.push({ name, type: 'tagged_locator', services: [tag], issues: [] });
         }
       }
     }

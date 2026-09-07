@@ -72,10 +72,8 @@ function parseInterface(filePath: string): ParsedInterface | null {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  if (!content.includes('interface ')) return null;
-  const ifaceM = /\binterface\s+(\w{1,80})/.exec(content);
-  if (!ifaceM) return null;
-
+  // The caller only gets here for a file that declares an interface.
+  const ifaceM = /\binterface\s+(\w{1,80})/.exec(content)!;
   const name = ifaceM[1];
 
   // Count method declarations in the interface
@@ -114,9 +112,8 @@ function parseClass(filePath: string): ParsedClass | null {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  if (!content.includes('class ')) return null;
-  const classM = /\bclass\s+(\w{1,80})/.exec(content);
-  if (!classM) return null;
+  // Likewise: the caller matched a class declaration before calling.
+  const classM = /\bclass\s+(\w{1,80})/.exec(content)!;
 
   const implM = /implements\s+([\w\\, ]{1,400})/.exec(content);
   const implementedInterfaces = implM

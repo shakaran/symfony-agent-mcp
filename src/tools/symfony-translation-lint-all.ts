@@ -153,8 +153,8 @@ function getExpectedPluralCount(locale: string): number {
   return 2; // default
 }
 
+// Only called for a value that carries the pipe.
 function countPluralForms(value: string): number {
-  if (!value.includes('|')) return 1;
   return value.split('|').length;
 }
 

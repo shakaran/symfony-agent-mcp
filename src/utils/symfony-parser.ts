@@ -64,13 +64,46 @@ export interface ParsedEntity {
   relationships: EntityRelationship[];
 }
 
+// Symfony writes its own tags into service and framework files, and js-yaml
+// rejects a tag it does not know: a single !tagged_iterator used to make the
+// whole file unreadable. Any explicit tag is accepted here and kept as a key,
+// so a caller can still see which one it was.
+interface TaggedValue { [tag: string]: unknown }
+
+const anyScalarTag = yaml.defineScalarTag<TaggedValue>('!', {
+  matchByTagPrefix: true,
+  resolve: (source, _isExplicit, tagName) => ({ [tagName]: source }),
+  identify: () => false,
+});
+
+const anySequenceTag = yaml.defineSequenceTag<{ tag: string; items: unknown[] }, TaggedValue>('!', {
+  matchByTagPrefix: true,
+  create: (tagName) => ({ tag: tagName, items: [] }),
+  addItem: (carrier, item) => { carrier.items.push(item); },
+  finalize: (carrier) => ({ [carrier.tag]: carrier.items }),
+  identify: () => false,
+});
+
+const anyMappingTag = yaml.defineMappingTag<{ tag: string; pairs: Map<unknown, unknown> }, TaggedValue>('!', {
+  matchByTagPrefix: true,
+  create: (tagName) => ({ tag: tagName, pairs: new Map<unknown, unknown>() }),
+  addPair: (carrier, key, value) => { carrier.pairs.set(key, value); return ''; },
+  has: (carrier, key) => carrier.pairs.has(key),
+  keys: (result) => Object.keys(result),
+  get: (result, key) => result[String(key)],
+  finalize: (carrier) => ({ [carrier.tag]: Object.fromEntries(carrier.pairs as Map<string, unknown>) }),
+  identify: () => false,
+});
+
+const SYMFONY_YAML_SCHEMA = yaml.CORE_SCHEMA.withTags(anyScalarTag, anySequenceTag, anyMappingTag);
+
 export function parseYamlFile(filePath: string): unknown {
   try {
     if (!fs.existsSync(filePath)) {
       return null;
     }
     const content = fs.readFileSync(filePath, 'utf-8');
-    return yaml.load(content);
+    return yaml.load(content, { schema: SYMFONY_YAML_SCHEMA });
   } catch {
     return null;
   }

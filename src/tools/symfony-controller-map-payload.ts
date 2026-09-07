@@ -63,10 +63,21 @@ function checkFrameworkBundleVersion(appPath: string): boolean {
   } catch { return false; }
 }
 
-function hasDtoConstraints(appPath: string, dtoClass: string): boolean {
-  if (!dtoClass) return false;
-  const withoutApp = dtoClass.replace(/^App\\/, '').replace(/\\/g, path.sep);
-  const candidate = path.join(appPath, 'src', withoutApp + '.php');
+// A DTO is almost always written by its short name, with a use statement
+// above; resolving only the fully qualified form meant the file was never
+// found and every payload came back as unvalidated.
+function dtoCandidatePath(appPath: string, dtoClass: string, content: string): string {
+  let fqcn = dtoClass;
+  if (!fqcn.includes('\\')) {
+    const useMatch = new RegExp(`^use\\s+([\\w\\\\]{1,200}\\\\${fqcn})\\s*;`, 'm').exec(content);
+    if (useMatch) fqcn = useMatch[1];
+  }
+  const withoutApp = fqcn.replace(/^App\\/, '').replace(/\\/g, path.sep);
+  return path.join(appPath, 'src', withoutApp + '.php');
+}
+
+function hasDtoConstraints(appPath: string, dtoClass: string, source: string): boolean {
+  const candidate = dtoCandidatePath(appPath, dtoClass, source);
   try {
     const content = fs.readFileSync(candidate, 'utf-8');
     return content.includes('use Symfony\\Component\\Validator') ||
@@ -76,10 +87,8 @@ function hasDtoConstraints(appPath: string, dtoClass: string): boolean {
   } catch { return false; }
 }
 
-function isDtoReadonly(appPath: string, dtoClass: string): boolean {
-  if (!dtoClass) return false;
-  const withoutApp = dtoClass.replace(/^App\\/, '').replace(/\\/g, path.sep);
-  const candidate = path.join(appPath, 'src', withoutApp + '.php');
+function isDtoReadonly(appPath: string, dtoClass: string, source: string): boolean {
+  const candidate = dtoCandidatePath(appPath, dtoClass, source);
   try {
     const content = fs.readFileSync(candidate, 'utf-8');
     return content.includes('readonly class ') || content.includes('readonly ');
@@ -114,7 +123,7 @@ function parseControllerFile(filePath: string, appPath: string): MapPayloadInfo[
   while ((m = payloadPattern.exec(content)) !== null) {
     const dtoClass = m[1];
     const issues: string[] = [];
-    const hasConstraints = hasDtoConstraints(appPath, dtoClass);
+    const hasConstraints = hasDtoConstraints(appPath, dtoClass, content);
     if (!hasConstraints) {
       issues.push(`#[MapRequestPayload] DTO "${dtoClass}" has no validation constraints — unvalidated input reaches handler`);
     }
@@ -138,7 +147,7 @@ function parseControllerFile(filePath: string, appPath: string): MapPayloadInfo[
   while ((m = queryStringPattern.exec(content)) !== null) {
     const dtoClass = m[1];
     const issues: string[] = [];
-    const hasConstraints = hasDtoConstraints(appPath, dtoClass);
+    const hasConstraints = hasDtoConstraints(appPath, dtoClass, content);
     if (!hasConstraints) {
       issues.push(`#[MapQueryString] DTO "${dtoClass}" has no validation constraints — query string params unvalidated`);
     }
@@ -157,8 +166,8 @@ function parseControllerFile(filePath: string, appPath: string): MapPayloadInfo[
   while ((m = queryParamPattern.exec(content)) !== null) {
     const dtoClass = m[1].replace(/^\?/, '');
     const issues: string[] = [];
-    const hasConstraints = hasDtoConstraints(appPath, dtoClass);
-    const readonly = isDtoReadonly(appPath, dtoClass);
+    const hasConstraints = hasDtoConstraints(appPath, dtoClass, content);
+    const readonly = isDtoReadonly(appPath, dtoClass, content);
     if (!readonly && !SCALAR_TYPES.has(dtoClass.toLowerCase())) {
       issues.push(`#[MapQueryParameter] class "${dtoClass}" is not readonly — use readonly/immutable class to avoid mutation after binding`);
     }
