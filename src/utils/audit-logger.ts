@@ -199,6 +199,9 @@ function rotateLogIfNeeded(): void {
     }
 
     // Move current log to .1
+    /* istanbul ignore next -- the file is only missing here if something
+       removed it between the size check and this line, which a test cannot
+       arrange: the guard is against that race, not against a normal path. */
     if (fs.existsSync(logFilePath)) {
       fs.renameSync(logFilePath, `${logFilePath}.1`);
     }
@@ -333,7 +336,8 @@ function deserialise(line: string): AuditEntry | null {
       };
       return {
         ts: get('rt'),
-        tool: parts[4] ?? '',
+        // The length check above guarantees the first eight fields.
+        tool: parts[4],
         appHash: get('appHash'),
         durationMs: parseInt(get('durationMs'), 10) || 0,
         success: get('outcome') === 'success',
