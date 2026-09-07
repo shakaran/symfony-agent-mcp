@@ -60,8 +60,8 @@ function getAllTwigFiles(dir: string): string[] {
 }
 
 function isInsideLoop(content: string, keyword: string): boolean {
+  // Every caller checks the keyword is there first.
   const idx = content.indexOf(keyword);
-  if (idx === -1) return false;
   // Look back up to 500 chars for loop keywords
   const before = content.slice(Math.max(0, idx - 500), idx);
   return /\b(foreach|for|while)\s*\(/.test(before);

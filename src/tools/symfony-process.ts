@@ -116,11 +116,9 @@ function detectNativeFunctions(content: string): string[] {
   return natives;
 }
 
+// The caller has already established that the file calls ->run() and not
+// ->mustRun(); what is left to ask is whether anybody looks at the result.
 function hasRunWithoutCheck(content: string): boolean {
-  // ->run() present but neither $returnCode check nor mustRun() used
-  if (!content.includes('->run(') && !content.includes('->run()')) return false;
-  // If mustRun is also used, it's covered
-  if (content.includes('->mustRun(')) return false;
   // Check if the return value of run() is used (e.g., $code = $process->run())
   if (/\$\w+\s*=\s*\$\w+->run\s*\(/.test(content)) return false;
   return true;

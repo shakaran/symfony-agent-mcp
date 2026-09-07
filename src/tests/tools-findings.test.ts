@@ -38939,3 +38939,243 @@ REDIS_URL=redis+sentinel://cache:secret@sentinel-a:26379,sentinel-b:26379/mymast
     expect(text).toContain('mymaster');
   });
 });
+
+describe('batch 125: the component copies, the loaders and the chat transports', () => {
+  test('the Process component own files, and a script with no class at all', async () => {
+    const app = appWith('symfony-process-component-copy', {
+      'src/Vendor/Process.php': `<?php
+
+namespace Symfony\\Component\\Process;
+
+/** The component copy of Symfony\\Component\\Process\\Process. */
+class Process
+{
+    public function run(): int
+    {
+        return 0;
+    }
+}
+`,
+      'src/Support/spawn.php': `<?php
+
+use Symfony\\Component\\Process\\Process;
+
+$process = new Process(['ls']);
+$process->start();
+`,
+      'src/Service/Backup.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Backup
+{
+    public function dump(): void
+    {
+        $process = new Process(['pg_dump']);
+        $process->mustRun();
+    }
+}
+`,
+      'src/Service/Watcher.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Process\\Process;
+
+class Watcher
+{
+    public function watch(): void
+    {
+        $process = new Process(['tail', '-f', 'var/log/app.log']);
+        $process->start();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-process.js', app);
+
+    expect(text).toContain('Backup');
+    expect(text).not.toContain('Vendor/Process.php');
+  });
+
+  test('property extractors: the component copy, a script, and one that never says implements', async () => {
+    const app = appWith('symfony-property-info-shapes', {
+      'src/Vendor/PhpDocExtractor.php': `<?php
+
+namespace Symfony\\Component\\PropertyInfo\\Extractor;
+
+class PhpDocExtractor implements PropertyTypeExtractorInterface
+{
+}
+`,
+      'src/PropertyInfo/bootstrap.php': `<?php
+
+namespace App\\PropertyInfo;
+
+// Registers every PropertyListExtractorInterface found in the container.
+return static fn (): array => [];
+`,
+      'src/PropertyInfo/LegacyExtractor.php': `<?php
+
+namespace App\\PropertyInfo;
+
+/**
+ * Was a PropertyListExtractorInterface before the rewrite.
+ */
+class LegacyExtractor
+{
+    public function getProperties(string $class): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-property-info.js', app);
+
+    expect(text).toContain('LegacyExtractor');
+    expect(text).toContain('auto-tagged');
+  });
+
+  test('routing loaders: two component copies and one that returns null', async () => {
+    const app = appWith('symfony-routing-loader-shapes', {
+      'src/Vendor/ConfigLoader.php': `<?php
+
+namespace Symfony\\Component\\Config\\Loader;
+
+// tagged as routing.loader by the framework bundle
+abstract class Loader
+{
+}
+`,
+      'src/Vendor/YamlFileLoader.php': `<?php
+
+namespace Symfony\\Component\\Routing\\Loader;
+
+// tagged as routing.loader by the framework bundle
+class YamlFileLoader
+{
+}
+`,
+      'src/Routing/EmptyLoader.php': `<?php
+
+namespace App\\Routing;
+
+use Symfony\\Component\\Config\\Loader\\LoaderInterface;
+
+class EmptyLoader implements LoaderInterface
+{
+    public function load(mixed $resource, ?string $type = null): mixed
+    {
+        return null;
+    }
+
+    public function supports(mixed $resource, ?string $type = null): bool
+    {
+        return $type === 'empty';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-routing-loader.js', app);
+
+    expect(text).toContain('EmptyLoader');
+    expect(text).toContain('RouteCollection');
+  });
+
+  test('sub-requests: the HttpKernel copy and a template rendering one per row', async () => {
+    const app = appWith('symfony-subrequest-loop', {
+      'src/Vendor/HttpKernel.php': `<?php
+
+namespace Symfony\\Component\\HttpKernel;
+
+class HttpKernel
+{
+    public function handle($request, int $type = 1, bool $catch = true)
+    {
+        return $this->resolve($request)->handle($request);
+    }
+}
+`,
+      'src/Service/Plain.php': `<?php
+
+namespace App\\Service;
+
+class Plain
+{
+    public function name(): string
+    {
+        return 'plain';
+    }
+}
+`,
+      'templates/dashboard.html.twig': `<div class="rows">
+    {% for row in rows %}
+        {{ render(controller('App\\\\Controller\\\\RowController::show', { id: row.id })) }}
+    {% endfor %}
+</div>
+`,
+    });
+
+    const text = await runModule('symfony-subrequest.js', app);
+
+    expect(text).toContain('dashboard.html.twig');
+    expect(text).toContain('loop');
+  });
+
+  test('the Validator component copy is not an application callback constraint', async () => {
+    const app = appWith('symfony-form-callback-component-copy', {
+      'src/Vendor/Callback.php': `<?php
+
+namespace Symfony\\Component\\Validator\\Constraints;
+
+/** Usage: new Callback(['callback' => 'validate']) */
+class Callback extends Composite
+{
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Invoice
+{
+    #[Assert\\Callback]
+    public function validate($context): void
+    {
+        $total = 0;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-callback-constraint.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('every chat transport the notifier knows about', async () => {
+    const app = appWith('symfony-notifier-chat-transports', {
+      '.env': `TELEGRAM_DSN=telegram://123456:token@default?channel=ops
+DISCORD_DSN=discord://token@default?webhook_id=42
+MICROSOFT_TEAMS_DSN=microsoftteams://example.webhook.office.com/webhookb2/id
+ROCKETCHAT_DSN=rocketchat://token@rocket.example.com/channel
+SLACK_DSN=slack://xoxb\x2d1234-secret@default?channel=general
+`,
+    });
+
+    const text = await runModule('symfony-notifier-chat.js', app);
+
+    expect(text).toContain('telegram');
+    expect(text).toContain('discord');
+    expect(text).toContain('teams');
+    expect(text).toContain('rocketchat');
+  });
+});
