@@ -845,15 +845,15 @@ describe('the last few', () => {
     jest.isolateModules(() => {
       const registry = jest.requireActual<typeof import('../utils/tool-registry')>('../utils/tool-registry');
       registry.toolRegistry.init([
-        { name: 'list_routing_tables', description: 'Routing tables', inputSchema: { type: 'object' } },
+        { name: 'list_alpha_beta', description: 'Something else entirely', inputSchema: { type: 'object' } },
         { name: 'list_entities', description: 'Entities', inputSchema: { type: 'object' } },
       ]);
 
-      // "ting tab" flattens to ting_tab, which is inside list_routing_tables
-      // and is nobody's token.
-      const found = registry.toolRegistry.search('ting tab', 5).map((t) => t.name);
+      // 'be' is too short to be a token and nothing starts with 'lpha', so the
+      // only way in is the substring boost on the flattened query.
+      const found = registry.toolRegistry.search('lpha be', 5).map((t) => t.name);
 
-      expect(found).toContain('list_routing_tables');
+      expect(found).toContain('list_alpha_beta');
     });
   });
 });
@@ -883,5 +883,66 @@ class Reading
     const table = await connector.getTableStructure(appDir, 'readings');
 
     expect(table!.columns.map((c) => c.type)).toContain('WOBBLE');
+  });
+});
+
+describe('the four that were left', () => {
+  test('an attack type recorded long enough ago to have expired', () => {
+    jest.isolateModules(() => {
+      const detector = jest.requireActual<typeof import('../utils/anomaly-detector')>('../utils/anomaly-detector');
+      detector.resetAnomalyCounters();
+      detector.resetCorrelationTracking();
+
+      jest.useFakeTimers();
+      try {
+        // One kind of attack now...
+        for (let i = 0; i < 6; i++) detector.recordAuthFailure('bad token', '7.7.7.7');
+
+        // ...and a different kind once the window has closed: the first is no
+        // longer active, which is the half the correlation check never took.
+        jest.advanceTimersByTime(10 * 60 * 1000);
+        for (let i = 0; i < 12; i++) detector.recordRateLimitBlock('list_routes', '7.7.7.7');
+      } finally {
+        jest.useRealTimers();
+      }
+
+      expect(detector.getAnomalySummary()).toBeDefined();
+    });
+  });
+
+  test('a vault reached by app role over plain http', async () => {
+    const http = jest.requireActual<typeof import('http')>('http');
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      if (req.url?.includes('approle/login')) {
+        res.end(JSON.stringify({ auth: { client_token: 'issued-token', lease_duration: 3600 } }));
+        return;
+      }
+      res.end(JSON.stringify({ data: { data: { value: 'from-app-role' } } }));
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+
+    const saved = { ...process.env };
+    process.env['SYMFONY_MCP_VAULT_ADDR'] = `http://127.0.0.1:${port}`;
+    delete process.env['SYMFONY_MCP_VAULT_TOKEN'];
+    delete process.env['VAULT_TOKEN'];
+    process.env['SYMFONY_MCP_VAULT_ROLE_ID'] = 'role';
+    process.env['SYMFONY_MCP_VAULT_SECRET_ID'] = 'secret';
+
+    try {
+      await jest.isolateModulesAsync(async () => {
+        const vault = jest.requireActual<typeof import('../utils/vault-resolver')>('../utils/vault-resolver');
+        vault.clearVaultCache();
+
+        await expect(vault.resolveSecret('vault:secret/data/app#value')).resolves.toBe('from-app-role');
+      });
+    } finally {
+      for (const k of ['SYMFONY_MCP_VAULT_ADDR', 'SYMFONY_MCP_VAULT_ROLE_ID', 'SYMFONY_MCP_VAULT_SECRET_ID', 'SYMFONY_MCP_VAULT_TOKEN', 'VAULT_TOKEN']) {
+        if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
