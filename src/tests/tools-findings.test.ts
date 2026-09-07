@@ -40761,3 +40761,136 @@ class ProgressBar
     expect(text).toContain('maxSteps=0');
   });
 });
+
+describe('batch 133: clocks, sanitizers and http clients', () => {
+  test('a date call commented out, a real one, and a test file that is skipped', async () => {
+    const app = appWith('symfony-clock-anti-patterns', {
+      'src/Service/Reporter.php': `<?php
+
+namespace App\\Service;
+
+class Reporter
+{
+    public function stamp(): string
+    {
+        // return date('Y-m-d');
+        $now = new \\DateTime();
+
+        return $now->format('Y-m-d');
+    }
+}
+`,
+      'src/Tests/LegacyReporterTest.php': `<?php
+
+namespace App\\Tests;
+
+class LegacyReporterTest
+{
+    public function testStamp(): void
+    {
+        $now = new \\DateTime('now');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-clock.js', app);
+
+    expect(text).toContain('Reporter');
+  });
+
+  test('a sanitizer that allows an event attribute', async () => {
+    const app = appWith('symfony-html-sanitizer-event-attribute', {
+      'config/packages/html_sanitizer.yaml': `framework:
+    html_sanitizer:
+        sanitizers:
+            app.post_sanitizer:
+                allow_safe_elements: true
+                allow_elements:
+                    a: ['href', 'title']
+                    iframe: ['src']
+                allow_attributes:
+                    onclick: ['a', 'button']
+                    class: ['*']
+`,
+      'src/Service/PostRenderer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HtmlSanitizer\\HtmlSanitizerInterface;
+
+class PostRenderer
+{
+    public function __construct(private HtmlSanitizerInterface $appPostSanitizer)
+    {
+    }
+
+    public function render(string $html): string
+    {
+        return $this->appPostSanitizer->sanitize($html);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-html-sanitizer.js', app);
+
+    expect(text).toContain('onclick');
+  });
+
+  test('basic auth against a plain http base uri, and a bare Authorization header', async () => {
+    const app = appWith('symfony-http-client-auth-plain', {
+      'src/Client/LegacyClient.php': `<?php
+
+namespace App\\Client;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class LegacyClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(): array
+    {
+        $response = $this->client->withOptions([
+            'base_uri' => 'http://legacy.internal/api/',
+            'auth_basic' => ['%env(LEGACY_USER)%', '%env(LEGACY_PASS)%'],
+        ])->request('GET', 'orders');
+
+        return $response->toArray();
+    }
+}
+`,
+      'src/Client/HeaderClient.php': `<?php
+
+namespace App\\Client;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class HeaderClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(): array
+    {
+        $response = $this->client->withOptions([
+            'headers' => [
+                'Authorization' => '%env(PARTNER_TOKEN)%',
+            ],
+        ])->request('GET', 'https://partner.example.com/api');
+
+        return $response->toArray();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-client-auth.js', app);
+
+    expect(text).toContain('Basic auth');
+  });
+});

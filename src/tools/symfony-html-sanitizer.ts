@@ -114,7 +114,10 @@ function loadSanitizerConfigs(appPath: string): SanitizerConfig[] {
       const dangerousAttributes: string[] = [];
 
       const allowedAttr = (config['allow_attributes'] ?? {}) as Record<string, unknown>;
-      for (const [, attrs] of Object.entries(allowedAttr)) {
+      // allow_attributes maps the attribute to the elements it is allowed on,
+      // so the attribute is the key; only the values were being looked at.
+      for (const [attr, attrs] of Object.entries(allowedAttr)) {
+        if (DANGEROUS_ATTRIBUTES.has(attr)) dangerousAttributes.push(attr);
         const attrList = Array.isArray(attrs) ? attrs.map(String) : [];
         for (const a of attrList) {
           if (DANGEROUS_ATTRIBUTES.has(a)) dangerousAttributes.push(a);
