@@ -102,13 +102,15 @@ function readProfilerIndex(profilerDir: string): ProfilerToken[] {
     for (const line of lines) {
       const parts = line.split(',');
       if (parts.length < 6) continue;
+      // The length check above guarantees the first six fields; only the two
+      // Symfony added later can be missing.
       tokens.push({
-        token: parts[0]?.trim() ?? '',
-        ip: parts[1]?.trim() ?? '',
-        method: parts[2]?.trim() ?? '',
-        url: parts[3]?.trim() ?? '',
-        time: parseInt(parts[4]?.trim() ?? '0', 10),
-        parent: parts[5]?.trim() ?? '',
+        token: parts[0].trim(),
+        ip: parts[1].trim(),
+        method: parts[2].trim(),
+        url: parts[3].trim(),
+        time: parseInt(parts[4].trim(), 10),
+        parent: parts[5].trim(),
         statusCode: parseInt(parts[6]?.trim() ?? '200', 10),
         virtualType: parts[7]?.trim() ?? 'request',
       });

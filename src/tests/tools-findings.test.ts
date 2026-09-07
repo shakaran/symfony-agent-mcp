@@ -42824,3 +42824,92 @@ describe('batch 158: reading the log', () => {
     expect(text).toContain('prod.log');
   });
 });
+
+describe('batch 159: profiles with the fields left out', () => {
+  test('an index line missing its columns and collectors with nothing in them', async () => {
+    const app = appWith('profiler-sparse-collectors', {
+      'var/cache/dev/profiler/index.csv': `too,few,fields
+bare01,127.0.0.1,GET,http://localhost/,1767225600,
+full02,127.0.0.1,POST,http://localhost/a/very/long/url/that/will/not/fit/in/the/column,1767225600,,500,request
+`,
+      'var/cache/dev/profiler/01/re/bare01': JSON.stringify({
+        request: { method: 'GET' },
+      }),
+      // A file where the two-character directory should be, and a token whose
+      // collectors are all present and all empty.
+      'var/cache/dev/profiler/zz': 'not a directory\n',
+      'var/cache/dev/profiler/03/ty/empty03': JSON.stringify({
+        time: {},
+        memory: {},
+        db: {},
+        logger: {},
+        exception: {},
+      }),
+      'var/cache/dev/profiler/02/ll/full02': JSON.stringify({
+        time: { duration: 90 },
+        db: { queries: [{ query: 'SELECT 1' }, {}] },
+        logger: {
+          error_count: 2,
+          logs: [{ message: 'plain, no channel' }, { channel: 'app' }],
+        },
+        exception: { message: 'boom', class: 'RuntimeException' },
+      }),
+    });
+
+    // A symlink among the profiler directories: the walk has a branch for it.
+    fs.symlinkSync(path.join(app, 'var', 'cache', 'dev', 'profiler', '01'),
+      path.join(app, 'var', 'cache', 'dev', 'profiler', 'ln'));
+
+    const text = await runModule('profiler.js', app, ['bare01', 'full02', 'empty03']);
+
+    expect(text).toContain('bare01');
+  });
+
+  test('a profiler with no index, walked from the files themselves', async () => {
+    const app = appWith('profiler-no-index', {
+      'var/cache/dev/profiler/34/12/abcd1234': JSON.stringify({
+        time: { duration: 12 },
+        request: { method: 'GET', url: 'http://localhost/', statusCode: 200 },
+      }),
+      // A file where a two-character directory belongs, and one inside it too.
+      'var/cache/dev/profiler/zz': 'not a directory\n',
+      'var/cache/dev/profiler/34/plain': 'not a directory either\n',
+    });
+
+    fs.symlinkSync(path.join(app, 'var', 'cache', 'dev', 'profiler', '34'),
+      path.join(app, 'var', 'cache', 'dev', 'profiler', 'ln'));
+    fs.symlinkSync(path.join(app, 'var', 'cache', 'dev', 'profiler', '34', '12'),
+      path.join(app, 'var', 'cache', 'dev', 'profiler', '34', 'ln'));
+
+    const text = await runModule('profiler.js', app, ['abcd1234']);
+
+    expect(text).toContain('abcd1234');
+  });
+
+  test('a profiler directory with nothing profiled yet', async () => {
+    const app = appWith('profiler-no-tokens', {
+      'var/cache/dev/profiler/.gitignore': "*\n",
+    });
+
+    const text = await runModule('profiler.js', app, ['abcd12']);
+
+    expect(text).toContain('No profiler entries found');
+  });
+
+  test('an application with no profiler directory at all', async () => {
+    const app = appWith('profiler-absent', {
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+class Kernel
+{
+}
+`,
+    });
+
+    const text = await runModule('profiler.js', app, ['abcd12']);
+
+    expect(text).toContain('not found');
+  });
+});
