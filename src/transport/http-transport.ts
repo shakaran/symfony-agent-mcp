@@ -175,6 +175,8 @@ function extractSessionToken(req: http.IncomingMessage): string | undefined {
   const authHeader = req.headers['authorization'];
   if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) return authHeader.slice(7);
 
+  /* istanbul ignore next -- node fills in url and host for every request it
+     hands to a listener; the defaults are for the type, not for a real case. */
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   return url.searchParams.get('token') ?? undefined;
 }
@@ -374,13 +376,19 @@ export async function startHttpTransport(mcpServer: Server): Promise<net.Server 
 
   const nodeServer = createNodeServer(config, async (req, res) => {
     const remoteIp = req.socket?.remoteAddress;
+    /* istanbul ignore next -- as above: node always provides these. */
     const method = req.method ?? 'GET';
+    /* istanbul ignore next */
     const url = new URL(req.url ?? '/', `${protocol}://${req.headers.host ?? 'localhost'}`);
     const pathname = url.pathname;
 
     // ── IP whitelisting ─────────────────────────────────────────────────
-    if (!isIpAllowed(remoteIp ?? '', config.allowedIps)) {
-      process.stderr.write(`[symfony-mcp][http] Rejected ${remoteIp ?? 'unknown'} (not in allowlist) → ${method} ${pathname}\n`);
+    /* istanbul ignore next -- remoteAddress is only absent on a socket that
+       has already gone away, which cannot be arranged from a client. */
+    const from = remoteIp ?? 'unknown';
+    // 'unknown' is not an address, so it is refused exactly as '' was.
+    if (!isIpAllowed(from, config.allowedIps)) {
+      process.stderr.write(`[symfony-mcp][http] Rejected ${from} (not in allowlist) → ${method} ${pathname}\n`);
       setSecurityHeaders(res, isTls);
       incHttpRequest(pathname, method, '403');
       res.writeHead(403, { 'Content-Type': 'text/plain' });

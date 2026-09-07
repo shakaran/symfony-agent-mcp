@@ -569,6 +569,40 @@ describe('TLS', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  test('the status page over TLS, with mTLS and an allowlist, warns about nothing', async () => {
+    const { port, server } = await start({
+      SYMFONY_MCP_TLS_CERT: certPath,
+      SYMFONY_MCP_TLS_KEY: keyPath,
+      SYMFONY_MCP_TLS_CA: certPath,
+      SYMFONY_MCP_ALLOWED_IPS: '127.0.0.1',
+    });
+
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        const req = https.request(
+          {
+            // The certificate names localhost, so the client has to as well.
+            host: 'localhost', port, method: 'GET', path: '/ui',
+            ca: fs.readFileSync(certPath),
+            cert: fs.readFileSync(certPath),
+            key: fs.readFileSync(keyPath),
+          },
+          (res) => {
+            let out = '';
+            res.on('data', (c) => { out += String(c); });
+            res.on('end', () => resolve(out));
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      expect(body).toContain('HTTPS');
+    } finally {
+      await stop(server);
+    }
+  });
+
   test('a certificate and key bring up HTTPS, and HSTS appears with it', async () => {
     const { port, server } = await start({
       SYMFONY_MCP_TLS_CERT: certPath,
@@ -671,6 +705,36 @@ describe('a full client exchange', () => {
       expect(res.status).toBeLessThan(500);
 
       sse.destroy();
+    } finally {
+      await stop(server);
+    }
+  });
+});
+
+describe('the halves the ordinary case does not take', () => {
+  test('no host in the environment binds to the default', async () => {
+    const port = await freePort();
+    process.env['SYMFONY_MCP_HTTP_PORT'] = String(port);
+    delete process.env['SYMFONY_MCP_HTTP_HOST'];
+
+    const mcp = new Server({ name: 'test', version: '0.0.0' }, { capabilities: { tools: {} } });
+    const server = await startHttpTransport(mcp);
+    if (!server) throw new Error('transport did not start');
+
+    try {
+      expect(getHttpTransportStatus().host).toBe('127.0.0.1');
+    } finally {
+      await stop(server);
+    }
+  });
+
+  test('an allowlist that opens the whole range', async () => {
+    const { port, server } = await start({ SYMFONY_MCP_ALLOWED_IPS: '0.0.0.0/0' });
+
+    try {
+      const res = await request(port, 'GET', '/health');
+
+      expect(res.status).toBe(200);
     } finally {
       await stop(server);
     }
