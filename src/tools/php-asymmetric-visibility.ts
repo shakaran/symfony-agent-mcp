@@ -35,7 +35,6 @@ interface AsymmetricVisibilityInfo {
   class: string;
   properties: AsymmetricPropEntry[];
   phpRequire?: string;
-  issues: string[];
 }
 
 function getAllPhpFiles(dir: string): string[] {
@@ -75,7 +74,6 @@ function parseAsymmetricVisibility(filePath: string): AsymmetricVisibilityInfo |
 
   const className = classMatch[1];
   const properties: AsymmetricPropEntry[] = [];
-  const fileIssues: string[] = [];
 
   // Match asymmetric visibility declarations
   // e.g.: public(set) protected string $name
@@ -98,9 +96,7 @@ function parseAsymmetricVisibility(filePath: string): AsymmetricVisibilityInfo |
     const isReadonly = /\breadonly\b/.test(declaration);
 
     // Extract the asymmetric part: e.g. public(set), private(get)
-    const asymMatch = /\b(public|protected|private)\s*\(\s*(get|set)\s*\)/.exec(declaration);
-    if (!asymMatch) continue;
-
+    const asymMatch = /\b(public|protected|private)\s*\(\s*(get|set)\s*\)/.exec(declaration)!;
     const asymVis = asymMatch[1];
     const asymKind = asymMatch[2] as 'get' | 'set';
 
@@ -145,7 +141,6 @@ function parseAsymmetricVisibility(filePath: string): AsymmetricVisibilityInfo |
     file: path.relative(path.dirname(path.dirname(filePath)), filePath),
     class: className,
     properties,
-    issues: fileIssues,
   };
 }
 
@@ -163,10 +158,9 @@ function scanAsymmetricVisibility(appPath: string): AsymmetricVisibilityInfo[] {
 
 function isPhpVersionBelow84(versionConstraint: string): boolean {
   // Very conservative check: if constraint explicitly excludes 8.4+
-  const match = />=?\s*(\d+\.\d+)/.exec(versionConstraint);
+  const match = /[>^~]=?\s*(\d+\.\d+)/.exec(versionConstraint);
   if (!match) return false;
-  const [major, minor] = match[1].split('.').map(Number);
-  if (major === undefined || minor === undefined) return false;
+  const [major, minor] = match[1].split('.').map(Number) as [number, number];
   return major < 8 || (major === 8 && minor < 4);
 }
 
@@ -209,10 +203,6 @@ export function listAsymmetricVisibility(appPath: string): McpToolResult {
           totalIssues++;
         }
       }
-      for (const issue of info.issues) {
-        text += `  WARNING: ${issue}\n`;
-        totalIssues++;
-      }
     }
 
     if (totalIssues === 0 && !phpTooLow) {
@@ -237,7 +227,7 @@ export function getAsymmetricVisibilityStats(appPath: string): McpToolResult {
 
     const allProps = infos.flatMap((i) => i.properties);
     const totalIssues = infos.reduce(
-      (s, i) => s + i.issues.length + i.properties.reduce((ps, p) => ps + p.issues.length, 0),
+      (s, i) => s + i.properties.reduce((ps, p) => ps + p.issues.length, 0),
       0
     );
 

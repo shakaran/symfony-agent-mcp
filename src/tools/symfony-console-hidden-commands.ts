@@ -106,6 +106,7 @@ function scanCommands(appPath: string): CommandInfo[] {
 
     // Description detection
     const descMatch = /->setDescription\(\s*['"]([^'"]*)['"]\s*\)/m.exec(content) ??
+                      /#\[AsCommand[^\]]{0,300}?description\s*:\s*['"]([^'"]*)['"]/m.exec(content) ??
                       /#\[AsCommand[^,)]*,\s*['"]([^'"]*)['"]/m.exec(content);
     const description = descMatch ? descMatch[1] : '';
     const hasDescription = description.length > 0;

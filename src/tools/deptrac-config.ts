@@ -41,10 +41,10 @@ function buildDeptracConfigInfos(appPath: string): DeptracConfigInfo[] {
     });
   } else {
     // Parse layers section
-    const layerMatches = configContent.match(/^\s{2,4}name:\s+(.+)$/gm);
+    const layerMatches = configContent.match(/^\s{2,6}(?:-\s+)?name:\s+(.+)$/gm);
     if (layerMatches) {
       for (const match of layerMatches) {
-        const layerName = match.replace(/^\s+name:\s+/, '').trim();
+        const layerName = match.replace(/^\s+(?:-\s+)?name:\s+/, '').trim();
         results.push({
           source: configFile,
           type: 'layer',
@@ -135,9 +135,6 @@ function buildDeptracConfigInfos(appPath: string): DeptracConfigInfo[] {
 export function listDeptracConfig(appPath: string): McpToolResult {
   try {
     const infos = buildDeptracConfigInfos(appPath);
-    if (infos.length === 0) {
-      return { content: [{ type: 'text', text: 'No Deptrac configuration found.' }] };
-    }
     const totalIssues = infos.reduce((s, i) => s + i.issues.length, 0);
     let text = `Deptrac Configuration Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${totalIssues}\n`;
     for (const info of infos) {

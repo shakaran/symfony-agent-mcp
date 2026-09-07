@@ -34741,18 +34741,18 @@ class FiberRunner
 {
     public function run(): void
     {
-        $fiber0 = new \Fiber(static fn (): int => 0);
-        $fiber1 = new \Fiber(static fn (): int => 1);
-        $fiber2 = new \Fiber(static fn (): int => 2);
-        $fiber3 = new \Fiber(static fn (): int => 3);
-        $fiber4 = new \Fiber(static fn (): int => 4);
-        $fiber5 = new \Fiber(static fn (): int => 5);
-        $fiber6 = new \Fiber(static fn (): int => 6);
-        $fiber7 = new \Fiber(static fn (): int => 7);
-        $fiber8 = new \Fiber(static fn (): int => 8);
-        $fiber9 = new \Fiber(static fn (): int => 9);
-        $fiber10 = new \Fiber(static fn (): int => 10);
-        $fiber11 = new \Fiber(static fn (): int => 11);
+        $fiber0 = new \\Fiber(static fn (): int => 0);
+        $fiber1 = new \\Fiber(static fn (): int => 1);
+        $fiber2 = new \\Fiber(static fn (): int => 2);
+        $fiber3 = new \\Fiber(static fn (): int => 3);
+        $fiber4 = new \\Fiber(static fn (): int => 4);
+        $fiber5 = new \\Fiber(static fn (): int => 5);
+        $fiber6 = new \\Fiber(static fn (): int => 6);
+        $fiber7 = new \\Fiber(static fn (): int => 7);
+        $fiber8 = new \\Fiber(static fn (): int => 8);
+        $fiber9 = new \\Fiber(static fn (): int => 9);
+        $fiber10 = new \\Fiber(static fn (): int => 10);
+        $fiber11 = new \\Fiber(static fn (): int => 11);
     }
 }
 `,
@@ -35549,10 +35549,10 @@ class ServiceTest extends TestCase
 {
     public function testItWorks(): void
     {
-        $m0 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
-        $m1 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
-        $m2 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
-        $m3 = $this->getMockBuilder(\App\Service\Thing::class)->getMock();
+        $m0 = $this->getMockBuilder(\\App\\Service\\Thing::class)->getMock();
+        $m1 = $this->getMockBuilder(\\App\\Service\\Thing::class)->getMock();
+        $m2 = $this->getMockBuilder(\\App\\Service\\Thing::class)->getMock();
+        $m3 = $this->getMockBuilder(\\App\\Service\\Thing::class)->getMock();
 
         $this->assertNotNull($m0);
     }
@@ -38297,7 +38297,7 @@ class ImportCommand extends Command
 
     const text = await runModule('symfony-console-hidden-commands.js', app);
 
-    expect(text).toContain('app:import');
+    expect(text).toMatch(/Without description:\s+0/);
   });
 
   test('an invokable controller with six parameters, beside multi-action ones', async () => {
@@ -38371,7 +38371,7 @@ class AccountController extends AbstractController
       marking_store:
         type: multiple_state
       supports:
-        - App\Entity\Article
+        - App\\Entity\\Article
       places:
         - draft
         - legal_review
@@ -38762,5 +38762,180 @@ class ErrorController
     const text = await runModule('api-problem-details.js', app);
 
     expect(text).toContain('contradictory');
+  });
+});
+
+describe('batch 124: layers, commands, sockets and sentinels', () => {
+  test('deptrac layers written as a list, which is how deptrac writes them', async () => {
+    const app = appWith('deptrac-layer-list', {
+      'deptrac.yaml': `deptrac:
+  paths:
+    - ./src
+  layers:
+    - name: Controller
+      collectors:
+        - type: directory
+          value: src/Controller/.*
+    - name: Domain
+      collectors:
+        - type: directory
+          value: src/Domain/.*
+ruleset:
+  Controller:
+    - Domain
+  Domain: ~
+`,
+    });
+
+    const text = await runModule('deptrac-config.js', app);
+
+    expect(text).toContain('Controller');
+    expect(text).toContain('LAYER');
+  });
+
+  test('a command loader that leaves an untagged command behind', async () => {
+    const app = appWith('symfony-console-hidden-commands-loader', {
+      'src/Command/LooseCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class LooseCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->setName('app:loose')->setDescription('Runs loose');
+    }
+}
+`,
+      'config/services.yaml': `services:
+    Symfony\\Component\\Console\\CommandLoader\\ContainerCommandLoader:
+        arguments: [!service_locator {}, {}]
+`,
+    });
+
+    const text = await runModule('symfony-console-hidden-commands.js', app);
+
+    expect(text).toContain('ContainerCommandLoader');
+  });
+
+  test('a command described through the named argument is not missing a description', async () => {
+    const app = appWith('symfony-console-hidden-commands-described', {
+      'src/Command/ReportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(name: 'app:report', description: 'Print the daily report')]
+class ReportCommand extends Command
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-hidden-commands.js', app);
+
+    expect(text).toContain('healthy');
+  });
+
+  test('an anonymous class carrying asymmetric visibility', async () => {
+    const app = appWith('php-asymmetric-visibility-anonymous', {
+      'src/Support/holder.php': `<?php
+
+namespace App\\Support;
+
+$holder = new class {
+    public private(set) string $token = 'x';
+};
+`,
+      'src/Model/Account.php': `<?php
+
+namespace App\\Model;
+
+class Account
+{
+    public private(set) string $iban = '';
+}
+`,
+    });
+
+    const text = await runModule('php-asymmetric-visibility.js', app);
+
+    expect(text).toContain('Account');
+  });
+
+  test('a caret constraint below 8.4 is still below 8.4', async () => {
+    const app = appWith('php-asymmetric-visibility-caret', {
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "php": "^8.1", "symfony/framework-bundle": "^7.0" }
+}
+`,
+      'src/Model/Order.php': `<?php
+
+namespace App\\Model;
+
+class Order
+{
+    public private(set) int $total = 0;
+}
+`,
+    });
+
+    const text = await runModule('php-asymmetric-visibility.js', app);
+
+    expect(text).toContain('8.4');
+  });
+
+  test('a socket bound to a hardcoded address and a database port', async () => {
+    const app = appWith('php-socket-hardcoded-port', {
+      'src/Net/Probe.php': `<?php
+
+namespace App\\Net;
+
+class Probe
+{
+    public function check(): void
+    {
+        $handle = fsockopen('127.0.0.1', 6379);
+        $secure = stream_socket_server($this->endpoint(), $errno, $errstr); // ssl:// comes from endpoint()
+        $tls = stream_socket_server('ssl://0.0.0.0:8443', $errno, $errstr);
+    }
+
+    private function endpoint(): string
+    {
+        return 'ssl://127.0.0.1:8443';
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-socket-programming.js', app);
+
+    expect(text).toContain('Probe.php');
+  });
+
+  test('a sentinel line in the environment that is not an assignment', async () => {
+    const app = appWith('symfony-cache-redis-sentinel-loose', {
+      '.env': `# the sentinel notes below are prose, not settings
+sentinel setup is documented in the wiki
+CACHE_HINT=the sentinel hosts live in the vault
+REDIS_URL=redis+sentinel://cache:secret@sentinel-a:26379,sentinel-b:26379/mymaster
+`,
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.redis_tag_aware
+        pools:
+            sentinel_adapter.pool:
+                adapter: cache.adapter.redis_tag_aware
+`,
+    });
+
+    const text = await runModule('symfony-cache-redis-sentinel.js', app);
+
+    expect(text).toContain('mymaster');
   });
 });

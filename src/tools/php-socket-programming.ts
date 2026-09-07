@@ -193,7 +193,7 @@ function checkMissingSocketClose(
 // ─── Pattern 4: Hardcoded IP/port combinations ────────────────────────────────
 
 // Well-known service ports to flag
-const SENSITIVE_PORTS = [':6379', ':3306', ':5432', ':6380', ':27017'];
+const SENSITIVE_PORTS = ['6379', '3306', '5432', '6380', '27017'];
 
 function checkHardcodedIpPort(
   line: string,
@@ -213,7 +213,8 @@ function checkHardcodedIpPort(
 
   let portFound = false;
   for (const port of SENSITIVE_PORTS) {
-    if (trimmed.includes(port)) {
+    // Either glued to the address ('127.0.0.1:6379') or passed on its own (…, 6379)
+    if (new RegExp(`[:,]\\s{0,4}${port}\\b`).test(trimmed)) {
       portFound = true;
       break;
     }

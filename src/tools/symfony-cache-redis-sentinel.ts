@@ -48,8 +48,6 @@ function maskPassword(dsn: string): string {
 
 function parseSentinelDsn(rawDsn: string): RedisSentinelInfo | null {
   // redis+sentinel://[user:password@]sentinel1:port,sentinel2:port/master/db
-  if (!rawDsn.includes('redis+sentinel://') && !rawDsn.includes('sentinel')) return null;
-
   const dsn = maskPassword(rawDsn);
   const issues: string[] = [];
 
