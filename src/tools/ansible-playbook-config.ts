@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface AnsiblePlaybookInfo {
   source: string;
@@ -11,12 +12,6 @@ interface AnsiblePlaybookInfo {
   issue: string | null;
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  const resolvedBase = path.resolve(base);
-  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function maskSecrets(value: string): string {
   return value.replace(/(password|secret|token|key|passwd|pwd|pass|auth|credential|api_key|private_key|cert)\s*:\s*\S+/gi, '$1: ***');

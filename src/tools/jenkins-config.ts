@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
 // SPDX-License-Identifier: MIT
-import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface JenkinsConfigInfo {
   file: string;
@@ -11,11 +11,6 @@ interface JenkinsConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function detectJenkinsfileType(content: string): 'declarative' | 'scripted' {
   if (/^\s*pipeline\s*\{/m.test(content)) return 'declarative';
@@ -113,7 +108,7 @@ function buildJenkinsConfigInfos(appPath: string): JenkinsConfigInfo[] {
 
   for (const rel of candidates) {
     const fullPath = path.join(appPath, rel);
-    const content = safeReadFile(fullPath, appPath);
+    const content = safeRead(fullPath, appPath);
     if (content !== null) {
       results.push(...parseJenkinsfile(content, rel));
     }

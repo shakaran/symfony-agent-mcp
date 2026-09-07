@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface RandomSecurityInfo {
   file: string;
@@ -14,11 +15,6 @@ interface RandomSecurityInfo {
 const WEAK_RANDOM = ['rand(', 'mt_rand(', 'array_rand(', 'shuffle(', 'str_shuffle(', 'lcg_value(', 'srand(', 'mt_srand('];
 const SECURE_RANDOM = ['random_int(', 'random_bytes(', 'sodium_randombytes_buf(', 'sodium_randombytes_random16(', 'openssl_random_pseudo_bytes('];
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function getAllPhpFiles(dir: string): string[] {
   const files: string[] = [];

@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface CaddyConfigInfo {
   file: string;
@@ -11,11 +12,6 @@ interface CaddyConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function safeReadDir(dir: string, base: string): string[] {
   const resolved = path.resolve(dir);
@@ -124,7 +120,7 @@ function buildCaddyConfigInfos(appPath: string): CaddyConfigInfo[] {
 
   for (const rel of candidates) {
     const fullPath = path.join(appPath, rel);
-    const content = safeReadFile(fullPath, appPath);
+    const content = safeRead(fullPath, appPath);
     if (content === null) continue;
 
     if (rel.endsWith('.json')) {
@@ -143,7 +139,7 @@ function buildCaddyConfigInfos(appPath: string): CaddyConfigInfo[] {
         const relPath = path.join(dockerDir, entry);
         // skip already processed
         if (candidates.includes(relPath)) continue;
-        const content = safeReadFile(fullPath, appPath);
+        const content = safeRead(fullPath, appPath);
         if (content !== null) results.push(...parseCaddyfile(content, relPath));
       }
     }

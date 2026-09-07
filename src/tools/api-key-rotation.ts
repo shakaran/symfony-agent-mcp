@@ -3,12 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
-
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
+import { safeRead } from '../utils/safe-read.js';
 
 function maskSecrets(value: string): string {
   return value.replace(/([A-Za-z_][A-Za-z0-9_]*\s*=\s*)[^\s$#'"]{4,}/g, '$1***');

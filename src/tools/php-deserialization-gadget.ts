@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface DeserializationGadgetInfo {
   file: string;
@@ -24,12 +25,6 @@ interface DeserializationGadgetInfo {
   issue: string;
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  const resolvedBase = path.resolve(base);
-  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function collectPhpFiles(dir: string, base: string): string[] {
   const results: string[] = [];

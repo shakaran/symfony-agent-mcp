@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface XslTransformationInfo {
   file: string;
@@ -48,11 +49,6 @@ function collectXslFiles(dir: string, base: string): string[] {
   return results;
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
-}
 
 function buildXslTransformationInfos(appPath: string): XslTransformationInfo[] {
   const results: XslTransformationInfo[] = [];

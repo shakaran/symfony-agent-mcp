@@ -14,12 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseYamlFile } from '../utils/symfony-parser.js';
 import { McpToolResult } from '../server.js';
-
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
+import { safeRead } from '../utils/safe-read.js';
 
 type ThemeType = 'bootstrap5' | 'tailwind' | 'foundation' | 'custom';
 type ThemeSource = 'global' | 'local';

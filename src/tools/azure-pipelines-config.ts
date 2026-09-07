@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
 // SPDX-License-Identifier: MIT
-import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface AzurePipelinesConfigInfo {
   file: string;
@@ -11,11 +11,6 @@ interface AzurePipelinesConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 const SECRET_KEY_PATTERN = /password|secret|token|api_key|private|credential|access_key|\bpass\b|\bkey\b|\bcert\b|\bdsn\b|\bauth\b/i;
 
@@ -173,7 +168,7 @@ function buildAzurePipelinesConfigInfos(appPath: string): AzurePipelinesConfigIn
 
   for (const rel of candidates) {
     const fullPath = path.join(appPath, rel);
-    const content = safeReadFile(fullPath, appPath);
+    const content = safeRead(fullPath, appPath);
     if (content !== null) {
       results.push(...parseAzurePipelinesYaml(content, rel));
     }

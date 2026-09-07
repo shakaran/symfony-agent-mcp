@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
 // SPDX-License-Identifier: MIT
-import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface HerokuConfigInfo {
   file: string;
@@ -11,11 +11,6 @@ interface HerokuConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function parseProcfile(content: string, relPath: string): HerokuConfigInfo[] {
   const results: HerokuConfigInfo[] = [];
@@ -154,13 +149,13 @@ function buildHerokuConfigInfos(appPath: string): HerokuConfigInfo[] {
   const results: HerokuConfigInfo[] = [];
 
   const procfilePath = path.join(appPath, 'Procfile');
-  const procfileContent = safeReadFile(procfilePath, appPath);
+  const procfileContent = safeRead(procfilePath, appPath);
   if (procfileContent !== null) {
     results.push(...parseProcfile(procfileContent, 'Procfile'));
   }
 
   const appJsonPath = path.join(appPath, 'app.json');
-  const appJsonContent = safeReadFile(appJsonPath, appPath);
+  const appJsonContent = safeRead(appJsonPath, appPath);
   if (appJsonContent !== null) {
     results.push(...parseAppJson(appJsonContent, 'app.json'));
   }

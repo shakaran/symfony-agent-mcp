@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface HelmChartInfo {
   file: string;
@@ -12,11 +13,6 @@ interface HelmChartInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function safeReadDir(dir: string, base: string): string[] {
   const resolved = path.resolve(dir);
@@ -169,12 +165,12 @@ function buildHelmChartsConfigInfos(appPath: string): HelmChartInfo[] {
 
   // Also check root level for Chart.yaml
   const rootChartYaml = path.join(appPath, 'Chart.yaml');
-  const rootContent = safeReadFile(rootChartYaml, appPath);
+  const rootContent = safeRead(rootChartYaml, appPath);
   if (rootContent !== null) {
     const chartInfos = parseChartYaml(rootContent, 'Chart.yaml');
     results.push(...chartInfos);
     const chartName = chartInfos[0]?.chart ?? 'unknown';
-    const valuesContent = safeReadFile(path.join(appPath, 'values.yaml'), appPath);
+    const valuesContent = safeRead(path.join(appPath, 'values.yaml'), appPath);
     if (valuesContent !== null) results.push(...parseValuesYaml(valuesContent, 'values.yaml', chartName));
   }
 
@@ -182,7 +178,7 @@ function buildHelmChartsConfigInfos(appPath: string): HelmChartInfo[] {
     const chartRoots = findChartRoots(helmDir, appPath);
     for (const chartRoot of chartRoots) {
       const chartYamlPath = path.join(chartRoot, 'Chart.yaml');
-      const chartContent = safeReadFile(chartYamlPath, appPath);
+      const chartContent = safeRead(chartYamlPath, appPath);
       if (chartContent === null) continue;
       const relChartYaml = path.relative(appPath, chartYamlPath);
       const chartInfos = parseChartYaml(chartContent, relChartYaml);
@@ -190,7 +186,7 @@ function buildHelmChartsConfigInfos(appPath: string): HelmChartInfo[] {
       const chartName = chartInfos[0]?.chart ?? path.basename(chartRoot);
 
       const valuesYamlPath = path.join(chartRoot, 'values.yaml');
-      const valuesContent = safeReadFile(valuesYamlPath, appPath);
+      const valuesContent = safeRead(valuesYamlPath, appPath);
       if (valuesContent !== null) {
         results.push(...parseValuesYaml(valuesContent, path.relative(appPath, valuesYamlPath), chartName));
       }

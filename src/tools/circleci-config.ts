@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
 // SPDX-License-Identifier: MIT
-import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface CircleCiConfigInfo {
   file: string;
@@ -23,11 +23,6 @@ function indentUnder(content: string, key: string): number {
   return m ? m[1].length : 2;
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigInfo[] {
   const results: CircleCiConfigInfo[] = [];
@@ -138,7 +133,7 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
 function buildCircleCiConfigInfos(appPath: string): CircleCiConfigInfo[] {
   const results: CircleCiConfigInfo[] = [];
   const configPath = path.join(appPath, '.circleci', 'config.yml');
-  const content = safeReadFile(configPath, appPath);
+  const content = safeRead(configPath, appPath);
   if (content !== null) {
     results.push(...parseCircleCiConfig(content, '.circleci/config.yml'));
   }

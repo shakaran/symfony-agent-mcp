@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface TerraformConfigInfo {
   file: string;
@@ -11,11 +12,6 @@ interface TerraformConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function safeReadDir(dir: string, base: string): string[] {
   const resolved = path.resolve(dir);
@@ -146,7 +142,7 @@ function buildTerraformConfigInfos(appPath: string): TerraformConfigInfo[] {
     const dirPath = path.join(appPath, dir);
     const tfFiles = collectTfFiles(dirPath, appPath);
     for (const tfFile of tfFiles) {
-      const content = safeReadFile(tfFile, appPath);
+      const content = safeRead(tfFile, appPath);
       if (content === null) continue;
       const relPath = path.relative(appPath, tfFile);
       results.push(...parseTerraformFile(content, relPath));
@@ -158,7 +154,7 @@ function buildTerraformConfigInfos(appPath: string): TerraformConfigInfo[] {
   for (const entry of rootEntries) {
     if (!entry.endsWith('.tf')) continue;
     const fullPath = path.join(appPath, entry);
-    const content = safeReadFile(fullPath, appPath);
+    const content = safeRead(fullPath, appPath);
     if (content === null) continue;
     results.push(...parseTerraformFile(content, entry));
   }

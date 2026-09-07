@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface EcsConfigInfo {
   file: string;
@@ -11,11 +12,6 @@ interface EcsConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function safeReadDir(dir: string, base: string): string[] {
   const resolved = path.resolve(dir);
@@ -134,7 +130,7 @@ function buildAwsEcsConfigInfos(appPath: string): EcsConfigInfo[] {
   const taskFiles = findTaskDefinitionFiles(appPath);
 
   for (const taskFile of taskFiles) {
-    const content = safeReadFile(taskFile, appPath);
+    const content = safeRead(taskFile, appPath);
     if (content === null) continue;
     const relPath = path.relative(appPath, taskFile);
     results.push(...parseTaskDefinition(content, relPath));

@@ -3,6 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface PaypalCheckoutV2Info {
   source: string;
@@ -11,12 +12,6 @@ interface PaypalCheckoutV2Info {
   issue: string | null;
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  const resolvedBase = path.resolve(base);
-  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 
 function scanPhpFiles(dir: string, base: string, callback: (filePath: string, content: string) => void): void {

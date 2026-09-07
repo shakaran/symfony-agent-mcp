@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
 // SPDX-License-Identifier: MIT
-import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface FlyIoConfigInfo {
   file: string;
@@ -11,11 +11,6 @@ interface FlyIoConfigInfo {
   issues: string[];
 }
 
-function safeReadFile(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function maskSecretValue(_value: string): string {
   return '***';
@@ -127,7 +122,7 @@ function parseFlyToml(content: string, relPath: string): FlyIoConfigInfo[] {
 function buildFlyIoConfigInfos(appPath: string): FlyIoConfigInfo[] {
   const results: FlyIoConfigInfo[] = [];
   const flyTomlPath = path.join(appPath, 'fly.toml');
-  const content = safeReadFile(flyTomlPath, appPath);
+  const content = safeRead(flyTomlPath, appPath);
   if (content !== null) {
     results.push(...parseFlyToml(content, 'fly.toml'));
   }

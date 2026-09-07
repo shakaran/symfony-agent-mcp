@@ -18,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpToolResult } from '../server.js';
+import { safeRead } from '../utils/safe-read.js';
 
 interface PhpunitClockAssertionInfo {
   file: string;
@@ -25,11 +26,6 @@ interface PhpunitClockAssertionInfo {
   issues: string[];
 }
 
-function safeRead(filePath: string, base: string): string | null {
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return null;
-  try { return fs.readFileSync(resolved, 'utf-8'); } catch { return null; }
-}
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];
