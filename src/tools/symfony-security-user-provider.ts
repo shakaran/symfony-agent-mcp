@@ -250,7 +250,7 @@ function loadAll(appPath: string): UserProviderInfo[] {
       // ChainUserProvider is valid — no warnings by default
     } else if (rawP.type === 'custom' && rawP.id) {
       // Find matching PHP class
-      const shortId = rawP.id.split('\\').pop() ?? rawP.id;
+      const shortId = rawP.id.split('\\').pop()!;
       const phpClass = phpClasses.find((c) => c.class === shortId || rawP.id === c.class);
       if (phpClass) {
         info.file = path.basename(phpClass.file);

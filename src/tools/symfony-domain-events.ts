@@ -146,7 +146,7 @@ function checkDispatcherUsage(
 
     // A handler naming the aggregate dispatches that one; a generic one that
     // names none of them is taken to dispatch them all, as before.
-    const named = aggregates.filter((a) => content.includes(a.class.split('\\').pop() ?? a.class));
+    const named = aggregates.filter((a) => content.includes(a.class.split('\\').pop()!));
     for (const agg of (named.length > 0 ? named : aggregates)) dispatched.set(agg.class, true);
   }
 

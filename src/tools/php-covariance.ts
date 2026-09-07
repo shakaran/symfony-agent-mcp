@@ -194,7 +194,7 @@ function analyzeAll(appPath: string): PhpCovarianceInfo[] {
   for (const [, child] of index) {
     if (!child.parent) continue;
     // Strip namespace prefix — only match short class name
-    const parentShort = child.parent.split('\\').pop() ?? child.parent;
+    const parentShort = child.parent.split('\\').pop()!;
     const parent = index.get(parentShort) ?? index.get(child.parent);
     if (!parent) continue;
 

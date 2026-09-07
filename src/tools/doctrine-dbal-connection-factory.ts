@@ -57,7 +57,7 @@ function loadConnectionFactoryInfo(appPath: string): ConnectionFactoryInfo {
       const hasCreate = content.includes('function createConnection') || content.includes('->createConnection(') || content.includes('ConnectionFactory::createConnection');
       const factoryIssues: string[] = [];
       if (!hasCreate) factoryIssues.push('ConnectionFactory subclass without createConnection() override — custom connection behavior not implemented');
-      if (wrapperClass && !content.includes(wrapperClass.split('\\').pop() ?? wrapperClass)) {
+      if (wrapperClass && !content.includes(wrapperClass.split('\\').pop()!)) {
         factoryIssues.push(`wrapper_class "${wrapperClass}" configured but not referenced in custom factory`);
       }
       factories.push({ class: classM[1], file: path.relative(appPath, filePath), hasCreate, issues: factoryIssues });

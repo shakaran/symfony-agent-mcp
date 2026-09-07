@@ -78,7 +78,7 @@ function analyzeFile(filePath: string, appPath: string): A11yFileResult | null {
   const headings: number[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
 
     // Images without alt

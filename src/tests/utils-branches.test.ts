@@ -1,0 +1,390 @@
+// SPDX-FileCopyrightText: 2026 Ángel Guzmán Maeso <angel@guzmanmaeso.com>
+// SPDX-License-Identifier: MIT
+/**
+ * The fallbacks in the shared utilities.
+ *
+ * Each of these is a value the caller may not provide: a database URL with no
+ * user, a Doctrine type nobody mapped, a tool with no description, an
+ * environment file whose lines are not assignments. They are the halves of
+ * the conditions the ordinary path never takes, and they are what the tools
+ * fall back on when an application is not written the way the happy path
+ * assumes.
+ */
+
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+import { parseDatabaseUrl, readDoctrineConfig, getDisplayDatabaseUrl } from '../utils/db-connector';
+import {
+  loadEnvironmentVariables, classToTableName, parseRoutes, parseServices, parseEntities, searchRoutes,
+} from '../utils/symfony-parser';
+import { cacheManager } from '../utils/cache-manager';
+
+let appDir: string;
+
+function write(rel: string, content: string): void {
+  const full = path.join(appDir, rel);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content);
+}
+
+beforeEach(() => {
+  cacheManager.clear();
+  appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utils-branches-'));
+});
+
+afterEach(() => {
+  fs.rmSync(appDir, { recursive: true, force: true });
+});
+
+describe('a database url with the parts left out', () => {
+  test('no host, no user, no password and no database name', () => {
+    write('.env', 'DATABASE_URL=mysql://\n');
+
+    const options = parseDatabaseUrl(appDir);
+
+    expect(options.type).toBe('mysql');
+    expect(options.host).toBeUndefined();
+    expect(options.username).toBeUndefined();
+    expect(options.password).toBeUndefined();
+    expect(options.database).toBeUndefined();
+  });
+
+  test('a host and database but no credentials', () => {
+    write('.env', 'DATABASE_URL=postgresql://db.internal:5432/app\n');
+
+    const options = parseDatabaseUrl(appDir);
+
+    expect(options).toMatchObject({ type: 'postgresql', host: 'db.internal', port: 5432, database: 'app' });
+    expect(getDisplayDatabaseUrl(options)).not.toContain('password');
+  });
+
+  test('a doctrine config with no driver named falls back to mysql', () => {
+    write('config/packages/doctrine.yaml', 'doctrine:\n    dbal:\n        url: "%env(DATABASE_URL)%"\n');
+
+    expect(readDoctrineConfig(appDir).type).toBe('mysql');
+  });
+});
+
+describe('environment files that are not assignments', () => {
+  test('a line with no key, a comment and an export', () => {
+    write('.env', [
+      '# a comment',
+      '',
+      '=novalue',
+      'export APP_ENV=prod',
+      'APP_SECRET="quoted value" # trailing comment',
+    ].join('\n') + '\n');
+
+    const env = loadEnvironmentVariables(appDir);
+
+    expect(env['APP_ENV']).toBe('prod');
+    expect(env['APP_SECRET']).toBe('quoted value');
+    expect(env['']).toBeUndefined();
+  });
+});
+
+describe('naming a table after a class', () => {
+  test('a single word, a compound name and an acronym', () => {
+    expect(classToTableName('Order')).toBe('order');
+    expect(classToTableName('OrderLine')).toBe('order_line');
+    expect(classToTableName('APIKey')).toContain('key');
+  });
+});
+
+describe('routes, services and entities written the short way', () => {
+  test('a yaml route with no path and no controller, and one with a single method', () => {
+    write('config/routes.yaml', `bare_route: ~
+partial_route:
+    methods: GET
+full_route:
+    path: /full
+    controller: 'App\\Controller\\FullController::index'
+    methods: [GET, POST]
+`);
+
+    const routes = parseRoutes(appDir);
+    const partial = routes.find((r) => r.name === 'partial_route');
+
+    expect(partial).toMatchObject({ path: '', controller: '', methods: ['GET'] });
+  });
+
+  test('a route attribute with no name takes the controller and method', () => {
+    write('src/Controller/PlainController.php', `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class PlainController
+{
+    #[Route('/plain')]
+    public function index(): void
+    {
+    }
+}
+`);
+
+    const routes = parseRoutes(appDir);
+
+    expect(routes.some((r) => r.name.includes('PlainController') && r.name.endsWith('::index'))).toBe(true);
+  });
+
+  test('service tags written as mappings, as strings, and as neither', () => {
+    write('config/services.yaml', `services:
+    App\\Handler\\First:
+        tags:
+            - { name: app.handler, priority: 10 }
+            - app.other
+            - { priority: 5 }
+    App\\Handler\\Second:
+        tags: 'not a list'
+`);
+
+    const services = parseServices(appDir);
+    const first = services.find((s) => s.id.endsWith('First'))!;
+    const second = services.find((s) => s.id.endsWith('Second'))!;
+
+    expect(first.tags).toEqual(['app.handler', 'app.other', '']);
+    expect(second.tags).toEqual([]);
+  });
+
+  test('a relation whose target is written as a string, and one with no target at all', () => {
+    write('src/Entity/Order.php', `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Order
+{
+    #[ORM\\ManyToOne(targetEntity: 'App\\Entity\\Customer')]
+    private $customer;
+
+    #[ORM\\OneToMany(mappedBy: 'order')]
+    private $lines;
+
+    #[ORM\\Column(type: 'wobble')]
+    private $custom;
+}
+`);
+
+    const [entity] = parseEntities(appDir);
+    const targets = entity.relationships.map((r) => r.targetEntity);
+
+    expect(targets).toContain('App\\Entity\\Customer');
+    expect(targets).toContain('Unknown');
+  });
+
+  test('searching routes without saying which field', () => {
+    const routes = [
+      { name: 'app_home', path: '/', methods: ['GET'], controller: 'App\\Controller\\HomeController::index' },
+    ];
+
+    expect(searchRoutes(routes, 'home')).toHaveLength(1);
+    expect(searchRoutes(routes, 'home', 'path')).toHaveLength(0);
+  });
+});
+
+describe('files that are almost, but not quite, what the parser expects', () => {
+  test('a routes directory with a file that is not a mapping, and a text file beside it', () => {
+    write('config/routes/api.yaml', "- just a list\n");
+    write('config/routes/notes.txt', 'ignored\n');
+    write('config/routes/admin.yml', "admin_home:\n    path: /admin\n");
+
+    const routes = parseRoutes(appDir);
+
+    expect(routes.map((r) => r.name)).toContain('admin_home');
+  });
+
+  test('a controller with no namespace, and a route attribute with a named path', () => {
+    write('src/Controller/GlobalController.php', `<?php
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class GlobalController
+{
+    #[Route(path: '/global', name: 'app_global')]
+    public function index(): void
+    {
+    }
+}
+`);
+
+    const routes = parseRoutes(appDir);
+    const global = routes.find((r) => r.name === 'app_global');
+
+    expect(global?.controller).toContain('GlobalController');
+  });
+
+  test('an entity with a Types:: constant, a renamed column, a method and a type nobody maps', () => {
+    write('src/Entity/Invoice.php', `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\DBAL\\Types\\Types;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $id;
+
+    #[ORM\\Column(type: Types::DECIMAL, name: 'total_amount')]
+    private $total;
+
+    #[ORM\\Column]
+    private Money $amount;
+
+    #[ORM\\ManyToOne(targetEntity: Customer::class, inversedBy: 'invoices')]
+    private $customer;
+
+    public function getId(): int
+    {
+        return $this->id;
+    }
+}
+`);
+    write('src/Entity/notes.php', "<?php\n\n// #[ORM\\Entity] lived here once.\nreturn [];\n");
+
+    const first = parseEntities(appDir);
+    // The second call takes the memoised path.
+    const second = parseEntities(appDir);
+
+    expect(second).toEqual(first);
+    const [entity] = first;
+    const total = entity.properties.find((p) => p.name === 'total')!;
+    expect(total.columnName).toBe('total_amount');
+    expect(total.type).toBe('DECIMAL');
+    const amount = entity.properties.find((p) => p.name === 'amount')!;
+    expect(amount.type).toBe('Money');
+    expect(entity.relationships[0].inversedBy).toBe('invoices');
+  });
+});
+
+describe('numbers in the environment that are not numbers', () => {
+  // Each of these reads a setting once and falls back twice: to the literal
+  // default when the variable is unset, and to the same default again when it
+  // is set to something parseInt cannot read. Only the first is ever seen in
+  // an ordinary run.
+  test.each([
+    ['SYMFONY_MCP_RATE_WINDOW_MS', 'not-a-number'],
+    ['SYMFONY_MCP_RATE_BURST', 'burst'],
+  ])('the rate limiter with %s set to something unreadable', (name, value) => {
+    const saved = process.env[name];
+    process.env[name] = value;
+
+    try {
+      jest.isolateModules(() => {
+        const limiter = jest.requireActual<typeof import('../utils/rate-limiter')>('../utils/rate-limiter');
+        limiter.resetRateLimits();
+
+        expect(limiter.checkRateLimit('list_routes', 'branches').allowed).toBe(true);
+      });
+    } finally {
+      if (saved === undefined) delete process.env[name];
+      else process.env[name] = saved;
+    }
+  });
+
+  test('a cache ttl and size that cannot be parsed', () => {
+    const saved = { ...process.env };
+    process.env['SYMFONY_MCP_CACHE_TTL_MS'] = 'soon';
+    process.env['SYMFONY_MCP_CACHE_MAX_SIZE'] = 'plenty';
+
+    try {
+      jest.isolateModules(() => {
+        const { cacheManager: fresh } = jest.requireActual<typeof import('../utils/cache-manager')>('../utils/cache-manager');
+        fresh.set('ns', 'key', { value: 1 });
+
+        expect(fresh.get('ns', 'key')).toEqual({ value: 1 });
+      });
+    } finally {
+      for (const k of ['SYMFONY_MCP_CACHE_TTL_MS', 'SYMFONY_MCP_CACHE_MAX_SIZE']) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  });
+
+  test('an anomaly window and an audit rotation that cannot be parsed', () => {
+    const saved = { ...process.env };
+    process.env['SYMFONY_MCP_ANOMALY_WINDOW_MS'] = 'a while';
+    process.env['SYMFONY_MCP_AUDIT_MAX_SIZE_MB'] = 'big';
+    process.env['SYMFONY_MCP_AUDIT_MAX_FILES'] = 'several';
+
+    try {
+      jest.isolateModules(() => {
+        const detector = jest.requireActual<typeof import('../utils/anomaly-detector')>('../utils/anomaly-detector');
+
+        expect(detector.getRecentAnomalyEvents()).toEqual([]);
+      });
+    } finally {
+      for (const k of ['SYMFONY_MCP_ANOMALY_WINDOW_MS', 'SYMFONY_MCP_AUDIT_MAX_SIZE_MB', 'SYMFONY_MCP_AUDIT_MAX_FILES']) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  });
+});
+
+describe('settings that cannot be read as numbers', () => {
+  /** Runs `body` with the given variables set, on a freshly imported module registry. */
+  function withEnv(vars: Record<string, string>, body: () => void): void {
+    const saved: Record<string, string | undefined> = {};
+    for (const [k, v] of Object.entries(vars)) { saved[k] = process.env[k]; process.env[k] = v; }
+    try {
+      jest.isolateModules(body);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    }
+  }
+
+  test('the concurrency limits', () => {
+    withEnv({ SYMFONY_MCP_MAX_CONCURRENT: 'lots', SYMFONY_MCP_CONCURRENT_QUEUE: 'more' }, () => {
+      const limiter = jest.requireActual<typeof import('../utils/concurrency-limiter')>('../utils/concurrency-limiter');
+
+      expect(limiter.getConcurrencyStats().maxConcurrent).toBe(10);
+    });
+  });
+
+  test('the http rate limit, and a negative one', () => {
+    withEnv({ SYMFONY_MCP_HTTP_RATE_LIMIT: '-5' }, () => {
+      const limiter = jest.requireActual<typeof import('../utils/http-rate-limiter')>('../utils/http-rate-limiter');
+
+      expect(limiter.getHttpRateLimitConfig().maxPerMinute).toBe(120);
+    });
+  });
+
+  test('the replay window and the session window', () => {
+    withEnv({
+      SYMFONY_MCP_REPLAY_WINDOW_MS: 'soon',
+      SYMFONY_MCP_SESSION_WINDOW: 'a while',
+      SYMFONY_MCP_SESSION_SECRET: 'x'.repeat(40),
+    }, () => {
+      const token = jest.requireActual<typeof import('../utils/session-token')>('../utils/session-token');
+      const generated = token.generateSessionToken()!;
+
+      expect(token.verifySessionToken(generated).valid).toBe(true);
+    });
+  });
+
+  test('the audit key lifetime', () => {
+    withEnv({
+      SYMFONY_MCP_AUDIT_KEY: Buffer.alloc(32, 7).toString('base64'),
+      SYMFONY_MCP_AUDIT_KEY_TTL_DAYS: 'forever',
+      SYMFONY_MCP_AUDIT_KEY_CREATED_AT: new Date().toISOString(),
+    }, () => {
+      const audit = jest.requireActual<typeof import('../utils/startup-audit')>('../utils/startup-audit');
+
+      expect(Array.isArray(audit.runStartupAudit())).toBe(true);
+    });
+  });
+});
+

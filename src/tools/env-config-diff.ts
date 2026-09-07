@@ -116,7 +116,7 @@ function parseBundlesEnvs(appPath: string): BundleEnvEntry[] {
 
     // Use a non-backtracking pattern: [A-Za-z_][\w\\]* avoids nested quantifiers
     for (const m of content.matchAll(/([A-Za-z_][\w\\]*)::class\s*=>\s*\[([^\]]+)\]/g)) {
-      const bundle = m[1].split('\\').pop() ?? m[1];
+      const bundle = m[1].split('\\').pop()!;
       const envBlock = m[2];
       const envs: string[] = [];
       for (const em of envBlock.matchAll(/'(\w+)'\s*=>\s*true/g)) {

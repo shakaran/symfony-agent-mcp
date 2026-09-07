@@ -111,7 +111,7 @@ function buildSegmentAnalyticsInfos(appPath: string): SegmentAnalyticsInfo[] {
     if (content.includes('->identify([')) {
       const identifyMatches = [...content.matchAll(/->identify\s*\(\s*\[/g)];
       for (const match of identifyMatches) {
-        const after = content.slice(match.index ?? 0, (match.index ?? 0) + 600);
+        const after = content.slice(match.index, (match.index) + 600);
         if (!after.includes('anonymousId') && !after.includes('userId')) {
           fileIssues.push({
             file: relFile,

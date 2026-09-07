@@ -337,7 +337,7 @@ export function listEventListeners(appPath: string): McpToolResult {
     if (subscribers.length > 0) {
       text += `Event Subscribers (${subscribers.length}):\n${'─'.repeat(50)}\n`;
       for (const sub of subscribers) {
-        const shortClass = sub.class.split('\\').pop() ?? sub.class;
+        const shortClass = sub.class.split('\\').pop()!;
         text += `\n  ${shortClass}  (${sub.file})\n`;
         for (const ev of sub.events) {
           const pri = ev.priority !== 0 ? `  [priority: ${ev.priority}]` : '';
@@ -350,7 +350,7 @@ export function listEventListeners(appPath: string): McpToolResult {
     if (listeners.length > 0) {
       text += `Event Listeners (${listeners.length}):\n${'─'.repeat(50)}\n`;
       for (const l of listeners) {
-        const shortClass = l.class.split('\\').pop() ?? l.class;
+        const shortClass = l.class.split('\\').pop()!;
         const pri = l.priority !== 0 ? `  [priority: ${l.priority}]` : '';
         text += `  ${l.event.padEnd(40)}→ ${shortClass}::${l.method}${pri}\n`;
       }
@@ -386,7 +386,7 @@ export function getEventListenersByEvent(appPath: string, eventName: string): Mc
     for (const sub of matchedSubs) {
       const matchedEvents = sub.events.filter((e) => e.event.toLowerCase().includes(lq));
       for (const ev of matchedEvents) {
-        const shortClass = sub.class.split('\\').pop() ?? sub.class;
+        const shortClass = sub.class.split('\\').pop()!;
         text += `  [subscriber] ${shortClass}::${ev.method}`;
         if (ev.priority !== 0) text += `  (priority: ${ev.priority})`;
         text += `\n    Full class: ${sub.class}\n\n`;
@@ -394,7 +394,7 @@ export function getEventListenersByEvent(appPath: string, eventName: string): Mc
     }
 
     for (const l of matchedListeners) {
-      const shortClass = l.class.split('\\').pop() ?? l.class;
+      const shortClass = l.class.split('\\').pop()!;
       text += `  [listener]   ${shortClass}::${l.method}`;
       if (l.priority !== 0) text += `  (priority: ${l.priority})`;
       text += `\n    Full class: ${l.class}\n    Source: ${l.source}\n\n`;

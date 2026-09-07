@@ -104,7 +104,7 @@ function scanForAntiPatterns(appPath: string): ClockAntiPattern[] {
         // Find line number
         const beforeMatch = content.slice(0, match.index);
         const lineNo      = beforeMatch.split('\n').length;
-        const codeLine    = (lines[lineNo - 1] ?? '').trim();
+        const codeLine    = (lines[lineNo - 1]).trim();
 
         // Skip comments
         if (codeLine.startsWith('//') || codeLine.startsWith('*')) continue;

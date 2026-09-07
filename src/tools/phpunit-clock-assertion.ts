@@ -65,7 +65,7 @@ function analyzeClockFile(filePath: string, appPath: string): PhpunitClockAssert
   const assertionIssues: string[] = [];
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/assertGreaterThan\(time\(/.test(line) || /assertLessThan\(time\(/.test(line)) {
       assertionIssues.push(`Line ${lineNo}: time()-based assertion without clock injection — test may be flaky`);
@@ -78,7 +78,7 @@ function analyzeClockFile(filePath: string, appPath: string): PhpunitClockAssert
   // new \DateTime() / new \DateTimeImmutable() without arguments
   const datetimeIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/new\s+\\?DateTime\(\s*\)/.test(line) || /new\s+\\?DateTimeImmutable\(\s*\)/.test(line)) {
       datetimeIssues.push(`Line ${lineNo}: new DateTime()/DateTimeImmutable() with no argument — not mockable, ties test to wall clock`);
@@ -91,7 +91,7 @@ function analyzeClockFile(filePath: string, appPath: string): PhpunitClockAssert
   // sleep() / usleep() in test code
   const sleepIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/\bsleep\(/.test(line) || /\busleep\(/.test(line)) {
       sleepIssues.push(`Line ${lineNo}: sleep()/usleep() call — use ClockSensitiveTrait with ->sleep() instead`);
@@ -104,7 +104,7 @@ function analyzeClockFile(filePath: string, appPath: string): PhpunitClockAssert
   // hardcoded new SystemClock()
   const injectionIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/new\s+\\?SystemClock\(/.test(line)) {
       injectionIssues.push(`Line ${lineNo}: new SystemClock() — inject ClockInterface instead of hardcoding the implementation`);

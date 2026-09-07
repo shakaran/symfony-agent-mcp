@@ -87,7 +87,7 @@ function parseImplementations(srcDir: string): ImplementationInfo[] {
     const className = classM[1];
     const implM = /\bimplements\s+([^{]{1,300})/m.exec(content);
     if (!implM) continue;
-    const interfaces = implM[1].split(',').map((i) => i.trim().split('\\').pop() ?? i.trim()).filter(Boolean);
+    const interfaces = implM[1].split(',').map((i) => i.trim().split('\\').pop()!).filter(Boolean);
     impls.push({ className, interfaces });
   }
   return impls;

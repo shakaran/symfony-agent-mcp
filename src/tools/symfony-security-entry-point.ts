@@ -154,7 +154,7 @@ function loadSecurityEntryPointData(appPath: string): SecurityEntryPointInfo[] {
     // Find entry point class info
     let epClass: EntryPointClassInfo | undefined;
     if (fw.entryPointClass) {
-      const shortName = fw.entryPointClass.split('\\').pop() ?? fw.entryPointClass;
+      const shortName = fw.entryPointClass.split('\\').pop()!;
       epClass = entryPointClasses.find((c) => c.class === shortName || c.class === fw.entryPointClass);
     }
 

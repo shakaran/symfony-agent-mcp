@@ -63,10 +63,10 @@ export function listCustomExceptionHierarchy(appPath: string): McpToolResult {
     const byClass = new Map<string, ExceptionNode>();
     for (const n of nodes) byClass.set(n.class, n);
     for (const n of nodes) {
-      const parentNode = byClass.get(n.parent.split('\\').pop() ?? n.parent);
+      const parentNode = byClass.get(n.parent.split('\\').pop()!);
       if (parentNode) parentNode.children.push(n.class);
     }
-    const roots = nodes.filter(n => !byClass.has(n.parent.split('\\').pop() ?? n.parent));
+    const roots = nodes.filter(n => !byClass.has(n.parent.split('\\').pop()!));
     const totalIssues = nodes.reduce((s, n) => s + n.issues.length, 0);
     let text = `Custom Exception Hierarchy\n${'='.repeat(55)}\n\nException classes: ${nodes.length}  Root exceptions: ${roots.length}  Issues: ${totalIssues}\n`;
     for (const root of roots.sort((a, b) => b.children.length - a.children.length)) {

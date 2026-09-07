@@ -120,7 +120,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function countUsages(srcDir: string, pattern: string): number {
   let count = 0;
-  const short = pattern.split('\\').pop() ?? pattern;
+  const short = pattern.split('\\').pop()!;
   try {
     for (const file of getAllPhpFiles(srcDir)) {
       const content = safeRead(file, srcDir);

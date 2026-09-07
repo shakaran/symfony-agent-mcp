@@ -85,7 +85,7 @@ function parseFixture(filePath: string): FixtureInfo | null {
       dependencies.push(m[1]);
     }
     for (const m of depsM[1].matchAll(/['"]([^'"]+Fixture[^'"]*)['"]/g)) {
-      dependencies.push(m[1].split('\\').pop() ?? m[1]);
+      dependencies.push(m[1].split('\\').pop()!);
     }
   }
 

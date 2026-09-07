@@ -99,7 +99,7 @@ function parseExceptionFile(filePath: string): ExceptionMappingInfo | null {
   if (!classM) return null;
 
   const className = classM[1];
-  const parentName = classM[2].split('\\').pop() ?? classM[2];
+  const parentName = classM[2].split('\\').pop()!;
 
   const isHttpParent = HTTP_EXCEPTION_PARENTS.some((p) => parentName === p || parentName.includes(p));
   const implementsHttpException =

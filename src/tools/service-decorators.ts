@@ -137,7 +137,7 @@ function loadAttributeDecorators(appPath: string): ServiceDecorator[] {
       if (decoratesM) {
         decorators.push({
           decoratorId: classM[1],
-          decoratesId: decoratesM[1].split('\\').pop() ?? decoratesM[1],
+          decoratesId: decoratesM[1].split('\\').pop()!,
           innerAlias: innerM?.[1],
           priority: priorityM ? parseInt(priorityM[1], 10) : undefined,
           source: 'attribute',
@@ -219,8 +219,8 @@ export function listServiceDecorators(appPath: string): McpToolResult {
 
     text += `\nAll decorators:\n`;
     for (const d of all.sort((a, b) => a.decoratorId.localeCompare(b.decoratorId))) {
-      const shortDecorator = d.decoratorId.split('\\').pop() ?? d.decoratorId;
-      const shortDecorates = d.decoratesId.split('\\').pop() ?? d.decoratesId;
+      const shortDecorator = d.decoratorId.split('\\').pop()!;
+      const shortDecorates = d.decoratesId.split('\\').pop()!;
       const priority = d.priority !== undefined ? `  [priority: ${d.priority}]` : '';
       const src = d.source === 'attribute' ? '  [#[AsDecorator]]' : `  [${d.file}]`;
       text += `  ${shortDecorator.padEnd(35)} decorates ${shortDecorates}${priority}${src}\n`;

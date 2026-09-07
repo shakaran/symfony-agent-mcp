@@ -109,7 +109,7 @@ function loadBehatConfig(appPath: string): BehatConfig | null {
     const extsRaw = (defaultRaw['extensions'] ?? {}) as Record<string, unknown>;
     const extensions: BehatExtension[] = [];
     for (const [extName] of Object.entries(extsRaw)) {
-      const shortName = extName.split('\\').pop() ?? extName;
+      const shortName = extName.split('\\').pop()!;
       const extDef = extsRaw[extName] as Record<string, unknown> | undefined;
       const driver = (extDef?.['default_session'] ?? extDef?.['driver']) as string | undefined;
       extensions.push({ name: shortName, driver: driver ? String(driver) : undefined });
@@ -133,7 +133,7 @@ function loadBehatConfig(appPath: string): BehatConfig | null {
       const contexts: string[] = [];
       if (Array.isArray(contextsRaw)) {
         for (const c of contextsRaw) {
-          contexts.push(typeof c === 'string' ? c.split('\\').pop() ?? c : Object.keys(c as object)[0].split('\\').pop() ?? '');
+          contexts.push(typeof c === 'string' ? c.split('\\').pop()! : Object.keys(c as object)[0].split('\\').pop() ?? '');
         }
       }
 

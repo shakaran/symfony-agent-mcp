@@ -103,13 +103,13 @@ function parseEntityEmbedded(filePath: string): EntityWithEmbedded | null {
     const prefix = /columnPrefix\s*:\s*['"]([^'"]+)['"]/.exec(args)?.[1];
 
     // Find the property that follows this attribute
-    const afterAttr = content.slice(m.index ?? 0);
+    const afterAttr = content.slice(m.index);
     const propM = /\$(\w+)/.exec(afterAttr);
 
     if (classRef) {
       embedded.push({
         property: propM?.[1] ?? '?',
-        embeddableClass: classRef.split('\\').pop() ?? classRef,
+        embeddableClass: classRef.split('\\').pop()!,
         columnPrefix: prefix,
       });
     }

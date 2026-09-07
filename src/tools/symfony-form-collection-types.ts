@@ -69,7 +69,7 @@ function analyzeCollectionType(content: string, className: string): CollectionIt
     const hasPrototypeName = /prototype_name/.test(optionsBlock);
 
     const entryTypeMatch = /entry_type\s*=>\s*([^\s,\]]{1,120})/.exec(optionsBlock);
-    const entryType = entryTypeMatch ? entryTypeMatch[1].replace(/::class$/, '').split('\\').pop() ?? null : null;
+    const entryType = entryTypeMatch ? entryTypeMatch[1].replace(/::class$/, '').split('\\').pop()! : null;
 
     const optionsList: string[] = [];
     if (hasAllowAdd) optionsList.push('allow_add');

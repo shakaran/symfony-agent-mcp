@@ -81,7 +81,7 @@ function analyzeFile(filePath: string): QbRepository | null {
   let hasFirstResult = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
 
     if (line.includes('createQueryBuilder(')) qbUsages++;
@@ -102,7 +102,7 @@ function analyzeFile(filePath: string): QbRepository | null {
 
     // getResult() inside what looks like a loop
     if (line.includes('->getResult()') && i > 0) {
-      const prev = (lines[i - 2] ?? '') + (lines[i - 1] ?? '');
+      const prev = (lines[i - 2]) + (lines[i - 1]);
       if (/foreach|for\s*\(|while\s*\(/.test(prev)) {
         issues.push({ type: 'result-in-loop', line: lineNo, detail: 'getResult() inside loop — potential N+1 pattern' });
       }

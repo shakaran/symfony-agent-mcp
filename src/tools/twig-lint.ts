@@ -75,7 +75,7 @@ function analyzeTemplate(filePath: string, appPath: string): TwigFileResult | nu
   const hasFormEnd   = content.includes('form_end(');
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
 
     // XSS risk

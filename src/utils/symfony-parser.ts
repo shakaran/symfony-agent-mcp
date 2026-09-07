@@ -130,17 +130,21 @@ export function parseEnvFile(filePath: string): Record<string, string> {
       const eqIdx = trimmed.indexOf('=');
       if (eqIdx === -1) continue;
 
-      const key = trimmed.slice(0, eqIdx).trim();
+      // Dotenv accepts `export FOO=bar`, which is how a file meant to be
+      // sourced by a shell is written.
+      const key = trimmed.slice(0, eqIdx).trim().replace(/^export\s+/, '');
       let value = trimmed.slice(eqIdx + 1);
 
-      // Strip inline comments (only after unquoted values)
-      if (!value.startsWith('"') && !value.startsWith("'")) {
+      // A quoted value ends at its closing quote; anything after it is a
+      // comment. An unquoted one ends at the first ` #`.
+      const quoted = /^(["'])([^"']{0,2000})\1/.exec(value);
+      if (quoted) {
+        value = quoted[2];
+      } else {
         const commentIdx = value.indexOf(' #');
         if (commentIdx !== -1) value = value.slice(0, commentIdx);
+        value = value.replace(/^["']|["']$/g, '').trim();
       }
-
-      // Strip surrounding quotes
-      value = value.replace(/^["']|["']$/g, '').trim();
 
       if (key) env[key] = value;
     }

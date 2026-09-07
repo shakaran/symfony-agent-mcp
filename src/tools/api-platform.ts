@@ -163,7 +163,7 @@ function parseFilters(content: string): ApiFilter[] {
     const classMatch = /([\w\\]+Filter)::class/.exec(args);
     if (!classMatch) continue;
 
-    const filter: ApiFilter = { class: classMatch[1].split('\\').pop() ?? classMatch[1] };
+    const filter: ApiFilter = { class: classMatch[1].split('\\').pop()! };
 
     const propsMatch = /properties\s*:\s*\[([^\]]+)\]/.exec(args);
     if (propsMatch) {
@@ -324,7 +324,7 @@ export function listApiResources(appPath: string): McpToolResult {
     text += '\n';
 
     for (const r of resources) {
-      const shortClass = r.shortName ?? r.class.split('\\').pop() ?? r.class;
+      const shortClass = r.shortName ?? r.class.split('\\').pop()!;
       text += `  ${shortClass}  (${r.file})\n`;
 
       if (r.operations.length > 0) {

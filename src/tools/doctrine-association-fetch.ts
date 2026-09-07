@@ -71,7 +71,7 @@ function parseFetchFromPhp(content: string, filePath: string): AssociationFetchI
     const fetchMode = fetchM[1].toUpperCase();
 
     // Try to extract property name from the next line after the attribute
-    const attrEnd = (m.index ?? 0) + attrBody.length;
+    const attrEnd = (m.index) + attrBody.length;
     const afterAttr = content.slice(attrEnd, attrEnd + 200);
     const propM = /(?:public|protected|private)\s+(?:(?:readonly|static)\s+){0,2}(?:\?\w{1,80}\s+)?\$(\w{1,80})/.exec(afterAttr);
     const property = propM ? propM[1] : '(unknown)';
@@ -96,7 +96,7 @@ function parseFetchFromPhp(content: string, filePath: string): AssociationFetchI
     if (!fetchM) continue;
     const fetchMode = fetchM[1].toUpperCase();
 
-    const annotEnd = (m.index ?? 0) + annotBody.length;
+    const annotEnd = (m.index) + annotBody.length;
     const afterAnnot = content.slice(annotEnd, annotEnd + 300);
     const propM = /(?:public|protected|private)\s+(?:\?\w{1,80}\s+)?\$(\w{1,80})/.exec(afterAnnot);
     const property = propM ? propM[1] : '(unknown)';

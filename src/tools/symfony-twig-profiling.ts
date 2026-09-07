@@ -39,8 +39,8 @@ function buildTwigProfilingInfos(appPath: string): TwigProfilingInfo[] {
     const forMatches = [...content.matchAll(/{%\s*for\s+/g)];
     const endForMatches = [...content.matchAll(/{%\s*endfor\s*%}/g)];
     if (forMatches.length >= 2 && endForMatches.length >= 2) {
-      const loopPositions = forMatches.map((m) => m.index ?? 0);
-      const endPositions = endForMatches.map((m) => m.index ?? 0);
+      const loopPositions = forMatches.map((m) => m.index);
+      const endPositions = endForMatches.map((m) => m.index);
       let hasNested = false;
       for (let i = 0; i < loopPositions.length - 1; i++) {
         const outerStart = loopPositions[i];

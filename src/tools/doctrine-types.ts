@@ -74,7 +74,7 @@ function loadCustomTypes(appPath: string): CustomType[] {
   const types: CustomType[] = [];
   for (const [name, val] of Object.entries(typesRaw)) {
     const cls = typeof val === 'string' ? val : String((val as Record<string, unknown>)['class'] ?? val);
-    const shortClass = cls.split('\\').pop() ?? cls;
+    const shortClass = cls.split('\\').pop()!;
     types.push({
       name,
       class: cls,
@@ -131,7 +131,7 @@ function scanTypeUsages(appPath: string, knownTypeNames: Set<string>): TypeUsage
         'smallint', 'guid', 'simple_array', 'datetimetz', 'datetimetz_immutable'].includes(typeName);
 
       if (!isStandard || knownTypeNames.has(typeName)) {
-        const after = content.slice(m.index ?? 0, (m.index ?? 0) + 200);
+        const after = content.slice(m.index, (m.index) + 200);
         const propM = /\$(\w+)/.exec(after);
         usages.push({
           entity: classM[1],

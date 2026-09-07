@@ -159,7 +159,7 @@ function scanMercureUsage(appPath: string): MercureUpdate[] {
       }
 
       // Check for private flag
-      const after = content.slice(m.index ?? 0, (m.index ?? 0) + 300);
+      const after = content.slice(m.index, (m.index) + 300);
       const isPrivate = after.includes('private: true') || after.includes('private:true');
 
       updates.push({

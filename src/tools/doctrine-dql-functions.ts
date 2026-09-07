@@ -67,7 +67,7 @@ function loadDqlFunctions(appPath: string): DqlFunction[] {
     for (const { key, category } of categories) {
       const fns = (dql[key] ?? {}) as Record<string, unknown>;
       for (const [name, cls] of Object.entries(fns)) {
-        const className = String(cls).split('\\').pop() ?? String(cls);
+        const className = String(cls).split('\\').pop()!;
         const classFound = checkClassExists(appPath, className);
         results.push({ name, class: String(cls), category, classFound });
       }
@@ -162,7 +162,7 @@ export function listDqlFunctions(appPath: string): McpToolResult {
     for (const [cat, fns] of [...byCategory.entries()].sort()) {
       text += `\n${cat.charAt(0).toUpperCase() + cat.slice(1)} functions:\n`;
       for (const fn of fns.sort((a, b) => a.name.localeCompare(b.name))) {
-        const shortClass = fn.class.split('\\').pop() ?? fn.class;
+        const shortClass = fn.class.split('\\').pop()!;
         const found = fn.classFound ? '✓' : '⚠';
         const used  = usedInDql.includes(fn.name.toLowerCase()) ? '  [used in DQL]' : '';
         text += `  ${found} ${fn.name.padEnd(25)} ${shortClass}${used}\n`;

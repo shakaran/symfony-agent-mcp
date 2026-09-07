@@ -158,7 +158,7 @@ export function listMessageBuses(appPath: string): McpToolResult {
       const noHandle = bus.allowNoHandlers ? '  [allow_no_handlers]' : '';
       text += `\n  ${bus.name}${defFlag}${noHandle}\n`;
       if (bus.middleware.length > 0) {
-        text += `    middleware: ${bus.middleware.map((m) => m.split('\\').pop() ?? m).join(', ')}\n`;
+        text += `    middleware: ${bus.middleware.map((m) => m.split('\\').pop()!).join(', ')}\n`;
       }
     }
 

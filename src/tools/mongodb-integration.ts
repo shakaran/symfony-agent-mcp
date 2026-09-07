@@ -127,7 +127,7 @@ function buildMongodbIntegrationInfos(appPath: string): MongodbIntegrationInfo[]
     if (content.includes('->find(') || content.includes('->findOne(')) {
       const findMatches = [...content.matchAll(/->find(One)?\s*\(/g)];
       for (const match of findMatches) {
-        const after = content.slice(match.index ?? 0, (match.index ?? 0) + 400);
+        const after = content.slice(match.index, (match.index) + 400);
         if (!after.includes('typeMap')) {
           issues.push(
             `Missing 'typeMap' option on ${match[0].trim().replace('(', '')}() in ${relFile} — specify typeMap to control BSON-to-PHP type mapping and avoid unexpected BSONDocument objects`,
@@ -141,7 +141,7 @@ function buildMongodbIntegrationInfos(appPath: string): MongodbIntegrationInfo[]
     if (content.includes('->find([')) {
       const findBracketMatches = [...content.matchAll(/->find\(\[/g)];
       for (const match of findBracketMatches) {
-        const around = content.slice(Math.max(0, (match.index ?? 0) - 100), (match.index ?? 0) + 400);
+        const around = content.slice(Math.max(0, (match.index) - 100), (match.index) + 400);
         if (!around.includes('->hint(')) {
           issues.push(
             `Potentially unindexed query in ${relFile}: ->find([...]) without ->hint() — ensure query fields are indexed on large collections`,

@@ -239,7 +239,7 @@ function buildRoutingEntries(appPath: string): {
   const allSourceClasses = [...new Set([...msgClasses, ...dispatchedClasses])];
 
   for (const cls of allSourceClasses) {
-    const shortName = cls.includes('\\') ? (cls.split('\\').pop() ?? cls) : cls;
+    const shortName = cls.includes('\\') ? (cls.split('\\').pop()!) : cls;
     const isRouted =
       routedClasses.has(cls) ||
       routedClasses.has(shortName) ||

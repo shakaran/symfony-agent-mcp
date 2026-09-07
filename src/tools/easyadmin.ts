@@ -81,7 +81,7 @@ function parseCrudController(filePath: string): CrudController | null {
   // Entity from getEntityFqcn() or class name heuristic
   const entityM = /getEntityFqcn[^{]*\{[^}]*return\s+([A-Za-z\\]+)::class/.exec(content);
   const entity = entityM
-    ? (entityM[1].split('\\').pop() ?? entityM[1])
+    ? (entityM[1].split('\\').pop()!)
     : classM[1].replace(/CrudController$|Admin$/, '');
 
   return {

@@ -164,12 +164,12 @@ function parseVoterFile(filePath: string): CustomVoter | null {
     }
     // Subject type hints: instanceof Product, $subject instanceof Order
     for (const m of supportsMatch[1].matchAll(/instanceof\s+([\w\\]+)/g)) {
-      const cls = m[1].split('\\').pop() ?? m[1];
+      const cls = m[1].split('\\').pop()!;
       if (!subjects.includes(cls)) subjects.push(cls);
     }
     // is_a($subject, Product::class)
     for (const m of supportsMatch[1].matchAll(/is_a\s*\(\s*\$\w+\s*,\s*([\w\\]+)::class/g)) {
-      const cls = m[1].split('\\').pop() ?? m[1];
+      const cls = m[1].split('\\').pop()!;
       if (!subjects.includes(cls)) subjects.push(cls);
     }
   }
@@ -251,7 +251,7 @@ function parseFirewalls(security: Record<string, unknown>): Firewall[] {
       const auths = Array.isArray(fw['custom_authenticators'])
         ? fw['custom_authenticators']
         : [fw['custom_authenticators']];
-      authenticators.push(...auths.map(String).map((a) => a.split('\\').pop() ?? a));
+      authenticators.push(...auths.map(String).map((a) => a.split('\\').pop()!));
     }
     if (fw['form_login']) authenticators.push('FormLogin');
     if (fw['http_basic']) authenticators.push('HttpBasic');

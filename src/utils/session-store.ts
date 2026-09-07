@@ -37,15 +37,8 @@ interface SessionState {
 }
 
 class SessionStore {
-  private static instance: SessionStore;
   private sessions = new Map<string, SessionState>();
 
-  static getInstance(): SessionStore {
-    if (!SessionStore.instance) {
-      SessionStore.instance = new SessionStore();
-    }
-    return SessionStore.instance;
-  }
 
   private getOrCreate(sessionId: string): SessionState {
     let state = this.sessions.get(sessionId);
@@ -159,4 +152,4 @@ class SessionStore {
   }
 }
 
-export const sessionStore = SessionStore.getInstance();
+export const sessionStore = new SessionStore();

@@ -146,7 +146,7 @@ function scanEventListeners(appPath: string): EventListener[] {
         listensTo.push(m[1]);
       }
       for (const m of content.matchAll(/#\[AsEventListener[^)]*event\s*:\s*['"]([^'"]+)['"]/g)) {
-        listensTo.push(m[1].split('\\').pop() ?? m[1]);
+        listensTo.push(m[1].split('\\').pop()!);
       }
     }
 

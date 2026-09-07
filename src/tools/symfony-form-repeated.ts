@@ -89,7 +89,7 @@ function parseRepeatedFile(filePath: string, appPath: string): FileRepeatedResul
     // Extract inner type
     const typeM = /['"]type['"]\s*=>\s*([\w\\]{1,100}::class|['"][^'"]{1,100}['"])/.exec(optionsBlock);
     const innerType = typeM
-      ? typeM[1].replace('::class', '').split('\\').pop() ?? typeM[1]
+      ? typeM[1].replace('::class', '').split('\\').pop()!
       : 'unknown';
 
     const hasInvalidMessage = optionsBlock.includes('invalid_message');

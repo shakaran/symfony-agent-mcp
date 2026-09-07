@@ -84,12 +84,12 @@ function parseComponent(filePath: string): LiveComponent | null {
   const props: LiveProp[] = [];
   const lines = content.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     if (!line.includes('#[LiveProp')) continue;
 
     const writable    = line.includes('writable: true') || line.includes('writable:true');
     const propLineIdx = i + 1;
-    const propLine    = lines[propLineIdx] ?? '';
+    const propLine    = lines[propLineIdx];
     const propNameM   = /(?:public|protected|private)\s+(?:\S+\s+)?\$(\w+)/.exec(propLine);
     if (!propNameM) continue;
 

@@ -80,7 +80,7 @@ function parseEnum(filePath: string, appPath: string): PhpEnum | null {
 
   const interfaces: string[] = [];
   if (enumM[3]) {
-    interfaces.push(...enumM[3].split(',').map((i) => i.trim().split('\\').pop() ?? i.trim()));
+    interfaces.push(...enumM[3].split(',').map((i) => i.trim().split('\\').pop()!));
   }
 
   // Count cases

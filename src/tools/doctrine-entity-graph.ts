@@ -81,7 +81,7 @@ function parseEntityFile(filePath: string): DoctrineEntityGraphInfo | null {
       const block = m[0];
       const targetM = /targetEntity\s*:\s*['"]?([A-Za-z0-9_\\]{1,100})['"]?/.exec(block) ??
         /targetEntity\s*=\s*['"]?([A-Za-z0-9_\\]{1,100})['"]?/.exec(block);
-      const target = targetM ? targetM[1].replace(/\\\\/g, '\\').split('\\').pop() ?? targetM[1] : 'unknown';
+      const target = targetM ? targetM[1].replace(/\\\\/g, '\\').split('\\').pop()! : 'unknown';
       const hasInversedBy = block.includes('inversedBy');
       const hasMappedBy = block.includes('mappedBy');
       const owning = attr === 'ManyToOne' ? true

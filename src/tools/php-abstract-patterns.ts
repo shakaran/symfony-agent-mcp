@@ -79,7 +79,7 @@ function extractConcreteMethods(content: string): string[] {
 function extractInterfaces(content: string): string[] {
   const m = /implements\s+([\w\\, ]{1,300})/.exec(content);
   if (!m) return [];
-  return m[1].split(',').map((s) => s.trim().split('\\').pop() ?? s.trim()).filter(Boolean);
+  return m[1].split(',').map((s) => s.trim().split('\\').pop()!).filter(Boolean);
 }
 
 function isTemplateMethod(content: string, abstractNames: string[]): boolean {

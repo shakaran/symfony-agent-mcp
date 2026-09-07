@@ -147,7 +147,7 @@ function buildCustomPlatformEntries(appPath: string): DoctrineCustomPlatformEntr
     if (!parentClass) continue;
 
     const shortParent = parentClass.includes('\\')
-      ? (parentClass.split('\\').pop() ?? parentClass)
+      ? (parentClass.split('\\').pop()!)
       : parentClass;
 
     const isPlatform = PLATFORM_PARENT_CLASSES.includes(shortParent);

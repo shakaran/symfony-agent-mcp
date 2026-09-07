@@ -87,7 +87,7 @@ function parseApiFilters(filePath: string): ResourceFilter[] {
   const results: ResourceFilter[] = [];
 
   for (const m of content.matchAll(/#\[ApiFilter\s*\(\s*([^,)]+)(?:,\s*properties\s*:\s*\[([^\]]*)\])?(?:,\s*strategy\s*:\s*['"]([^'"]+)['"])?/g)) {
-    const filterClass = m[1].trim().replace(/::class$/, '').split('\\').pop() ?? m[1];
+    const filterClass = m[1].trim().replace(/::class$/, '').split('\\').pop()!;
     const propsRaw    = m[2] ?? '';
     const strategy    = m[3];
 

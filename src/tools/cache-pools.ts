@@ -125,7 +125,7 @@ const ADAPTER_LABELS: Record<string, string> = {
 };
 
 function adapterLabel(adapter: string): string {
-  return ADAPTER_LABELS[adapter] ?? adapter.split('.').pop() ?? adapter;
+  return ADAPTER_LABELS[adapter] ?? adapter.split('.').pop()!;
 }
 
 // ─── Tool functions ────────────────────────────────────────────────────────

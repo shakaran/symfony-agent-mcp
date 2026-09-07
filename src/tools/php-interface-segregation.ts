@@ -112,7 +112,7 @@ function parseClass(filePath: string): ParsedClass | null {
 
   const implM = /implements\s+([\w\\, ]{1,400})/.exec(content);
   const implementedInterfaces = implM
-    ? implM[1].split(',').map((s) => s.trim().split('\\').pop() ?? s.trim()).filter(Boolean)
+    ? implM[1].split(',').map((s) => s.trim().split('\\').pop()!).filter(Boolean)
     : [];
 
   // Detect partial implementation: method throws RuntimeException or BadMethodCallException

@@ -138,7 +138,7 @@ function buildElasticsearchPercolateInfos(appPath: string): ElasticsearchPercola
     if (content.includes('match_all')) {
       const matchAllMatches = [...content.matchAll(/match_all/g)];
       for (const match of matchAllMatches) {
-        const around = content.slice(Math.max(0, (match.index ?? 0) - 200), (match.index ?? 0) + 400);
+        const around = content.slice(Math.max(0, (match.index) - 200), (match.index) + 400);
         if (!around.includes('size') && !around.includes('limit')) {
           issues.push(
             `match_all query in ${relFile} without size or limit — match_all on large indices returns all documents and can overwhelm the cluster`,
@@ -176,7 +176,7 @@ function buildElasticsearchPercolateInfos(appPath: string): ElasticsearchPercola
 
     const bulkMatches = [...content.matchAll(/bulk\s*\(/g)];
     for (const match of bulkMatches) {
-      const around = content.slice(Math.max(0, (match.index ?? 0) - 200), (match.index ?? 0) + 400);
+      const around = content.slice(Math.max(0, (match.index) - 200), (match.index) + 400);
       if (!around.includes('refresh')) {
         issues.push(
           `bulk() in test file ${relFile} without 'refresh: true' — indexed documents may not be visible immediately in tests; add refresh: true or wait for refresh`,

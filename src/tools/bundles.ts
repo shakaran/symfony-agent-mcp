@@ -98,7 +98,7 @@ function parseBundlesPhp(filePath: string): Bundle[] {
                       (environments.includes('dev') || environments.includes('test'));
     const isTestOnly = environments.length === 1 && environments[0] === 'test';
 
-    const shortName = bundleClass.split('\\').pop() ?? bundleClass;
+    const shortName = bundleClass.split('\\').pop()!;
 
     bundles.push({
       class: bundleClass,

@@ -94,7 +94,7 @@ function scanProjections(appPath: string): DqlProjection[] {
     for (const m of content.matchAll(/(?:SELECT|(?:add)?[Ss]elect\s*\(\s*['"])\s*NEW\s+([\w\\]+)\s*\(([^)]*)\)/gi)) {
       const dtoClass = m[1].replace(/^\\/, '');
       const args     = m[2].split(',').map((s) => s.trim()).filter(Boolean);
-      const shortName = dtoClass.split('\\').pop() ?? dtoClass;
+      const shortName = dtoClass.split('\\').pop()!;
 
       if (seen.has(dtoClass)) continue;
       seen.add(dtoClass);

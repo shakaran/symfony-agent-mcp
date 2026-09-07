@@ -84,7 +84,7 @@ function scanDumpUsages(appPath: string): DebugDumpInfo[] {
     const lines = content.split('\n');
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      const line = lines[lineIdx] ?? '';
+      const line = lines[lineIdx];
 
       // Skip commented lines
       if (/^\s*\/\//.test(line) || /^\s*\*/.test(line)) continue;

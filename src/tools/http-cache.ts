@@ -93,7 +93,7 @@ function parseCacheAttributes(filePath: string): CacheAttribute[] {
   // #[Cache(...)] attribute
   for (const m of content.matchAll(/#\[Cache\s*\(([^)]*)\)\]/g)) {
     const options = m[1];
-    const after = content.slice(m.index ?? 0, (m.index ?? 0) + 400);
+    const after = content.slice(m.index, (m.index) + 400);
     const actionM = /(?:public|protected)\s+function\s+(\w+)\s*\(/.exec(after);
 
     attrs.push({
@@ -114,14 +114,14 @@ function parseCacheAttributes(filePath: string): CacheAttribute[] {
   // Response-level cache control (setMaxAge, setSharedMaxAge, setPublic, etc.)
   if (attrs.length === 0 && content.includes('setMaxAge')) {
     for (const m of content.matchAll(/function\s+(\w+)\s*\([^)]*\)[^{]*\{[^}]*setMaxAge\s*\(\s*(\d+)\s*\)/g)) {
-      const sharedM = content.slice(m.index ?? 0, (m.index ?? 0) + 500).match(/setSharedMaxAge\s*\(\s*(\d+)\s*\)/);
+      const sharedM = content.slice(m.index, (m.index) + 500).match(/setSharedMaxAge\s*\(\s*(\d+)\s*\)/);
       attrs.push({
         controller,
         action: m[1],
         file: path.basename(filePath),
         maxAge: parseInt(m[2], 10),
         sharedMaxAge: sharedM ? parseInt(sharedM[1], 10) : undefined,
-        isPublic: content.slice(m.index ?? 0, (m.index ?? 0) + 500).includes('setPublic()'),
+        isPublic: content.slice(m.index, (m.index) + 500).includes('setPublic()'),
         hasLastModified: false,
         hasEtag: false,
         noStore: false,

@@ -68,7 +68,7 @@ function scanExpressions(appPath: string): ValidatorExpressionInfo[] {
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? '';
+      const line = lines[i];
 
       const isExpressionAttr = /#\[Assert\\Expression\b/.test(line) ||
         /Assert\\Expression\s*\(/.test(line) ||
@@ -91,7 +91,7 @@ function scanExpressions(appPath: string): ValidatorExpressionInfo[] {
       // Detect property name (line above the attribute, or $property pattern)
       let property = 'unknown';
       if (i > 0) {
-        const prevLine = lines[i - 1] ?? '';
+        const prevLine = lines[i - 1];
         const propM = /(?:private|protected|public)\s+(?:\?\w+\s+)?\$(\w{1,80})/.exec(prevLine) ??
           /\$(\w{1,80})/.exec(prevLine);
         if (propM) property = propM[1];

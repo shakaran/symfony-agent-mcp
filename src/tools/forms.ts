@@ -116,7 +116,7 @@ function parseFormFields(content: string): FormField[] {
 function extractFieldType(raw: string): string {
   if (!raw) return 'TextType';
   // Strip namespace and ::class suffix
-  return raw.replace(/::class$/, '').split('\\').pop() ?? raw;
+  return raw.replace(/::class$/, '').split('\\').pop()!;
 }
 
 function parseFieldOptions(optionsBlock: string): Record<string, string> {
@@ -146,7 +146,7 @@ function extractConstraints(optionsBlock: string): string[] {
   const constraintPattern = /new\s+([\w\\]+)\s*[({]/g;
   let m: RegExpExecArray | null;
   while ((m = constraintPattern.exec(constraintsMatch[1])) !== null) {
-    const cn = m[1].split('\\').pop() ?? m[1];
+    const cn = m[1].split('\\').pop()!;
     constraints.push(cn);
   }
 

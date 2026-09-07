@@ -96,7 +96,7 @@ function extractTraitUseBlocks(content: string): TraitUseBlock[] {
     if (/\bnamespace\b/.test(before) && !/\bclass\b|\btrait\b/.test(before)) continue;
     // Filter out namespace/class use statements (they import classes, not traits)
     const traitList = m[1].split(',').map((s) => {
-      const t = s.trim().split('\\').pop() ?? s.trim();
+      const t = s.trim().split('\\').pop()!;
       return t.replace(/\s+/g, '');
     }).filter((t) => t.length > 0 && /^[A-Z]/.test(t));
     if (traitList.length === 0) continue;

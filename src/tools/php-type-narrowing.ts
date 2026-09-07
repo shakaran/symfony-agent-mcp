@@ -137,7 +137,7 @@ function analyseTypeNarrowingFile(content: string, relFile: string): TypeNarrowi
       ) {
         // Only flag annotated nullable hints or common patterns
         if (/getOrNull|findOneBy|nullable|Nullable/.test(content.slice(0, 200)) ||
-            /\?\s+\$/.test(lines[i] ?? '') ||
+            /\?\s+\$/.test(lines[i]) ||
             /null\|/.test(content.slice(0, 500))) {
           nullcheckPatterns.push(`Line ${i + 1}: ${varName}->${directCall[2]}()`);
           nullcheckIssues.push(`Line ${i + 1}: ${varName}->${directCall[2]}() called without visible null guard — if nullable, use ?-> or check first`);

@@ -146,7 +146,7 @@ export function listSecurityFirewalls(appPath: string): McpToolResult {
       if (fw.provider) text += `    provider: ${fw.provider}\n`;
       if (flags) text += `    flags: [${flags}]\n`;
       if (fw.authenticators.length > 0) {
-        const shortNames = fw.authenticators.map((a) => a.split('\\').pop() ?? a);
+        const shortNames = fw.authenticators.map((a) => a.split('\\').pop()!);
         text += `    authenticators: ${shortNames.join(', ')}\n`;
       }
       if (fw.accessDeniedHandler) text += `    access_denied_handler: ${fw.accessDeniedHandler.split('\\').pop()}\n`;

@@ -89,7 +89,7 @@ function analyzeFormType(content: string): FormTypeAnalysis | null {
       'TelType', 'UrlType', 'RangeType', 'TextareaType', 'ColorType',
       'UlidType', 'UuidType', 'WeekType', 'FormType',
     ];
-    const shortName = typeName.split('\\').pop() ?? typeName;
+    const shortName = typeName.split('\\').pop()!;
     if (!builtinTypes.includes(shortName) && !embeddedTypes.includes(typeName)) {
       embeddedTypes.push(typeName);
     }
@@ -155,7 +155,7 @@ function buildCompoundFormTypeInfos(appPath: string): CompoundFormTypeInfo[] {
     // Detect deep nesting: embedded types that are themselves compound
     const deeplyNested: string[] = [];
     for (const embeddedType of analysis.embeddedTypes) {
-      const shortName = embeddedType.split('\\').pop() ?? embeddedType;
+      const shortName = embeddedType.split('\\').pop()!;
       // Check if this embedded type is also compound (it embeds other types)
       for (const f of collectPhpFiles(srcDir, appPath)) {
         let c = '';

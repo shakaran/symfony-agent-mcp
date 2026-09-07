@@ -67,7 +67,7 @@ function loadBundles(appPath: string): BundleRegistration[] {
     const isAllEnvs = envs.includes('all');
     bundles.push({
       class: rawClass,
-      shortName: rawClass.split('\\').pop() ?? rawClass,
+      shortName: rawClass.split('\\').pop()!,
       envs: isAllEnvs ? ['all'] : envs,
       isAllEnvs,
     });

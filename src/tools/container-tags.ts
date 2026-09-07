@@ -176,7 +176,7 @@ function scanYamlTags(appPath: string): { services: TaggedService[]; consumers: 
         }
         if (tagNames.length > 0) {
           services.push({
-            class: serviceId.split('\\').pop() ?? serviceId,
+            class: serviceId.split('\\').pop()!,
             file: path.basename(yamlFile),
             tags: tagNames,
             via: 'yaml',

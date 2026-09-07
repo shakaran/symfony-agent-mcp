@@ -172,7 +172,7 @@ export function listDoctrineFilters(appPath: string): McpToolResult {
       for (const f of config) {
         const status  = f.enabled ? '✓ enabled' : '─ disabled';
         const params  = Object.keys(f.parameters).length > 0 ? `  params: ${Object.keys(f.parameters).join(', ')}` : '';
-        const shortClass = f.class.split('\\').pop() ?? f.class;
+        const shortClass = f.class.split('\\').pop()!;
         text += `  ${f.name.padEnd(25)} [${status}]  ${shortClass}${params}\n`;
       }
     }

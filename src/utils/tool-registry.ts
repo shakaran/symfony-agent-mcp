@@ -36,7 +36,6 @@ interface IndexEntry {
 }
 
 class ToolRegistry {
-  private static instance: ToolRegistry;
 
   private tools: CategorizedTool[] = [];
   private byCategory: Map<ToolCategory, CategorizedTool[]> = new Map();
@@ -44,12 +43,6 @@ class ToolRegistry {
   private invertedIndex: Map<string, Set<string>> = new Map(); // token → tool names
   private initialized = false;
 
-  static getInstance(): ToolRegistry {
-    if (!ToolRegistry.instance) {
-      ToolRegistry.instance = new ToolRegistry();
-    }
-    return ToolRegistry.instance;
-  }
 
   init(rawTools: ToolDefinition[]): void {
     if (this.initialized) return;
@@ -174,4 +167,4 @@ class ToolRegistry {
   }
 }
 
-export const toolRegistry = ToolRegistry.getInstance();
+export const toolRegistry = new ToolRegistry();

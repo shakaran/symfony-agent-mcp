@@ -59,7 +59,7 @@ function extractEntityListenerClasses(content: string): string[] {
     const classPattern = /['"]([\\a-zA-Z_][\\a-zA-Z0-9_]{0,200})['"]/g;
     let cm: RegExpExecArray | null;
     while ((cm = classPattern.exec(inner)) !== null) {
-      const shortName = cm[1].split('\\').pop() ?? cm[1];
+      const shortName = cm[1].split('\\').pop()!;
       listeners.push(shortName);
     }
   }
@@ -70,7 +70,7 @@ function extractEntityListenerClasses(content: string): string[] {
     const classPattern = /['"]([\\a-zA-Z_][\\a-zA-Z0-9_]{0,200})['"]/g;
     let cm: RegExpExecArray | null;
     while ((cm = classPattern.exec(inner)) !== null) {
-      const shortName = cm[1].split('\\').pop() ?? cm[1];
+      const shortName = cm[1].split('\\').pop()!;
       listeners.push(shortName);
     }
   }

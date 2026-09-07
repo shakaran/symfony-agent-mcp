@@ -71,7 +71,7 @@ function extractConstructorDeps(content: string): string[] {
     // Skip primitive types and nullable scalars
     if (/^(string|int|float|bool|array|callable|iterable|object|void|mixed|never|null)$/.test(type)) continue;
     // Short name (strip namespace)
-    const shortName = type.split('\\').pop() ?? type;
+    const shortName = type.split('\\').pop()!;
     if (shortName.length > 2) deps.push(shortName);
   }
   return [...new Set(deps)];

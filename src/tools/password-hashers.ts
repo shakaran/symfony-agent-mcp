@@ -145,7 +145,7 @@ export function listPasswordHashers(appPath: string): McpToolResult {
     for (const h of hashers) {
       const icon = h.severity === 'critical' ? '⛔' : h.severity === 'warning' ? '⚠' : '✓';
       const label = ALGO_LABEL[h.algorithm.toLowerCase()] ?? h.algorithm;
-      text += `\n${icon} ${h.entity.split('\\').pop() ?? h.entity}\n`;
+      text += `\n${icon} ${h.entity.split('\\').pop()!}\n`;
       text += `   Algorithm:  ${label}\n`;
       if (h.cost        !== undefined) text += `   cost:        ${h.cost}\n`;
       if (h.memoryCost  !== undefined) text += `   memory_cost: ${h.memoryCost} KB\n`;

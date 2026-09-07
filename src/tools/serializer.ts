@@ -206,7 +206,7 @@ export function listSerializerGroups(appPath: string): McpToolResult {
       for (const prop of cls.properties) {
         for (const group of prop.groups) {
           const entries = groupMap.get(group) ?? [];
-          entries.push({ class: cls.class.split('\\').pop() ?? cls.class, prop: prop.name });
+          entries.push({ class: cls.class.split('\\').pop()!, prop: prop.name });
           groupMap.set(group, entries);
         }
       }
@@ -256,7 +256,7 @@ export function getClassSerializerProfile(appPath: string, className: string): M
       };
     }
 
-    const shortClass = cls.class.split('\\').pop() ?? cls.class;
+    const shortClass = cls.class.split('\\').pop()!;
     let text = `Serializer Profile: ${shortClass}\n${'='.repeat(50)}\n\n`;
     text += `Class: ${cls.class}\n`;
     text += `File:  ${cls.file}\n`;
@@ -312,7 +312,7 @@ export function searchSerializerGroups(appPath: string, groupName: string): McpT
     let text = `Properties in groups matching "${groupName}" (${totalProps} properties across ${results.length} classes):\n\n`;
 
     for (const r of results) {
-      const shortClass = r.class.split('\\').pop() ?? r.class;
+      const shortClass = r.class.split('\\').pop()!;
       text += `  ${shortClass}  (${r.file})\n`;
       for (const prop of r.properties) {
         const matchedGroups = prop.groups.filter((g) => g.toLowerCase().includes(lq));

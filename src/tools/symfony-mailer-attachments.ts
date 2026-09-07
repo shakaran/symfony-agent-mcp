@@ -74,7 +74,7 @@ function scanMailerAttachments(appPath: string): MailerAttachmentInfo[] {
     const lines = content.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? '';
+      const line = lines[i];
 
       for (const method of ATTACH_METHODS) {
         if (!line.includes(`->${method}(`)) continue;

@@ -52,7 +52,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   // implements — test class implementing an interface other than TestCase-related
   const implementsIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     const m = /class\s+\w+Test\b[^{]*\bimplements\b([^{]+)/.exec(line);
     if (m) {
@@ -72,7 +72,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   const extendsIssues: string[] = [];
   const testBaseClasses = ['TestCase', 'KernelTestCase', 'WebTestCase', 'ApiTestCase', 'BrowserKitTestCase', 'DatabaseTestCase'];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     const m = /class\s+\w+Test\b[^{]*\bextends\b\s+([\w\\]+)/.exec(line);
     if (m) {
@@ -90,7 +90,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   // inner-class — anonymous class mocks or inline MockXxx class definitions
   const innerClassIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/\bnew\s+class\b/.test(line)) {
       innerClassIssues.push(`Line ${lineNo}: Anonymous class (new class) used as test double — consider using getMockBuilder() instead`);
@@ -106,7 +106,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   // self-mock — getMockBuilder(get_class($this))
   const selfMockIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/getMockBuilder\s*\(\s*get_class\s*\(\s*\$this\s*\)/.test(line)) {
       selfMockIssues.push(`Line ${lineNo}: getMockBuilder(get_class($this)) — mocking the test class itself is a self-shunting anti-pattern`);
@@ -119,7 +119,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   // partial-mock — getMockBuilder with setMethods/onlyMethods
   const partialMockIssues: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+    const line = lines[i];
     const lineNo = i + 1;
     if (/getMockBuilder\s*\(/.test(line) && (/setMethods\s*\(/.test(line) || /onlyMethods\s*\(/.test(line))) {
       partialMockIssues.push(`Line ${lineNo}: Partial mock with setMethods()/onlyMethods() on single line — same instance is both mock and SUT`);
@@ -128,7 +128,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
       // look for surrounding getMockBuilder context (within 5 lines above)
       let foundBuilder = false;
       for (let j = Math.max(0, i - 5); j < i; j++) {
-        if (/getMockBuilder\s*\(/.test(lines[j] ?? '')) {
+        if (/getMockBuilder\s*\(/.test(lines[j])) {
           foundBuilder = true;
           break;
         }

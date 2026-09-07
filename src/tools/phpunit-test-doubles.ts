@@ -64,7 +64,7 @@ function classifyDoubleInContent(content: string): DoubleBlock[] {
     const arg = m[1].trim();
     const issues: string[] = [];
     // Stubs with expects() are actually mocks
-    const nearbyExpects = content.slice(Math.max(0, (m.index ?? 0) - 50), (m.index ?? 0) + 300);
+    const nearbyExpects = content.slice(Math.max(0, (m.index) - 50), (m.index) + 300);
     if (nearbyExpects.includes('expects(') && !nearbyExpects.includes('any()')) {
       issues.push(`createStub() combined with expects() — use createMock() instead; stubs should not have call expectations`);
     }
@@ -78,7 +78,7 @@ function classifyDoubleInContent(content: string): DoubleBlock[] {
     const issues: string[] = [];
 
     // Check for expects(any()) — effectively a stub
-    const nearbyContent = content.slice((m.index ?? 0), (m.index ?? 0) + 500);
+    const nearbyContent = content.slice((m.index), (m.index) + 500);
     if (nearbyContent.includes('expects($this->any())') || nearbyContent.includes('expects(self::any())')) {
       issues.push(`getMockBuilder() with expects(any()) — this is effectively a stub; use createStub() instead`);
     }
@@ -99,7 +99,7 @@ function classifyDoubleInContent(content: string): DoubleBlock[] {
     const issues: string[] = [];
 
     // Check for expects(any()) — effectively a stub
-    const nearbyContent = content.slice((m.index ?? 0), (m.index ?? 0) + 500);
+    const nearbyContent = content.slice((m.index), (m.index) + 500);
     if (nearbyContent.includes('expects($this->any())') || nearbyContent.includes('expects(self::any())')) {
       issues.push(`createMock() with expects(any()) — effectively a stub; use createStub() instead`);
     }
