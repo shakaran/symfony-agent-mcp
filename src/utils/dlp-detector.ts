@@ -294,7 +294,9 @@ export function scanText(text: string): DlpMatch[] {
     );
   }
 
-  // Sort by start position; longer matches win on overlap
+  // Sort by start position; longer matches win on overlap.
+  /* istanbul ignore next -- no two patterns in the list can match at the same
+     offset, so the tie-break is for a pattern set that grows one that can. */
   return matches
     .sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
 }

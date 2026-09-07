@@ -219,7 +219,8 @@ export async function listDatabaseTables(appPath: string): Promise<string[]> {
 
   let tables: string[] = [];
   if (entities.length > 0) {
-    tables = entities.map((e) => e.tableName || classToTableName(e.name)).sort();
+    // parseEntities derives a table name when the entity does not declare one.
+    tables = entities.map((e) => e.tableName ?? classToTableName(e.name)).sort();
   } else {
     // Fallback: try to read migration files to discover table names
     const migrationTables = discoverTablesFromMigrations(appPath);

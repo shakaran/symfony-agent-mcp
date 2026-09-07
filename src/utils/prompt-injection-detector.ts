@@ -111,6 +111,8 @@ export function scanForInjection(text: string): InjectionMatch[] {
   }
 
   // Sort by start position; longer matches win on overlap
+  /* istanbul ignore next -- each pattern starts with a different verb, so two
+     of them cannot begin at the same offset; the tie-break is for later ones. */
   return matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
 }
 

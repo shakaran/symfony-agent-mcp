@@ -93,7 +93,7 @@ test('mysql columns where the key and default are null', async () => {
 });
 
 test('postgres exported under default, with no host and a null row count', async () => {
-  appDir = makeApp('postgresql://app');
+  appDir = makeApp('postgresql:///shop');
   pgQuery.mockResolvedValue({ fields: [{ name: 'id' }], rows: [{ id: 7 }], rowCount: null });
 
   const result = await executeQuery(appDir, 'SELECT id FROM t');

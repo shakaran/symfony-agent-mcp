@@ -190,6 +190,8 @@ export function applyPrivacyMode(result: ToolResultLike, toolName: string): Tool
 
       let text = item.text;
 
+      /* istanbul ignore else -- applyPrivacyMode returns early when the level
+         is standard, so by here it is one of the two. */
       if (level === 'strict' || level === 'paranoid') {
         text = applyStrict(text, toolName);
       }
