@@ -154,7 +154,8 @@ function parseXmlMappingFile(filePath: string): DoctrineMappedEntity | null {
     const fullClass = entityAttrs['class'] ?? entityAttrs['name'];
     if (!fullClass) return null;
 
-    const shortName = fullClass.split('\\').pop() ?? fullClass;
+    // split always yields at least one part, so pop is never undefined.
+    const shortName = fullClass.split('\\').pop()!;
     const tableName = entityAttrs['table'];
     const repositoryClass = entityAttrs['repository-class'];
     const inheritanceType = entityAttrs['inheritance-type'];
@@ -270,7 +271,7 @@ function parseYamlMappingFile(filePath: string): DoctrineMappedEntity | null {
     if (!entityClass) return null;
 
     const entityConfig = config[entityClass] as Record<string, unknown>;
-    const shortName = entityClass.split('\\').pop() ?? entityClass;
+    const shortName = entityClass.split('\\').pop()!;
 
     const properties: DoctrineMappedProperty[] = [];
     const relationships: DoctrineMappedRelation[] = [];

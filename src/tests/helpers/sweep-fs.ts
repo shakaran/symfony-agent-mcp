@@ -19,7 +19,7 @@
 
 /** Flipped per test; the mocks read it on every call. */
 export const state = {
-  failMode: 'none' as 'none' | 'read' | 'read-file' | 'stat' | 'exists' | 'path' | 'escape' | 'resolve' | 'resolve-dir' | 'symlink' | 'huge',
+  failMode: 'none' as 'none' | 'read' | 'read-file' | 'stat' | 'exists' | 'path' | 'escape' | 'resolve' | 'resolve-dir' | 'symlink' | 'huge' | 'throw-string',
   // Only the first few reads of a call are oversized: a module that walks a
   // tree would otherwise scan hundreds of megabytes to reach one size guard.
   hugeReads: 0,
@@ -84,6 +84,10 @@ export function pathMock(): typeof import('path') {
 export function fsMock(): typeof import('fs') {
   const real = jest.requireActual<typeof import('fs')>('fs');
   const raise = (code: string, syscall: string): never => {
+    // Every handler asks whether what it caught is an Error before reading a
+    // message off it. Nothing in Node throws anything else, so the other half
+    // of that question is only ever answered here.
+    if (state.failMode === 'throw-string') throw `${code}: simulated failure, ${syscall}`;
     throw Object.assign(new Error(`${code}: simulated failure, ${syscall}`), { code });
   };
   return {
@@ -124,7 +128,9 @@ export function fsMock(): typeof import('fs') {
     // than behind a guarded helper, so it is the failure that actually reaches
     // the outermost handler.
     existsSync: (...args: Parameters<typeof real.existsSync>) =>
-      (state.failMode === 'exists' ? raise('EIO', 'stat') : real.existsSync(...args)),
+      (state.failMode === 'exists' || state.failMode === 'throw-string'
+        ? raise('EIO', 'stat')
+        : real.existsSync(...args)),
     statSync: (...args: Parameters<typeof real.statSync>) => {
       if (state.failMode === 'stat') return raise('EACCES', 'stat');
       state.statCount += 1;
@@ -549,7 +555,21 @@ export function defineSweep(shard: number, shards: number): void {
         }
       });
 
-      test('a path that cannot be built reaches the outermost handler', async () => {
+      test('a failure that is not an Error still comes back as a result', async () => {
+      state.failMode = 'throw-string';
+
+      for (const [, fn] of pathFunctions(mod)) {
+        const returned = await Promise.resolve(fn(appPath));
+
+        expect(returned).toBeDefined();
+        const r = returned as ResultLike;
+        if (typeof returned === 'object' && 'content' in (returned as object)) {
+          expect(Array.isArray(r.content)).toBe(true);
+        }
+      }
+    });
+
+    test('a path that cannot be built reaches the outermost handler', async () => {
         // The one call every module makes before it can read anything.
         state.failMode = 'path';
 

@@ -365,3 +365,111 @@ describe('getDoctrineMetadataStats', () => {
     expect(getDoctrineMetadataStats('/nonexistent/app').mappingDirs).toEqual([]);
   });
 });
+
+describe('mappings that leave everything out', () => {
+  // Every attribute in a Doctrine mapping file is optional, and the loader
+  // falls back for each one. The fallbacks are what is exercised here.
+
+  test('an xml mapping with nothing but the class name', () => {
+    writeXml(appDir, 'Sparse.orm.xml', `<?xml version="1.0" encoding="utf-8"?>
+<doctrine-mapping>
+  <entity class="App\\Entity\\Sparse">
+    <id />
+    <field />
+    <many-to-one target="whatever" />
+    <one-to-many target="whatever" />
+    <index />
+    <unique-constraint />
+  </entity>
+</doctrine-mapping>
+`);
+
+    const [entity] = loadDoctrineMetadata(appDir).entities;
+
+    expect(entity.tableName).toBe('sparse');
+    const [id, field] = entity.properties;
+    expect(id).toMatchObject({ fieldName: '', columnName: '', type: 'integer', isId: true });
+    expect(id.generatedValue).toBeUndefined();
+    expect(field).toMatchObject({ fieldName: '', columnName: '', type: 'string' });
+    expect(entity.relationships[0]).toMatchObject({ fieldName: '', targetEntity: '', fetch: 'LAZY' });
+    expect(entity.indexes[0].columns).toEqual([]);
+    expect(entity.uniqueConstraints[0].columns).toEqual([]);
+  });
+
+  test('an xml entity named through the legacy name attribute, and one with neither', () => {
+    writeXml(appDir, 'Legacy.orm.xml', `<?xml version="1.0" encoding="utf-8"?>
+<doctrine-mapping>
+  <entity name="App\\Entity\\Legacy" table="legacy">
+    <id name="id" type="integer" />
+  </entity>
+</doctrine-mapping>
+`);
+    writeXml(appDir, 'Nameless.orm.xml', `<?xml version="1.0" encoding="utf-8"?>
+<doctrine-mapping>
+  <entity table="nameless">
+    <id name="id" type="integer" />
+  </entity>
+</doctrine-mapping>
+`);
+    writeXml(appDir, 'Broken.orm.xml', '<not-a-mapping />\n');
+
+    const entities = loadDoctrineMetadata(appDir).entities;
+
+    expect(entities).toHaveLength(1);
+    expect(entities[0].name).toBe('App\\Entity\\Legacy');
+  });
+
+  test('a yaml mapping with no entity in it', () => {
+    writeYaml(appDir, 'Empty.orm.yml', '# nothing but a comment\n');
+    // A document that parses to an empty mapping has no entity to name.
+    writeYaml(appDir, 'Braces.orm.yml', '{}\n');
+
+    expect(loadDoctrineMetadata(appDir).entities).toHaveLength(0);
+  });
+
+  test('a directory where a mapping file should be', () => {
+    // Doctrine mapping directories are walked by extension, and a directory
+    // can be called Whatever.orm.xml as easily as a file can.
+    fs.mkdirSync(path.join(appDir, 'config', 'doctrine', 'Directory.orm.xml'));
+
+    expect(loadDoctrineMetadata(appDir).entities).toHaveLength(0);
+  });
+
+  test('a yaml mapping whose entries are empty', () => {
+    writeYaml(appDir, 'Bare.orm.yml', `App\\Entity\\Bare:
+    type: entity
+    id:
+        id: ~
+    fields:
+        label: ~
+    manyToOne:
+        owner: ~
+    oneToOne:
+        profile:
+            joinColumn: {}
+            joinTable: {}
+    indexes:
+        - name: idx_label
+    uniqueConstraints:
+        - name: uniq_label
+`);
+
+    const [entity] = loadDoctrineMetadata(appDir).entities;
+
+    const [id, label] = entity.properties;
+    expect(id).toMatchObject({ fieldName: 'id', columnName: 'id', type: 'integer' });
+    expect(id.generatedValue).toBeUndefined();
+    expect(label).toMatchObject({ fieldName: 'label', columnName: 'label', type: 'string' });
+
+    const owner = entity.relationships.find((r) => r.fieldName === 'owner')!;
+    expect(owner).toMatchObject({ targetEntity: '', fetch: 'LAZY', cascade: [] });
+    expect(owner.joinColumn).toBeUndefined();
+
+    const profile = entity.relationships.find((r) => r.fieldName === 'profile')!;
+    expect(profile.joinColumn).toEqual({ name: '', referencedColumnName: 'id' });
+    expect(profile.joinTable).toEqual({ name: '' });
+
+    expect(entity.indexes[0].columns).toEqual([]);
+    expect(entity.uniqueConstraints[0].columns).toEqual([]);
+  });
+});
