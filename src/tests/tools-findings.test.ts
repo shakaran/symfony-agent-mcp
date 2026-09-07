@@ -39962,3 +39962,177 @@ class Article
     expect(text).toContain('without groups');
   });
 });
+
+describe('batch 130: platforms, dynos, error pages and mail transports', () => {
+  test('a platform named in the orm section rather than the driver', async () => {
+    const app = appWith('doctrine-sequence-platform-mysql', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+    orm:
+        database_platform: 'Doctrine\\DBAL\\Platforms\\MySQL80Platform'
+        auto_generate_proxy_classes: true
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    #[ORM\\SequenceGenerator(sequenceName: 'invoice_seq', allocationSize: 100)]
+    private int $id;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-sequence-generator.js', app);
+
+    expect(text).toContain('invoice_seq');
+  });
+
+  test('a sqlite platform named in the orm section', async () => {
+    const app = appWith('doctrine-sequence-platform-sqlite', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+    orm:
+        database_platform: 'Doctrine\\DBAL\\Platforms\\SqlitePlatform'
+`,
+      'src/Entity/Note.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Note
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    private int $id;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-sequence-generator.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('an entity cached read-write, with the pool and lifetime configured', async () => {
+    const app = appWith('doctrine-slc-read-write', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        second_level_cache:
+            enabled: true
+            pool: doctrine.second_level_cache.pool
+            default_lifetime: 3600
+            region_cache_driver:
+                type: pool
+                pool: doctrine.second_level_cache.pool
+            region_lifetime: 3600
+            regions:
+                country_region:
+                    lifetime: 7200
+                    cache_driver:
+                        type: pool
+                        pool: doctrine.second_level_cache.pool
+`,
+      'src/Entity/Country.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Cache(usage: 'READ_WRITE', region: 'country_region')]
+class Country
+{
+    #[ORM\\Id]
+    private int $id;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-slc.js', app);
+
+    expect(text).toContain('READ_WRITE');
+  });
+
+  test('a Procfile with a custom dyno and no web dyno', async () => {
+    const app = appWith('heroku-config-custom-dyno', {
+      'Procfile': `worker: php bin/console messenger:consume async
+release: php bin/console doctrine:migrations:migrate --no-interaction
+scheduler: php bin/console app:cron
+`,
+      'app.json': `{
+  "name": "app",
+  "addons": [
+    { "plan": "heroku-postgresql:standard-0" },
+    { "name": "heroku-redis" },
+    "papertrail"
+  ]
+}
+`,
+    });
+
+    const text = await runModule('heroku-config.js', app);
+
+    expect(text).toContain('scheduler');
+  });
+
+  test('error templates with a catch-all beside a numbered one', async () => {
+    const app = appWith('error-pages-catch-all-and-numbered', {
+      'templates/bundles/TwigBundle/Exception/error404.html.twig': `<h1>Not found</h1>
+`,
+      'templates/bundles/TwigBundle/Exception/error500.html.twig': `<h1>Server error</h1>
+`,
+      'templates/errors/error.html.twig': `<h1>Something went wrong</h1>
+`,
+    });
+
+    const text = await runModule('error-pages.js', app);
+
+    expect(text).toContain('catch-all');
+  });
+
+  test('error templates for every critical code and none to spare', async () => {
+    const app = appWith('error-pages-all-critical', {
+      'templates/bundles/TwigBundle/Exception/error400.html.twig': '<h1>Bad request</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error401.html.twig': '<h1>Unauthorized</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error403.html.twig': '<h1>Forbidden</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error404.html.twig': '<h1>Not found</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error405.html.twig': '<h1>Not allowed</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error422.html.twig': '<h1>Unprocessable</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error429.html.twig': '<h1>Too many requests</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error500.html.twig': '<h1>Server error</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error502.html.twig': '<h1>Bad gateway</h1>\n',
+      'templates/bundles/TwigBundle/Exception/error503.html.twig': '<h1>Unavailable</h1>\n',
+      'config/packages/framework.yaml': `framework:
+    error_controller: 'App\\Controller\\ErrorController::show'
+`,
+    });
+
+    const text = await runModule('error-pages.js', app);
+
+    expect(text).toContain('error404.html.twig');
+  });
+
+  test('a mailer DSN that is not a URL anything can parse', async () => {
+    const app = appWith('mailer-unparseable-dsn', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'smtp://%env(MAILER_USER)%:%env(MAILER_PASS)%@%env(MAILER_HOST)%:%env(MAILER_PORT)%'
+`,
+    });
+
+    const text = await runModule('mailer.js', app);
+
+    expect(text).toContain('smtp');
+  });
+});
