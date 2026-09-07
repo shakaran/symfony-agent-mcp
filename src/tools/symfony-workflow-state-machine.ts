@@ -157,7 +157,8 @@ function parseWorkflowsFromContent(content: string, _sourceFile: string): StateM
 
     // Transitions
     if (inTransitions) {
-      const tNameMatch = /^\s{6,12}(\w{1,80})\s*:/.exec(line);
+      // Four-space YAML puts the transition name at sixteen columns, not eight.
+      const tNameMatch = /^\s{6,20}(\w{1,80})\s*:/.exec(line);
       if (tNameMatch && !['from', 'to', 'guard', 'name', 'metadata'].includes(tNameMatch[1])) {
         // flush previous transition
         if (currentTransitionName) {

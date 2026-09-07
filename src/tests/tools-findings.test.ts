@@ -37977,3 +37977,268 @@ class VaultClient
     expect(text).toContain('acme.example.com');
   });
 });
+
+describe('batch 121: sockets, dumper casters, sentinels, extractors and state machines', () => {
+  test('sockets read without a limit, bound to a sensitive port, served without TLS', async () => {
+    const app = appWith('php-socket-programming-full', {
+      'src/Net/SocketServer.php': `<?php
+
+namespace App\\Net;
+
+class SocketServer
+{
+    public function readAll($socket): string
+    {
+        return socket_read($socket, 1048576);
+    }
+
+    public function connect(): void
+    {
+        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+        socket_connect($socket, '127.0.0.1', 3306);
+    }
+
+    public function serve(): void
+    {
+        $server = stream_socket_server('tcp://0.0.0.0:8080', $errno, $errstr);
+        stream_socket_accept($server);
+    }
+
+    public function serveSecurely(): void
+    {
+        $server = stream_socket_server('tls://0.0.0.0:8443', $errno, $errstr);
+        stream_socket_accept($server);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-socket-programming.js', app);
+
+    expect(text).toContain('socket');
+  });
+
+  test('a caster with no prefix constants, beside a dd() and a virtual value', async () => {
+    const app = appWith('symfony-var-dumper-casters', {
+      'src/Debug/InvoiceCaster.php': `<?php
+
+namespace App\\Debug;
+
+use Symfony\\Component\\VarDumper\\Caster\\Caster;
+use Symfony\\Component\\VarDumper\\Cloner\\Stub;
+
+class InvoiceCaster
+{
+    private string $internal = '';
+
+    protected string $note = '';
+
+    public static function castInvoice(object $invoice, array $array, Stub $stub, bool $isNested): array
+    {
+        $array[Caster::EXCLUDE_VERBOSE] = true;
+
+        return $array + ['total' => $invoice->total];
+    }
+}
+`,
+      'src/Debug/DumpHelper.php': `<?php
+
+namespace App\\Debug;
+
+use Symfony\\Component\\VarDumper\\Cloner\\VirtualValue;
+
+class DumpHelper
+{
+    public function inspect(array $rows): void
+    {
+        dump($rows);
+        dd($rows);
+    }
+
+    public function virtual(): VirtualValue
+    {
+        return new VirtualValue('lazy');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-var-dumper-casters.js', app);
+
+    expect(text).toContain('dd');
+  });
+
+  test('Redis behind sentinels, with the password in the DSN', async () => {
+    const app = appWith('symfony-cache-redis-sentinel', {
+      '.env': `APP_ENV=prod
+REDIS_SENTINEL_DSN=redis+sentinel://acme:hunter2@sentinel-1:26379,sentinel-2:26379/mymaster
+# a commented line that mentions sentinel
+`,
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.redis
+        default_redis_provider: '%env(REDIS_SENTINEL_DSN)%'
+        pools:
+            app.tagged:
+                adapter: RedisTagAwareAdapter
+`,
+    });
+
+    const text = await runModule('symfony-cache-redis-sentinel.js', app);
+
+    expect(text).toContain('entinel');
+  });
+
+  test('translation keys used in templates and defined in nested YAML', async () => {
+    const app = appWith('symfony-translation-extractors', {
+      'translations/messages.en.yaml': `invoice:
+    title: 'Invoice'
+    lines:
+        header: 'Lines'
+        empty: ''
+`,
+      'templates/invoice/show.html.twig': `<h1>{{ 'invoice.title'|trans }}</h1>
+<h2>{{ 'invoice.lines.header'|trans }}</h2>
+<p>{{ 'invoice.missing'|trans }}</p>
+`,
+      'src/Controller/InvoiceController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Contracts\\Translation\\TranslatorInterface;
+
+class InvoiceController
+{
+    public function __construct(private TranslatorInterface $translator)
+    {
+    }
+
+    public function title(): string
+    {
+        return $this->translator->trans('invoice.title');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-translation-extractors.js', app);
+
+    expect(text).toContain('invoice');
+  });
+
+  test('catalogues with empty values, duplicate keys and mismatched plurals', async () => {
+    const app = appWith('symfony-translation-lint-all', {
+      'translations/messages.en.yaml': `invoice:
+    title: 'Invoice'
+    count: 'One invoice|%count% invoices'
+    empty: ''
+    title: 'Invoice again'
+`,
+      'translations/messages.ja.yaml': `invoice:
+    title: '請求書'
+    count: '1つの請求書|%count%の請求書'
+`,
+      'translations/messages.pl.yaml': `invoice:
+    title: 'Faktura'
+    count: 'Jedna faktura|%count% faktury'
+`,
+    });
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+
+    expect(text).toContain('invoice');
+  });
+
+  test('a state machine with a transition from two places, audited', async () => {
+    const app = appWith('symfony-workflow-state-machine', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        invoice:
+            type: state_machine
+            audit_trail:
+                enabled: true
+            marking_store:
+                type: method
+                property: currentPlace
+            supports:
+                - App\\Entity\\Invoice
+            places:
+                - draft
+                - sent
+                - paid
+            transitions:
+                pay:
+                    from: [draft, sent]
+                    to: paid
+                send:
+                    from: draft
+                    to: sent
+`,
+    });
+
+    const text = await runModule('symfony-workflow-state-machine.js', app);
+
+    expect(text).toContain('state machine');
+  });
+
+  test('a class that implements only part of its interface', async () => {
+    const app = appWith('php-interface-segregation-partial', {
+      'src/Contract/PaymentInterface.php': `<?php
+
+namespace App\\Contract;
+
+interface PaymentInterface
+{
+    public function charge(int $amount): void;
+
+    public function refund(int $amount): void;
+
+    public function capture(): void;
+}
+`,
+      'src/Payment/CardPayment.php': `<?php
+
+namespace App\\Payment;
+
+use App\\Contract\\PaymentInterface;
+
+class CardPayment implements PaymentInterface
+{
+    public function charge(int $amount): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-interface-segregation.js', app);
+
+    expect(text).toContain('PaymentInterface');
+  });
+
+  test('asymmetric visibility on a project that already has 8.4', async () => {
+    const app = appWith('php-asymmetric-visibility-84', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.4' } }, null, 4) + '\n',
+      'src/Model/Order.php': `<?php
+
+namespace App\\Model;
+
+class Order
+{
+    public private(set) int $total = 0;
+
+    public protected(set) readonly string $reference;
+
+    public static private(set) int $count = 0;
+
+    public string $plain = '';
+}
+`,
+      'src/Model/notes.php': "<?php\n\n// private(set) is described here, with no class to hold it.\n",
+    });
+
+    const text = await runModule('php-asymmetric-visibility.js', app);
+
+    expect(text).toContain('Order');
+  });
+});
