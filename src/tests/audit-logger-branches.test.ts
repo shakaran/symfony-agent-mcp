@@ -87,6 +87,12 @@ test('a key rotation with encryption configured writes the marker', async () => 
 
   rotateAuditKey();
 
+  // The marker goes through the same stream as everything else, so wait for
+  // it to land rather than assuming it already has.
+  for (let i = 0; i < 200 && !fs.readFileSync(logPath, 'utf-8').includes('KEY_ROTATION'); i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+
   expect(fs.readFileSync(logPath, 'utf-8')).toContain('KEY_ROTATION');
 });
 
