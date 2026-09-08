@@ -169,7 +169,7 @@ export function listLocaleConfig(appPath: string): McpToolResult {
       }
       // Country variant without base locale fallback
       if (locale.includes('_')) {
-        const base = locale.split('_')[0] ?? '';
+        const base = locale.split('_')[0];
         const hasFallback = fallbacks[locale]?.includes(base) ?? fallbacks['*']?.includes(base) ?? false;
         if (!hasFallback && base && !translationLocales.includes(base)) {
           issues.push(`Locale "${locale}" has no "${base}" fallback configured`);

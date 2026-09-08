@@ -38,6 +38,12 @@ const os = jest.requireActual<typeof import('os')>('os');
 export function pathMock(): typeof import('path') {
   const real = jest.requireActual<typeof import('path')>('path');
   const guard = <A extends unknown[], R>(fn: (...a: A) => R) => (...args: A): R => {
+    // Building a path is the one call every module makes before it can read
+    // anything, and it is not behind a helper that swallows: it is how the
+    // outermost handler is reached at all.
+    if (state.failMode === 'throw-string') {
+      throw 'ENAMETOOLONG: simulated failure, join';
+    }
     if (state.failMode === 'path') {
       throw Object.assign(new Error('ENAMETOOLONG: simulated failure, join'), { code: 'ENAMETOOLONG' });
     }
@@ -95,7 +101,7 @@ export function fsMock(): typeof import('fs') {
     readFileSync: (...args: Parameters<typeof real.readFileSync>) => {
       // 'read' fails every filesystem call; 'read-file' fails only the read
       // itself, so the walk still finds the files whose read is then refused.
-      if (state.failMode === 'read' || state.failMode === 'read-file') return raise('EIO', 'read');
+      if (state.failMode === 'read' || state.failMode === 'read-file' || state.failMode === 'throw-string') return raise('EIO', 'read');
       state.readCount += 1;
       if (state.failFromRead > 0 && state.readCount >= state.failFromRead) return raise('EIO', 'read');
       // A file above the size every module refuses to read.
@@ -106,7 +112,7 @@ export function fsMock(): typeof import('fs') {
       return real.readFileSync(...args);
     },
     readdirSync: (...args: Parameters<typeof real.readdirSync>) => {
-      if (state.failMode === 'read') return raise('EIO', 'scandir');
+      if (state.failMode === 'read' || state.failMode === 'throw-string') return raise('EIO', 'scandir');
       const entries = real.readdirSync(...args);
       // Everything the walk finds is a symlink: the branch every walker has
       // for them, and never takes against an ordinary directory.
@@ -132,7 +138,7 @@ export function fsMock(): typeof import('fs') {
         ? raise('EIO', 'stat')
         : real.existsSync(...args)),
     statSync: (...args: Parameters<typeof real.statSync>) => {
-      if (state.failMode === 'stat') return raise('EACCES', 'stat');
+      if (state.failMode === 'stat' || state.failMode === 'throw-string') return raise('EACCES', 'stat');
       state.statCount += 1;
       if (state.failFromStat > 0 && state.statCount >= state.failFromStat) return raise('EACCES', 'stat');
       const st = real.statSync(...args);
@@ -146,7 +152,7 @@ export function fsMock(): typeof import('fs') {
       return st;
     },
     lstatSync: (...args: Parameters<typeof real.lstatSync>) => {
-      if (state.failMode === 'stat') return raise('EACCES', 'lstat');
+      if (state.failMode === 'stat' || state.failMode === 'throw-string') return raise('EACCES', 'lstat');
       state.statCount += 1;
       if (state.failFromStat > 0 && state.statCount >= state.failFromStat) return raise('EACCES', 'lstat');
       const st = real.lstatSync(...args);

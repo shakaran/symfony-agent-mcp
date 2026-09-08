@@ -43836,3 +43836,191 @@ class Plain
     expect(typeof bare).toBe('string');
   });
 });
+
+describe('batch 169: locales and remember-me, configured every way', () => {
+  test('locales enabled as a list and fallbacks written both ways', async () => {
+    const app = appWith('symfony-locale-config-rich', {
+      'config/packages/framework.yaml': `framework:
+    default_locale: es
+    enabled_locales: [es, en, fr_CA]
+`,
+      'config/packages/translation.yaml': `framework:
+    default_locale: es
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+        fallbacks:
+            es: en
+            fr_CA: [fr, en]
+            '*': en
+        logging: true
+`,
+      'translations/messages.es.yaml': "hello: Hola\n",
+      'translations/messages.en.yaml': "hello: Hello\n",
+      'translations/messages.de.yaml': "hello: Hallo\n",
+      'translations/messages.fr_CA.yaml': "hello: Bonjour\n",
+      'translations/messages.yaml': "hello: fallback\n",
+      'translations/validators.php': "<?php\n\nreturn ['hello' => 'from php'];\n",
+    });
+
+    const text = await runModule('symfony-locale-config.js', app);
+
+    expect(text).toContain('fr_CA');
+  });
+
+  test('no enabled locales at all', async () => {
+    const app = appWith('symfony-locale-config-bare', {
+      'config/packages/translation.yaml': `framework:
+    default_locale: en
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+`,
+      'translations/messages.en.yaml': "hello: Hello\n",
+    });
+
+    const text = await runModule('symfony-locale-config.js', app);
+
+    expect(text).toContain('en');
+  });
+
+  test('remember me configured in full, and left to its defaults', async () => {
+    const app = appWith('symfony-remember-me-full', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            remember_me:
+                secret: '%kernel.secret%'
+                lifetime: 604800
+                secure: true
+                httponly: true
+                samesite: lax
+                signature_properties: [password, email]
+        api:
+            remember_me:
+                secret: '%kernel.secret%'
+                secure: false
+                httponly: false
+        stateless: ~
+`,
+    });
+
+    const text = await runModule('symfony-security-remember-me.js', app);
+
+    expect(text).toContain('main');
+  });
+});
+
+describe('batch 170: http clients, rector sets and route requirements', () => {
+  test('scoped clients with every option, one never injected', async () => {
+    const app = appWith('symfony-httpclient-scopes-rich', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        scoped_clients:
+            github.client:
+                base_uri: 'https://api.github.com'
+                auth_bearer: '%env(GITHUB_TOKEN)%'
+                headers:
+                    Accept: 'application/vnd.github+json'
+                retry_failed:
+                    max_retries: 4
+                    delay: 1000
+            legacy.client:
+                scope: 'https://legacy.example.com'
+                auth_basic: ['user', 'pass']
+            bare.client: ~
+`,
+      'src/Service/Importer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class Importer
+{
+    public function __construct(private HttpClientInterface $githubClient)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-scopes.js', app);
+
+    expect(text).toContain('github.client');
+  });
+
+  test('a rector config spanning several php levels, against an older composer', async () => {
+    const app = appWith('php-rector-upgrade-spread', {
+      'rector.php': `<?php
+
+declare(strict_types=1);
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\LevelSetList;
+use Rector\\Set\\ValueObject\\SetList;
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([__DIR__ . '/src']);
+    $rectorConfig->sets([
+        LevelSetList::UP_TO_PHP_74,
+        SetList::PHP_74,
+        LevelSetList::UP_TO_PHP_82,
+        SetList::CODE_QUALITY,
+    ]);
+};
+`,
+      'composer.json': `{
+  "name": "app/app",
+  "require": { "php": ">=8.3" },
+  "require-dev": { "rector/rector": "^1.0" }
+}
+`,
+    });
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('PHP');
+  });
+
+  test('routes with hosts, schemes, utf8 and unconstrained identifiers', async () => {
+    const app = appWith('symfony-routing-requirements-rich', {
+      'src/Controller/ArticleController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ArticleController
+{
+    #[Route('/articles/{id}', name: 'article_show', methods: ['GET'])]
+    public function show(int $id): void
+    {
+    }
+
+    #[Route('/articles/{articleId}/comments/{comment_id}', name: 'article_comments')]
+    public function comments(int $articleId, int $comment_id): void
+    {
+    }
+
+    #[Route('/articles/{slug}', name: 'article_slug', requirements: ['slug' => '[a-z0-9-]+'], utf8: true, schemes: ['https', 'http'])]
+    public function bySlug(string $slug): void
+    {
+    }
+}
+`,
+      'config/routes.yaml': `admin_home:
+    path: /admin
+    controller: 'App\\Controller\\AdminController::index'
+    host: admin.example.com
+    schemes: [http]
+    requirements:
+        page: '\\d+'
+bare_route:
+    path: /bare
+`,
+    });
+
+    const text = await runModule('symfony-routing-requirements.js', app);
+
+    expect(text).toContain('article');
+  });
+});
