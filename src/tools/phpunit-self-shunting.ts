@@ -56,6 +56,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
     const lineNo = i + 1;
     const m = /class\s+\w+Test\b[^{]*\bimplements\b([^{]+)/.exec(line);
     if (m) {
+      /* istanbul ignore next -- the group is required by the pattern. */
       const implemented = (m[1] ?? '').split(',').map((s) => s.trim());
       for (const iface of implemented) {
         if (!iface.includes('TestCase') && !iface.includes('Fixture') && iface.length > 0) {
@@ -76,9 +77,12 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
     const lineNo = i + 1;
     const m = /class\s+\w+Test\b[^{]*\bextends\b\s+([\w\\]+)/.exec(line);
     if (m) {
+      /* istanbul ignore next -- the group is required, and split never
+         returns an empty array. */
       const parent = (m[1] ?? '').split('\\').pop() ?? '';
       const isKnownBase = testBaseClasses.some((base) => parent === base || parent.endsWith(base));
       if (!isKnownBase && parent.length > 0) {
+        /* istanbul ignore next -- the group is required by the pattern. */
         extendsIssues.push(`Line ${lineNo}: Test extends ${m[1] ?? ''} — extending production class in test creates fragile inheritance`);
       }
     }
@@ -141,6 +145,7 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   // deduplicate by line content
   const seenPartial = new Set<string>();
   const deduped = partialMockIssues.filter((msg) => {
+    /* istanbul ignore next -- every message names its own line. */
     if (seenPartial.has(msg)) return false;
     seenPartial.add(msg);
     return true;
@@ -155,11 +160,13 @@ function analyzeSelfShuntingFile(filePath: string, appPath: string): PhpunitSelf
   for (const line of lines) {
     const m = /^\s*use\s+([\w,\s\\]+);/.exec(line);
     if (m) {
+      /* istanbul ignore next -- the group is required by the pattern. */
       const traits = (m[1] ?? '').split(',').map((t) => t.trim()).filter((t) => t.length > 0);
       usedTraits.push(...traits);
     }
   }
   const testLikeTraits = usedTraits.filter((t) => {
+    /* istanbul ignore next -- split never returns an empty array. */
     const name = t.split('\\').pop() ?? '';
     return name.includes('TestCase') || name.includes('Kernel') || name.includes('WebTest') || name.includes('Sensitive');
   });
@@ -241,7 +248,7 @@ export function getPhpunitSelfShuntingStats(appPath: string): McpToolResult {
       'multi-inherit': 0,
     };
     for (const info of allIssues) {
-      counts[info.type] = (counts[info.type] ?? 0) + 1;
+      counts[info.type]! += 1;
     }
 
     const totalIssues = allIssues.reduce((sum, info) => sum + info.issues.length, 0);

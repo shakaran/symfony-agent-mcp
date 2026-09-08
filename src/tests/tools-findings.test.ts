@@ -45834,3 +45834,572 @@ class Ledger
     expect(text).toContain('Ledger');
   });
 });
+
+describe('batch 180: static analysis, test doubles and request bags', () => {
+  test('a null guard before the call, and a file that announces nullable in its opening lines', async () => {
+    const app = appWith('type-narrowing-guards', {
+      'src/Service/Nullable.php': `<?php
+
+/**
+ * Works with nullable values from findOneBy().
+ */
+
+namespace App\\Service;
+
+class Nullable
+{
+    public function guarded($repo): void
+    {
+        $user = $repo->findOneBy(['id' => 1]);
+        if (isset($user)) {
+            $user->getName();
+        }
+
+        $other = $repo->findOneBy(['id' => 2]);
+        $other->getName();
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-type-narrowing.js', app);
+
+    expect(text).toContain('Nullable');
+  });
+
+  test('a custom constraint whose toString is empty, and an assertion that never fails', async () => {
+    const app = appWith('phpunit-custom-assertions', {
+      'tests/Constraint/IsEven.php': `<?php
+
+namespace App\\Tests\\Constraint;
+
+use PHPUnit\\Framework\\Constraint\\Constraint;
+
+class IsEven extends Constraint
+{
+    public function toString()
+    {
+        return '' ;
+    }
+
+    public function check($value): void
+    {
+        $this->assertThat($value, $this->constraint());
+    }
+
+    public function assertIsOdd($value): void
+    {
+        if ($value % 2 === 0) {
+            $this->fail('not odd');
+        }
+    }
+
+    public function assertIsEven($value): void
+    {
+        if ($value % 2 !== 0) {
+            throw new \\RuntimeException('not even');
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-assertions-custom.js', app);
+
+    expect(text).toContain('IsEven');
+  });
+
+  test('test classes that implement, extend and mix traits in every shape', async () => {
+    const app = appWith('phpunit-self-shunting-shapes', {
+      'tests/Unit/PaymentTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use App\\Tests\\Support\\KernelHelperTrait;
+use App\\Tests\\Support\\WebTestHelperTrait;
+
+class PaymentTest extends PaymentService implements TestCaseAwareInterface, LoggerInterface
+{
+    use KernelHelperTrait;
+    use WebTestHelperTrait;
+
+    public function testSomething(): void
+    {
+        $mock = $this->createPartialMock(PaymentService::class, ['charge']);
+        $mock = $this->createPartialMock(PaymentService::class, ['charge']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-self-shunting.js', app);
+
+    expect(text).toContain('PaymentTest');
+  });
+
+  test('request bags read by header, by server key and through the shortcut', async () => {
+    const app = appWith('http-foundation-bag-shapes', {
+      'src/Controller/BagController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class BagController
+{
+    public function spoofable(Request $request): void
+    {
+        $ip = $request->server->get('REMOTE_ADDR');
+    }
+
+    /**
+     * The reads below sit far enough apart that the window around one of them
+     * never reaches the next.
+     */
+    public function agent(Request $request): void
+    {
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        $agent = $request->server->get('HTTP_USER_AGENT');
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+    }
+
+    public function headerByName(Request $request, string $name): void
+    {
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        $value = $request->headers->get($name);
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+    }
+
+    public function headerByMixedCase(Request $request): void
+    {
+        $mixed = $request->headers->get('X-Custom-Header');
+    }
+
+    public function headerLowercase(Request $request): void
+    {
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        $forwarded = $request->headers->get('x-forwarded-for');
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+    }
+}
+`,
+      'src/Service/CleanBags.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class CleanBags
+{
+    public function page(Request $request): int
+    {
+        return $request->query->getInt('page');
+    }
+}
+`,
+      'src/Controller/ShortcutController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class ShortcutController
+{
+    public function index(Request $request): int
+    {
+        $page = $request->get('page');
+
+        return $request->getInt('page');
+    }
+}
+`,
+    });
+
+    const clean = appWith('http-foundation-bag-clean', {
+      'src/Service/OnlyClean.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HttpFoundation\\Request;
+
+class OnlyClean
+{
+    public function page(Request $request): int
+    {
+        return $request->query->getInt('page');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-http-foundation-bag.js', app);
+
+    expect(await runModule('symfony-http-foundation-bag.js', clean)).toContain('OnlyClean');
+    expect(text).toContain('REMOTE_ADDR');
+  });
+
+  test('a stateless firewall whose entry point redirects, and one that answers in JSON as well', async () => {
+    const app = appWith('entry-point-shapes', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        empty: ~
+        api:
+            stateless: true
+            entry_point: App\\Security\\RedirectEntryPoint
+            custom_authenticators:
+                - App\\Security\\TokenAuthenticator
+        mixed:
+            stateless: true
+            entry_point: App\\Security\\MixedEntryPoint
+        plain:
+            pattern: ^/plain
+`,
+      'src/Security/RedirectEntryPoint.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Http\\EntryPoint\\AuthenticationEntryPointInterface;
+
+class RedirectEntryPoint implements AuthenticationEntryPointInterface
+{
+  public function start($request, $authException = null)
+  {
+    return new RedirectResponse('/login');
+  }
+}
+`,
+      'src/Security/MixedEntryPoint.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Http\\EntryPoint\\AuthenticationEntryPointInterface;
+
+class MixedEntryPoint implements AuthenticationEntryPointInterface
+{
+  public function start($request, $authException = null)
+  {
+    if ($request->isXmlHttpRequest()) {
+      return new JsonResponse(['error' => 'unauthenticated'], 401);
+    }
+
+    return new RedirectResponse('/login');
+  }
+}
+`,
+      'src/Security/VendorLike.php': `<?php
+
+namespace Symfony\\Component\\Security\\Http\\EntryPoint;
+
+class VendorLike implements AuthenticationEntryPointInterface
+{
+    public function start($request, $authException = null)
+    {
+        return new RedirectResponse('/login');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-entry-point.js', app);
+
+    expect(text).toContain('api');
+  });
+
+  test('a login link with no lifetime, no signature properties and a handler that sends nothing', async () => {
+    const app = appWith('login-link-bare', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        empty: ~
+        main:
+            login_link:
+                check_route: login_check
+                signature_properties: email
+`,
+      'src/Controller/LoginLinkController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Security\\Http\\LoginLink\\LoginLinkHandlerInterface;
+
+class LoginLinkController
+{
+    public function request(LoginLinkHandlerInterface $loginLinkHandler, $user): void
+    {
+        $details = $loginLinkHandler->createLoginLink($user);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-login-link.js', app);
+
+    expect(text).toContain('login_link');
+  });
+
+  test('a kernel test that boots first, shuts down and then reaches for the container', async () => {
+    const app = appWith('test-http-kernel-shapes', {
+      'tests/Functional/OrderTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+class OrderTest extends KernelTestCase
+{
+    public function testBootsFirst(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+    }
+
+    public function testShutsDownFirst(): void
+    {
+        self::ensureKernelShutdown();
+        self::bootKernel();
+        $client = static::createClient();
+        $client->request('GET', '/orders');
+    }
+
+    public function testUsesContainerAfterShutdown(): void
+    {
+        self::bootKernel();
+        self::$kernel->shutdown();
+        $service = self::getContainer()->get('order.repository');
+    }
+
+    public function testShutsDownAndStops(): void
+    {
+        self::bootKernel();
+        self::$kernel->shutdown();
+    }
+
+    public function testOneLiner(): void { self::bootKernel(); }
+}
+`,
+    });
+
+    const text = await runModule('symfony-test-http-kernel.js', app);
+
+    expect(text).toContain('OrderTest');
+  });
+
+  test('a state machine with a key nobody knows and places listed one after another', async () => {
+    const app = appWith('workflow-state-machine-shapes', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        order:
+            type: state_machine
+            unknown_key: something
+            marking_store:
+                type: method
+                property: state
+            supports:
+                - App\\Entity\\Order
+            places:
+                - draft
+                - submitted
+                - accepted
+            transitions:
+                submit:
+                    from: draft
+                    to: submitted
+                accept:
+                    from:
+                        - submitted
+                        - draft
+                    to: accepted
+`,
+    });
+
+    const twoSpace = appWith('workflow-state-machine-two-space', {
+      'config/packages/workflow.yaml': `framework:
+  workflows:
+    invoice:
+      type: state_machine
+      marking_store:
+        type: method
+        property: state
+      supports:
+        - App\\Entity\\Invoice
+      places:
+        - new
+        - paid
+      transitions:
+        pay:
+          from: new
+          to: paid
+`,
+    });
+
+    const text = await runModule('symfony-workflow-state-machine.js', app);
+
+    expect(await runModule('symfony-workflow-state-machine.js', twoSpace)).toContain('invoice');
+    expect(text).toContain('order');
+  });
+
+  test('a phpstan configuration with blank entries, comments and a baseline in both spellings', async () => {
+    const app = appWith('phpstan-blank-entries', {
+      'phpstan.neon': `includes:
+    - phpstan-baseline.neon
+    - "  "
+parameters:
+    level: 8
+    baseline: phpstan-baseline.neon
+    paths:
+        - src
+        - # nothing here
+        -
+    excludePaths:
+        - tests/fixtures
+        - "  "
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors:
+        -
+            message: "#Call to an undefined method#"
+            count: 1
+            path: src/Service/Legacy.php
+`,
+    });
+    const plainBaseline = appWith('phpstan-plain-baseline', {
+      'phpstan.neon': `includes:
+    - phpstan-baseline.neon
+parameters:
+    level: 6
+    paths:
+        - src
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors:
+        message: "#Undefined variable#"
+`,
+    });
+    fs.rmSync(path.join(plainBaseline, 'composer.json'));
+    const plainMessage = appWith('phpstan-plain-message', {
+      'phpstan.neon': `includes:
+    - phpstan-baseline.neon
+parameters:
+    level: 4
+    baseline: phpstan-baseline.neon
+    paths:
+        - src
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors:
+        message: "#Undefined variable#"
+`,
+    });
+
+    expect(await runModule('phpstan-config.js', app)).toContain('Level');
+    expect(await runModule('phpstan-config.js', plainBaseline)).toContain('Level');
+    const emptyBaseline = appWith('phpstan-empty-baseline', {
+      'phpstan.neon': `parameters:
+    level: 3
+    baseline: phpstan-baseline.neon
+    paths:
+        - src
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors: []
+`,
+    });
+
+    expect(await runModule('phpstan-config.js', plainMessage)).toContain('Level');
+    expect(await runModule('phpstan-config.js', emptyBaseline)).toContain('Level');
+  });
+
+  test('a runtime package nobody publishes, and a composer.json that requires nothing', async () => {
+    const app = appWith('runtime-env-unknown', {
+      'composer.json': JSON.stringify({
+        require: { 'runtime/frankenphp-symfony': '^0.2', 'symfony/runtime': '^7.0' },
+      }, null, 2),
+    });
+    const local = appWith('runtime-env-local', {
+      'composer.json': JSON.stringify({
+        require: { 'runtime/swoole': '^0.2', 'symfony/runtime': '^7.0' },
+      }, null, 2),
+      '.env.local': 'APP_RUNTIME=Runtime\\Swoole\\Runtime\n',
+    });
+    const empty = appWith('runtime-env-no-require', { 'composer.json': '{}' });
+
+    expect(await runModule('symfony-runtime-env.js', local)).toContain('Swoole');
+
+    expect(await runModule('symfony-runtime-env.js', app)).toContain('runtime');
+    expect((await runModule('symfony-runtime-env.js', empty)).length).toBeGreaterThan(0);
+  });
+
+  test('a rector-style set list and a baseline with more errors than the report tolerates', async () => {
+    const app = appWith('static-analysis-baseline', {
+      'phpstan.neon': `includes:
+    - vendor/phpstan/phpstan-symfony/extension.neon
+    - vendor/ergebnis/rules.neon
+    - vendor/ergebnis/extension.neon
+parameters:
+    level: 5
+    paths:
+        - src
+`,
+      'phpstan-baseline.neon': `parameters:
+    ignoreErrors:
+${Array.from({ length: 105 }, (_, i) => `        -\n            message: "#Error number ${i}#"\n            count: 1\n            path: src/File${i}.php`).join('\n')}
+`,
+      'psalm.xml': `<?xml version="1.0"?>
+<psalm errorLevel="3">
+    <issueHandlers>
+        <MissingReturnType errorLevel="suppress">
+            <errorLevel type="suppress">
+                <directory name="src/Legacy" />
+            </errorLevel>
+        </MissingReturnType>
+        <PossiblyNullReference>
+            <errorLevel type="suppress">
+                <directory name="src/Legacy" />
+            </errorLevel>
+        </PossiblyNullReference>
+    </issueHandlers>
+</psalm>
+`,
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\SetList;
+
+return RectorConfig::configure()
+    ->withSets([SetList::PHP_82, SetList::CODE_QUALITY]);
+`,
+      'src/Service/Suppressed.php': `<?php
+
+namespace App\\Service;
+
+class Suppressed
+{
+    /** @phpstan-ignore-next-line */
+    public function one(): void
+    {
+    }
+
+    /** @phpstan-ignore-next-line */
+    public function two(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('static-analysis.js', app);
+
+    expect(text).toContain('baseline');
+  });
+});

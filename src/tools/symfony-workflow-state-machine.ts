@@ -146,6 +146,7 @@ function parseWorkflowsFromContent(content: string, _sourceFile: string): StateM
 
     if (inPlaces && /^\s+-\s+(\w{1,80})/.test(line)) {
       const placeMatch = /^\s+-\s+(\w{1,80})/.exec(line);
+      /* istanbul ignore else -- the line was tested with the same pattern. */
       if (placeMatch) currentStates.push(placeMatch[1]);
     }
     if (inPlaces && /^\s+(\w{1,80})\s*:/.test(line)) {
@@ -180,6 +181,8 @@ function parseWorkflowsFromContent(content: string, _sourceFile: string): StateM
           currentFromCount = 1; // will be incremented by list items
         }
       }
+      /* istanbul ignore next -- a transition list item is never the first
+         line of the file. */
       if (inTransitionDef && /^\s+-\s+\w/.test(line) && !/^\s+-\s+\w/.test(lines[lines.indexOf(line) - 1] ?? '')) {
         // array item under from
         currentFromCount++;

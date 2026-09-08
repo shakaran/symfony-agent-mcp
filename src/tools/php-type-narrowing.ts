@@ -214,18 +214,18 @@ export function getPhpTypeNarrowingStats(appPath: string): McpToolResult {
   try {
     const infos = buildTypeNarrowingInfos(appPath);
 
-    const counts: Record<string, number> = { instanceof: 0, 'is-check': 0, assert: 0, nullcheck: 0 };
-    for (const info of infos) counts[info.type] = (counts[info.type] ?? 0) + 1;
+    const counts: Record<TypeNarrowingInfo['type'], number> = { instanceof: 0, 'is-check': 0, assert: 0, nullcheck: 0 };
+    for (const info of infos) counts[info.type] += 1;
     const withIssues = infos.filter((i) => i.issues.length > 0).length;
 
     let text = `PHP Type Narrowing Statistics\n${'='.repeat(40)}\n\n`;
     text += `Total pattern groups:  ${infos.length}\n`;
     text += `Groups with issues:    ${withIssues}\n\n`;
     text += `By type:\n`;
-    text += `  instanceof checks:   ${counts['instanceof'] ?? 0}\n`;
-    text += `  is_*() checks:       ${counts['is-check'] ?? 0}\n`;
-    text += `  assert() calls:      ${counts['assert'] ?? 0}\n`;
-    text += `  Null-check patterns: ${counts['nullcheck'] ?? 0}\n`;
+    text += `  instanceof checks:   ${counts['instanceof']}\n`;
+    text += `  is_*() checks:       ${counts['is-check']}\n`;
+    text += `  assert() calls:      ${counts['assert']}\n`;
+    text += `  Null-check patterns: ${counts['nullcheck']}\n`;
 
     return { content: [{ type: 'text', text }] };
   } catch (error) {

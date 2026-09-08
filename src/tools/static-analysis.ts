@@ -225,6 +225,8 @@ function loadRectorConfig(appPath: string): RectorConfig {
       const sets: string[] = [];
       for (const m of content.matchAll(/->withSets\s*\(\s*\[([^\]]+)\]/g)) {
         for (const sm of m[1].matchAll(/(\w+)::\s*\w+|SetList::\s*(\w+)/g)) {
+          /* istanbul ignore next -- the first alternative matches whatever
+             the second one would. */
           sets.push((sm[1] ?? sm[2]).trim());
         }
       }

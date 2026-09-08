@@ -86,6 +86,7 @@ function parseParameterBagFile(filePath: string): ParameterBagInfo | null {
     let methodMatch: RegExpExecArray | null;
 
     while ((methodMatch = methodRe.exec(content)) !== null) {
+      /* istanbul ignore next -- the group is required by the pattern. */
       const method = methodMatch[1] ?? 'get';
       const usageIssues: string[] = [];
 
@@ -195,6 +196,7 @@ export function listParameterBagUsage(appPath: string): McpToolResult {
       for (const r of clean) {
         const bagNames = [...new Set(r.usages.map((u) => u.bag))].join(', ');
         text += `  ${r.file}`;
+        /* istanbul ignore next -- a file is listed here because it has usages. */
         if (bagNames) text += ` [${bagNames}]`;
         text += '\n';
       }

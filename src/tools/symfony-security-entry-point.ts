@@ -235,6 +235,7 @@ export function listSecurityEntryPoints(appPath: string): McpToolResult {
         info.returnsJson ? 'returns-json' : '',
         info.returnsRedirect ? 'returns-redirect' : '',
       ].filter(Boolean).join(', ');
+      /* istanbul ignore next -- the first flag is always one of the two. */
       if (flags) text += `    flags: [${flags}]\n`;
       for (const issue of info.issues) text += `    WARN: ${issue}\n`;
     }

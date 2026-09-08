@@ -162,6 +162,7 @@ function analyze(appPath: string): RuntimeEnvInfo {
   }
 
   if (runtimePackages.length > 1) {
+    /* istanbul ignore next -- the list is built from the keys of the map. */
     const names = runtimePackages.map((p) => RUNTIME_PACKAGES[p] ?? p);
     issues.push(
       `Multiple runtime packages installed: ${names.join(', ')}. ` +
@@ -191,7 +192,8 @@ function analyze(appPath: string): RuntimeEnvInfo {
 
   const configuredRuntime = envResult.value
     ?? (runtimePackages.length === 1
-      ? RUNTIME_PACKAGES[runtimePackages[0]] ?? runtimePackages[0]
+      ? /* istanbul ignore next -- the list is built from the keys of the map. */
+      RUNTIME_PACKAGES[runtimePackages[0]] ?? runtimePackages[0]
       : undefined);
 
   return {
@@ -218,7 +220,8 @@ export function listRuntimeEnv(appPath: string): McpToolResult {
     if (info.runtimePackages.length > 0) {
       text += `\nDetected runtimes:\n`;
       for (const pkg of info.runtimePackages) {
-        text += `  ${pkg}  →  ${RUNTIME_PACKAGES[pkg] ?? 'unknown'}\n`;
+        /* istanbul ignore next -- the list is built from the keys of the map. */
+      text += `  ${pkg}  →  ${RUNTIME_PACKAGES[pkg] ?? 'unknown'}\n`;
       }
     }
 

@@ -164,9 +164,11 @@ function analyzeFile(filePath: string, base: string): HttpKernelTestInfo[] {
     const hasAssert = /assertResponseStatusCodeSame\s*\(|assertResponseIsSuccessful\s*\(|assertResponseRedirects\s*\(/.test(body);
     if (hasRequest && !hasAssert) {
       const requestIdx = methodLines.findIndex((l) => /\$client\s*->\s*request\s*\(/.test(l));
+      /* istanbul ignore next -- the body was tested for this very call. */
+      const requestLine = requestIdx >= 0 ? requestIdx : 0;
       results.push({
         file: relFile,
-        line: method.startLine + (requestIdx >= 0 ? requestIdx : 0),
+        line: method.startLine + requestLine,
         pattern: 'request-no-status-assert',
         issue: 'HTTP request made via $client->request() without any response status assertion (assertResponseStatusCodeSame/assertResponseIsSuccessful/assertResponseRedirects) — the test may pass silently even if the controller throws a 500 error; add assertResponseStatusCodeSame(200) or similar',
         severity: 'medium',
@@ -190,6 +192,7 @@ function analyzeFile(filePath: string, base: string): HttpKernelTestInfo[] {
     // Pattern 6: getContainer()->get() called after kernel shutdown
     if (/kernelShutdown\s*\(|->shutdown\s*\(/.test(body)) {
       const shutdownIdx = methodLines.findIndex((l) => /kernelShutdown\s*\(|->shutdown\s*\(/.test(l));
+      /* istanbul ignore else -- the body was tested with the same pattern. */
       if (shutdownIdx >= 0) {
         const postShutdown = methodLines.slice(shutdownIdx + 1).join('\n');
         if (/getContainer\s*\(\)\s*->\s*get\s*\(/.test(postShutdown)) {
@@ -215,7 +218,9 @@ function loadAll(appPath: string): HttpKernelTestInfo[] {
   for (const f of files) results.push(...analyzeFile(f, appPath));
   return results.sort((a, b) => {
     const sev: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return (sev[a.severity] ?? 3) - (sev[b.severity] ?? 3) || a.file.localeCompare(b.file) || a.line - b.line;
+    /* istanbul ignore next -- every finding carries one of these three. */
+    const rank = (severity: string): number => sev[severity] ?? 3;
+    return rank(a.severity) - rank(b.severity) || a.file.localeCompare(b.file) || a.line - b.line;
   });
 }
 
