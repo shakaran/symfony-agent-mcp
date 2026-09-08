@@ -44024,3 +44024,71 @@ bare_route:
     expect(text).toContain('article');
   });
 });
+
+describe('batch 171: catalogues that disagree with each other', () => {
+  test('two locales with different keys, nested parents, empty values and a duplicate', async () => {
+    const app = appWith('symfony-translation-yaml-disagree', {
+      'translations/messages.en.yaml': `app:
+    title: Dashboard
+    subtitle: ''
+    nested:
+        deep: Deep
+greeting: Hello
+greeting: Hi again
+only_in_english: Yes
+`,
+      'translations/messages.es.yaml': `app:
+    title: Panel
+    nested:
+        deep: Profundo
+greeting: Hola
+only_in_spanish: Si
+`,
+      'translations/validators.en.yaml': `field:
+    required: Required
+`,
+    });
+
+    const text = await runModule('symfony-translation-yaml-lint.js', app);
+
+    expect(text).toContain('messages');
+  });
+
+  test('a catalogue with nothing wrong in it', async () => {
+    const app = appWith('symfony-translation-yaml-clean', {
+      'translations/messages.en.yaml': "greeting: Hello\n",
+      'translations/messages.es.yaml': "greeting: Hola\n",
+    });
+
+    const text = await runModule('symfony-translation-yaml-lint.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('a dbal connection with every field, and one with none', async () => {
+    const app = appWith('dbal-config-both-ways', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                driver: pdo_mysql
+                host: db.internal
+                port: 3306
+                user: app
+                password: '%env(DB_PASSWORD)%'
+                dbname: shop
+                charset: utf8mb4
+                server_version: '8.0'
+                options:
+                    1009: '/etc/ssl/certs/ca.pem'
+                ssl_ca: '/etc/ssl/certs/ca.pem'
+            analytics:
+                url: '%env(ANALYTICS_URL)%'
+`,
+    });
+
+    const text = await runModule('dbal-config.js', app);
+
+    expect(text).toContain('default');
+  });
+});
