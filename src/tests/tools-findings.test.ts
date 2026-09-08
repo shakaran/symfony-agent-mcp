@@ -43420,3 +43420,419 @@ return [];
     expect(text).toContain('dry-run');
   });
 });
+
+describe('batch 167: doctrine caches described every way', () => {
+  test('a driver named rather than typed, regions with and without limits, drivers as strings and as mappings', async () => {
+    const app = appWith('doctrine-cache-every-shape', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: pool
+            pool: doctrine.system_cache_pool
+        query_cache_driver: array
+        second_level_cache:
+            enabled: true
+            region_cache_driver:
+                name: doctrine.slc_pool
+            regions:
+                short:
+                    lifetime: 60
+                    max_entries: 1000
+                bare: ~
+`,
+      'src/Entity/Country.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Cache(usage: 'READ_WRITE', region: 'short')]
+class Country
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $id;
+
+    #[ORM\\Cache]
+    #[ORM\\OneToMany(mappedBy: 'country', targetEntity: City::class)]
+    private $cities;
+}
+`,
+      'src/Entity/City.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Cache(usage: 'READ_ONLY')]
+class City
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $id;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-cache.js', app);
+
+    expect(text).toContain('READ_WRITE');
+  });
+
+  test('a doctrine config with no cache drivers at all', async () => {
+    const app = appWith('doctrine-cache-none', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+    orm:
+        auto_generate_proxy_classes: true
+`,
+    });
+
+    const text = await runModule('doctrine-cache.js', app);
+
+    expect(text).toContain('No query/result/metadata cache drivers');
+  });
+});
+
+describe('batch 168: every doctrine tool against one application and its opposite', () => {
+  // Two applications: one that configures and annotates everything these
+  // analysers look for, and one with almost nothing. Between them they take
+  // both halves of most conditions in the family, which is what a fixture per
+  // module would do one file at a time.
+  const RICH = 'doctrine-family-rich';
+  const BARE = 'doctrine-family-bare';
+
+  beforeAll(() => {
+    appWith(RICH, {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                url: '%env(resolve:DATABASE_URL)%'
+                charset: utf8mb4
+                default_table_options:
+                    charset: utf8mb4
+                    collation: utf8mb4_unicode_ci
+                platform_service: App\\Doctrine\\CustomPlatform
+                options:
+                    1002: "SET SESSION sql_mode=''"
+                types:
+                    money: App\\Doctrine\\Type\\MoneyType
+                mapping_types:
+                    enum: string
+                slaves:
+                    replica_one:
+                        url: '%env(REPLICA_URL)%'
+            analytics:
+                url: '%env(ANALYTICS_URL)%'
+                driver: pdo_pgsql
+    orm:
+        default_entity_manager: default
+        auto_generate_proxy_classes: false
+        proxy_dir: '%kernel.cache_dir%/doctrine/orm/Proxies'
+        metadata_cache_driver:
+            type: pool
+            pool: doctrine.system_cache_pool
+        query_cache_driver: array
+        result_cache_driver:
+            type: pool
+            pool: doctrine.result_cache_pool
+        second_level_cache:
+            enabled: true
+            region_cache_driver:
+                type: pool
+                pool: doctrine.slc_pool
+            regions:
+                country_region:
+                    lifetime: 3600
+                    max_entries: 1000
+        dql:
+            string_functions:
+                MATCH_AGAINST: App\\Doctrine\\Dql\\MatchAgainst
+            numeric_functions:
+                ROUND: App\\Doctrine\\Dql\\Round
+            datetime_functions:
+                YEAR: App\\Doctrine\\Dql\\Year
+        filters:
+            soft_deleteable:
+                class: Gedmo\\SoftDeleteable\\Filter\\SoftDeleteableFilter
+                enabled: true
+            tenant:
+                class: App\\Doctrine\\Filter\\TenantFilter
+        entity_managers:
+            default:
+                connection: default
+                naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
+                mappings:
+                    App:
+                        type: attribute
+                        dir: '%kernel.project_dir%/src/Entity'
+                        prefix: 'App\\Entity'
+                        is_bundle: false
+`,
+      'config/packages/doctrine_migrations.yaml': `doctrine_migrations:
+    migrations_paths:
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+    enable_profiler: false
+    transactional: true
+`,
+      'src/Entity/Country.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\ArrayCollection;
+use Doctrine\\DBAL\\Types\\Types;
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity(repositoryClass: CountryRepository::class)]
+#[ORM\\Table(name: 'country')]
+#[ORM\\Index(columns: ['code'], name: 'idx_code')]
+#[ORM\\UniqueConstraint(name: 'uniq_code', columns: ['code'])]
+#[ORM\\Cache(usage: 'READ_WRITE', region: 'country_region')]
+#[ORM\\HasLifecycleCallbacks]
+#[ORM\\EntityListeners([CountryListener::class])]
+#[ORM\\InheritanceType('SINGLE_TABLE')]
+#[ORM\\DiscriminatorColumn(name: 'kind', type: 'string')]
+#[ORM\\DiscriminatorMap(['country' => Country::class])]
+class Country
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    #[ORM\\SequenceGenerator(sequenceName: 'country_seq', allocationSize: 50)]
+    #[ORM\\Column(type: Types::INTEGER)]
+    private int $id;
+
+    #[ORM\\Column(length: 2, unique: true, options: ['default' => 'ES', 'charset' => 'utf8mb4'])]
+    private string $code = 'ES';
+
+    #[ORM\\Column(type: 'money', nullable: true)]
+    private $budget;
+
+    #[ORM\\Version]
+    #[ORM\\Column(type: 'integer')]
+    private int $version = 1;
+
+    #[Gedmo\\Slug(fields: ['code'])]
+    #[ORM\\Column(length: 64)]
+    private string $slug = '';
+
+    #[Gedmo\\Blameable(on: 'create')]
+    #[ORM\\Column(nullable: true)]
+    private ?string $createdBy = null;
+
+    #[Gedmo\\Timestampable(on: 'create')]
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private $createdAt;
+
+    #[Gedmo\\TreeParent]
+    #[ORM\\ManyToOne(targetEntity: Country::class, inversedBy: 'children', fetch: 'EAGER')]
+    #[ORM\\JoinColumn(name: 'parent_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private ?Country $parent = null;
+
+    #[ORM\\OneToMany(mappedBy: 'parent', targetEntity: Country::class, cascade: ['persist', 'remove'], orphanRemoval: true, fetch: 'EXTRA_LAZY')]
+    #[ORM\\Cache]
+    private ArrayCollection $children;
+
+    #[ORM\\PrePersist]
+    public function onPrePersist(): void
+    {
+    }
+
+    #[ORM\\PostLoad]
+    public function onPostLoad(): void
+    {
+    }
+}
+`,
+      'src/Entity/Reading.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'reading')]
+class Reading
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $sensorId;
+
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private int $takenAt;
+
+    #[ORM\\Column(type: 'json')]
+    private array $payload = [];
+}
+`,
+      'src/Repository/CountryRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+use Doctrine\\Common\\Collections\\Criteria;
+
+class CountryRepository extends ServiceEntityRepository
+{
+    public function recent(): array
+    {
+        return $this->createQueryBuilder('c')
+            ->where('c.code = :code')
+            ->setParameter('code', 'ES')
+            ->setMaxResults(10)
+            ->getQuery()
+            ->setResultCacheLifetime(300)
+            ->getResult();
+    }
+
+    public function matching_criteria(): array
+    {
+        return $this->matching(Criteria::create()->orderBy(['code' => 'ASC']))->toArray();
+    }
+
+    public function bulk(): void
+    {
+        foreach (range(1, 1000) as $i) {
+            $this->getEntityManager()->persist(new \\stdClass());
+        }
+        $this->getEntityManager()->flush();
+        $this->getEntityManager()->clear();
+    }
+}
+`,
+      'migrations/Version20260101000000.php': `<?php
+
+declare(strict_types=1);
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE country (id INT NOT NULL, PRIMARY KEY(id))');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE country');
+    }
+}
+`,
+    });
+
+    appWith(BARE, {
+      'config/packages/doctrine.yaml': "doctrine:\n    dbal: ~\n    orm: ~\n",
+      'src/Entity/Plain.php': `<?php
+
+namespace App\\Entity;
+
+class Plain
+{
+    private int $id = 0;
+}
+`,
+    });
+  });
+
+  const modules = [
+    'doctrine-association-fetch.js',
+    'doctrine-bulk-operations.js',
+    'doctrine-cache.js',
+    'doctrine-cascade-config.js',
+    'doctrine-change-tracking.js',
+    'doctrine-column-charset.js',
+    'doctrine-column-defaults.js',
+    'doctrine-composite-primary-keys.js',
+    'doctrine-connection-retry.js',
+    'doctrine-criteria-api.js',
+    'doctrine-custom-hydrators.js',
+    'doctrine-custom-platform.js',
+    'doctrine-dbal-bulk-insert.js',
+    'doctrine-dbal-connection-factory.js',
+    'doctrine-dbal-driveroptions.js',
+    'doctrine-dbal-event-listeners.js',
+    'doctrine-dbal-middleware.js',
+    'doctrine-dbal-prepared-statements.js',
+    'doctrine-dbal-query-profiling.js',
+    'doctrine-dbal-schema-diff.js',
+    'doctrine-dbal-schema-manager.js',
+    'doctrine-dbal-transactions.js',
+    'doctrine-discriminator.js',
+    'doctrine-dql-functions.js',
+    'doctrine-dql-walker.js',
+    'doctrine-embeddable.js',
+    'doctrine-encryption.js',
+    'doctrine-entity-factory.js',
+    'doctrine-entity-graph.js',
+    'doctrine-entity-listeners.js',
+    'doctrine-entity-lock.js',
+    'doctrine-entity-manager-scope.js',
+    'doctrine-entity-proxy.js',
+    'doctrine-entity-state.js',
+    'doctrine-event-manager.js',
+    'doctrine-event-subscribers.js',
+    'doctrine-extensions.js',
+    'doctrine-fetch-modes.js',
+    'doctrine-filters.js',
+    'doctrine-full-text-search.js',
+    'doctrine-gedmo-blameable.js',
+    'doctrine-gedmo-sluggable.js',
+    'doctrine-gedmo-translatable.js',
+    'doctrine-gedmo-tree.js',
+    'doctrine-hydration-performance.js',
+    'doctrine-indexes.js',
+    'doctrine-inheritance.js',
+    'doctrine-lifecycle.js',
+    'doctrine-mapping-format.js',
+    'doctrine-migration-graph.js',
+    'doctrine-migration-history.js',
+    'doctrine-migrations-config.js',
+    'doctrine-multi-connection.js',
+    'doctrine-mysql-specific.js',
+    'doctrine-named-queries.js',
+    'doctrine-odm-config.js',
+    'doctrine-orm-config.js',
+    'doctrine-orm-profiling.js',
+    'doctrine-orphan-removal.js',
+    'doctrine-paginator.js',
+    'doctrine-postgres-specific.js',
+    'doctrine-projections.js',
+    'doctrine-query-builder.js',
+    'doctrine-query-cache.js',
+    'doctrine-raw-sql.js',
+    'doctrine-read-replica.js',
+    'doctrine-repository-patterns.js',
+    'doctrine-repository-queries.js',
+    'doctrine-result-cache.js',
+    'doctrine-result-set-mapping.js',
+    'doctrine-second-level-cache.js',
+    'doctrine-sequence-generator.js',
+    'doctrine-sharding.js',
+    'doctrine-slc.js',
+    'doctrine-soft-delete.js',
+    'doctrine-temporal-tables.js',
+    'doctrine-timestamps.js',
+    'doctrine-types.js',
+    'doctrine-uow-flush.js',
+    'doctrine-upsert-patterns.js',
+    'doctrine-versioned-entities.js',
+  ];
+
+  test.each(modules)('%s reads both applications', async (moduleName) => {
+    const rich = await runModule(moduleName, path.join(root, RICH), ['country', 'Country']);
+    const bare = await runModule(moduleName, path.join(root, BARE), ['plain', 'Plain']);
+
+    expect(typeof rich).toBe('string');
+    expect(typeof bare).toBe('string');
+  });
+});
