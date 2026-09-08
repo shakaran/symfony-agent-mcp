@@ -106,6 +106,95 @@ function appFor(moduleName: string, literals: string[]): string {
   return dir;
 }
 
+/** The files a module joins onto the application path, when it names them. */
+function pathsOf(moduleName: string): string[] {
+  const src = fs.readFileSync(path.join(toolsDir, `${moduleName}.ts`), 'utf-8');
+  const found = new Set<string>();
+
+  for (const m of src.matchAll(/path\.join\(\s*appPath\s*,([^)]*)\)/g)) {
+    const args = m[1];
+    // Only the calls whose every argument is a literal: the rest name a
+    // directory entry or a variable this file cannot know.
+    if (args.replace(/'[^']*'/g, '').replace(/[\s,]/g, '') !== '') continue;
+    const parts = [...args.matchAll(/'([^']+)'/g)].map((x) => x[1]);
+    if (parts.length === 0) continue;
+    const rel = parts.join('/');
+    if (rel.includes('..') || path.isAbsolute(rel)) continue;
+    if (/\.[a-z]{2,5}$/.test(rel)) found.add(rel);
+  }
+
+  return [...found];
+}
+
+/** An empty file of the right shape for its extension. */
+function emptyContentFor(rel: string): string {
+  if (/\.(ya?ml)$/.test(rel)) return '{}\n';
+  if (/\.json$/.test(rel)) return '{}\n';
+  if (/\.neon$/.test(rel)) return 'parameters: []\n';
+  if (/\.php$/.test(rel)) return '<?php\n';
+  if (/\.xml$/.test(rel)) return '<?xml version="1.0"?>\n<root/>\n';
+  return '\n';
+}
+
+function bareAppFor(moduleName: string, files: string[]): string {
+  const dir = path.join(root, `${moduleName}-bare`);
+  fs.mkdirSync(dir, { recursive: true });
+
+  for (const rel of files) {
+    const full = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, emptyContentFor(rel));
+  }
+
+  if (!files.includes('composer.json')) {
+    fs.writeFileSync(path.join(dir, 'composer.json'), JSON.stringify({
+      require: { 'symfony/framework-bundle': '^7.0' },
+      autoload: { 'psr-4': { 'App\\': 'src/' } },
+    }, null, 2));
+  }
+
+  return dir;
+}
+
+/** The configuration keys a module reads out of a parsed document. */
+function keysOf(moduleName: string): string[] {
+  const src = fs.readFileSync(path.join(toolsDir, `${moduleName}.ts`), 'utf-8');
+  const found = new Set<string>();
+
+  for (const m of src.matchAll(/\[\s*'([a-z][a-z0-9_.]{1,40})'\s*\]/g)) found.add(m[1]);
+
+  return [...found].slice(0, 40);
+}
+
+/** A document that holds every key the module reads, three levels deep. */
+function keyTree(keys: string[], depth: number): unknown {
+  if (depth === 0) return 'value';
+  const node: Record<string, unknown> = {};
+  for (const key of keys) node[key] = keyTree(keys, depth - 1);
+  return node;
+}
+
+function keyedAppFor(moduleName: string, files: string[], keys: string[]): string {
+  const dir = path.join(root, `${moduleName}-keyed`);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const tree = keyTree(keys, 3) as Record<string, unknown>;
+  const json = JSON.stringify(tree);
+
+  for (const rel of files) {
+    const full = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    // JSON is valid YAML, so one rendering serves both.
+    fs.writeFileSync(full, /\.(ya?ml|json|neon)$/.test(rel) ? json : emptyContentFor(rel));
+  }
+
+  if (!files.includes('composer.json')) {
+    fs.writeFileSync(path.join(dir, 'composer.json'), json);
+  }
+
+  return dir;
+}
+
 async function runAll(moduleName: string, app: string): Promise<void> {
   const mod = await import(path.join(toolsDir, moduleName)) as Record<string, unknown>;
 
@@ -138,5 +227,30 @@ describe('and one that contains none of them', () => {
   // does when the thing it looks for is simply not there.
   test.each(moduleNames)('%s', async (moduleName) => {
     await runAll(moduleName, appFor(`${moduleName}-none`, []));
+  });
+});
+
+describe('and the files it names, present but holding nothing', () => {
+  // A configuration file that exists and parses to an empty document is a
+  // different path through an analyser than one that is not there at all:
+  // every section it looks for is missing, and every default is taken.
+  test.each(moduleNames)('%s', async (moduleName) => {
+    const files = pathsOf(moduleName);
+    if (files.length === 0) return;
+
+    await runAll(moduleName, bareAppFor(moduleName, files));
+  });
+});
+
+describe('and the same files holding every key it reads', () => {
+  // Which section of a document an analyser looks at is decided by keys it
+  // names in its own source. A document that holds all of them, nested, takes
+  // the half of those lookups that a bare file cannot.
+  test.each(moduleNames)('%s', async (moduleName) => {
+    const files = pathsOf(moduleName);
+    const keys = keysOf(moduleName);
+    if (files.length === 0 || keys.length === 0) return;
+
+    await runAll(moduleName, keyedAppFor(moduleName, files, keys));
   });
 });
