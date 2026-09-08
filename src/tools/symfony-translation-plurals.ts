@@ -73,7 +73,8 @@ function parseLocaleAndDomain(fileName: string): { locale: string; domain: strin
   const parts = base.split('.');
   // format: messages.en.yaml or validators.fr_FR.xlf
   if (parts.length >= 2) {
-    return { domain: parts[0] ?? 'messages', locale: parts[parts.length - 1] ?? 'en' };
+    /* istanbul ignore next -- split never returns an empty array. */
+  return { domain: parts[0] ?? 'messages', locale: parts[parts.length - 1] ?? 'en' };
   }
   return { domain: base, locale: 'unknown' };
 }
@@ -96,8 +97,10 @@ function extractPluralKeysFromYaml(content: string, file: string, locale: string
 function extractPluralKeysFromXliff(content: string, file: string, locale: string, domain: string): PluralKey[] {
   const results: PluralKey[] = [];
   for (const m of content.matchAll(/<source>([^<]+)<\/source>\s*<target>([^<]+)<\/target>/g)) {
+    /* istanbul ignore next -- both groups of the pattern are required. */
     const value = m[2] ?? '';
     if (!value.includes('|')) continue;
+    /* istanbul ignore next -- both groups of the pattern are required. */
     const key = m[1] ?? '';
     results.push({ key, domain, locale, file: path.basename(file), alternatives: value.split('|').length });
   }
@@ -142,8 +145,9 @@ function detectPluralIssues(keys: PluralKey[]): PluralIssue[] {
     if (altCounts.size > 1) {
       const summary = [...altCounts].join(' vs ');
       issues.push({
-        key: variants[0]?.key ?? '',
-        domain: variants[0]?.domain ?? '',
+        // A group with fewer than two variants is skipped above.
+        key: variants[0]!.key,
+        domain: variants[0]!.domain,
         issue: `Inconsistent plural count across locales (${summary} alternatives): ${variants.map((v) => v.locale).join(', ')}`,
       });
     }
@@ -151,6 +155,7 @@ function detectPluralIssues(keys: PluralKey[]): PluralIssue[] {
 
   // Check against expected forms per locale
   for (const k of keys) {
+    /* istanbul ignore next -- split never returns an empty array. */
     const expected = PLURAL_FORMS[k.locale.split('_')[0] ?? ''];
     if (expected !== undefined && k.alternatives !== expected) {
       issues.push({
@@ -197,7 +202,8 @@ export function listTranslationPlurals(appPath: string): McpToolResult {
     text += `Files with plurals: ${new Set(keys.map((k) => k.file)).size}\n`;
 
     for (const [domain, uniqueKeys] of [...uniqueByDomain.entries()].sort()) {
-      const locales = [...new Set(byDomain.get(domain)?.map((k) => k.locale) ?? [])].sort();
+      /* istanbul ignore next -- domain comes from the keys of byDomain. */
+    const locales = [...new Set(byDomain.get(domain)?.map((k) => k.locale) ?? [])].sort();
       text += `\n  Domain "${domain}" — ${uniqueKeys.size} plural keys in [${locales.join(', ')}]\n`;
       for (const key of [...uniqueKeys].slice(0, 5)) {
         text += `    ${key}\n`;

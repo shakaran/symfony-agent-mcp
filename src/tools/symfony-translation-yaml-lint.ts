@@ -72,6 +72,8 @@ function extractFlatKeys(content: string): { keys: string[]; emptyKeys: string[]
     const value = keyMatch[3].trim();
 
     // Pop stack to current indent level
+    /* istanbul ignore next -- the length check on the left makes the last
+       element defined. */
     while (keyStack.length > 0 && (keyStack[keyStack.length - 1]?.indent ?? 0) >= lineIndent) {
       keyStack.pop();
     }
@@ -145,6 +147,7 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
     const localeList = Object.keys(locales);
     if (localeList.length < 2) continue;
 
+    /* istanbul ignore next -- localeList comes from the keys of locales. */
     const counts = localeList.map((loc) => (locales[loc] ?? []).length);
     const minCount = Math.min(...counts);
     const maxCount = Math.max(...counts);
@@ -152,9 +155,11 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
     if (maxCount - minCount > 0) {
       // Find locale with different count — compare against reference (first locale)
       const refLocale = localeList[0];
+      /* istanbul ignore next -- refLocale is one of the keys of locales. */
       const refKeys = new Set(locales[refLocale] ?? []);
 
       for (const loc of localeList.slice(1)) {
+        /* istanbul ignore next -- loc is one of the keys of locales. */
         const locKeys = new Set(locales[loc] ?? []);
         const missingHere = [...refKeys].filter((k) => !locKeys.has(k));
         const extraHere = [...locKeys].filter((k) => !refKeys.has(k));
@@ -164,6 +169,8 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
             const { domain: d, locale: l } = parseTranslationFilename(f);
             return d === domain && l === loc;
           });
+          /* istanbul ignore next -- the locale keys come from these very
+             files, so the search always finds one. */
           const relFile = translFile ? path.relative(appPath, translFile) : `${domain}.${loc}.yaml`;
           results.push({ file: relFile, domain, locale: loc, issue: 'inconsistent-count', key: `missing: ${key} (present in ${refLocale})` });
         }
@@ -172,6 +179,8 @@ function buildTranslationLintInfos(appPath: string): TranslationYamlLintInfo[] {
             const { domain: d, locale: l } = parseTranslationFilename(f);
             return d === domain && l === loc;
           });
+          /* istanbul ignore next -- the locale keys come from these very
+             files, so the search always finds one. */
           const relFile = translFile ? path.relative(appPath, translFile) : `${domain}.${loc}.yaml`;
           results.push({ file: relFile, domain, locale: loc, issue: 'inconsistent-count', key: `extra: ${key} (missing in ${refLocale})` });
         }
@@ -218,8 +227,9 @@ export function getSymfonyTranslationYamlLintStats(appPath: string): McpToolResu
   try {
     const infos = buildTranslationLintInfos(appPath);
 
-    const counts: Record<string, number> = { 'duplicate-key': 0, 'empty-value': 0, 'nested-conflict': 0, 'inconsistent-count': 0 };
-    for (const info of infos) counts[info.issue] = (counts[info.issue] ?? 0) + 1;
+    const counts: Record<TranslationYamlLintInfo['issue'], number> =
+      { 'duplicate-key': 0, 'empty-value': 0, 'nested-conflict': 0, 'inconsistent-count': 0 };
+    for (const info of infos) counts[info.issue] += 1;
     const filesAffected = new Set(infos.map((i) => i.file)).size;
     const localesAffected = new Set(infos.map((i) => i.locale)).size;
     const domainsAffected = new Set(infos.map((i) => i.domain)).size;
@@ -230,10 +240,10 @@ export function getSymfonyTranslationYamlLintStats(appPath: string): McpToolResu
     text += `Locales affected:     ${localesAffected}\n`;
     text += `Domains affected:     ${domainsAffected}\n\n`;
     text += `By issue type:\n`;
-    text += `  Duplicate keys:     ${counts['duplicate-key'] ?? 0}\n`;
-    text += `  Empty values:       ${counts['empty-value'] ?? 0}\n`;
-    text += `  Inconsistent count: ${counts['inconsistent-count'] ?? 0}\n`;
-    text += `  Nested conflicts:   ${counts['nested-conflict'] ?? 0}\n`;
+    text += `  Duplicate keys:     ${counts['duplicate-key']}\n`;
+    text += `  Empty values:       ${counts['empty-value']}\n`;
+    text += `  Inconsistent count: ${counts['inconsistent-count']}\n`;
+    text += `  Nested conflicts:   ${counts['nested-conflict']}\n`;
 
     return { content: [{ type: 'text', text }] };
   } catch (error) {

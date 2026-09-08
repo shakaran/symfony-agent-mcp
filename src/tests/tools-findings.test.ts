@@ -44560,3 +44560,384 @@ not a key at all
     expect(none.length).toBeGreaterThan(0);
   });
 });
+
+describe('batch 175: security headers, schema registries and payment environments', () => {
+  test('nelmio security configured well in one file and badly in the production one', async () => {
+    const app = appWith('nelmio-two-files', {
+      'config/packages/nelmio_security.yaml': `nelmio_security:
+    content_type:
+        nosniff: true
+    xss_protection:
+        enabled: true
+        mode_block: false
+    frame_options:
+        value: DENY
+    content_security_policy:
+        enforce:
+            default-src: ["'self'"]
+    referrer_policy:
+        enabled: true
+`,
+      'config/packages/dev/nelmio_security.yaml': `nelmio_security:
+    frame_options:
+`,
+      'config/packages/prod/nelmio_security.yaml': `nelmio_security:
+    content_type:
+        nosniff: false
+    xss_protection:
+        enabled: false
+        mode_block: false
+    frame_options:
+        value:
+            ALLOW-FROM: 'https://example.com'
+    csp:
+        report:
+            script-src: ["'self'"]
+    forced_ssl:
+        enabled: false
+    referrer_policy:
+        enabled: false
+`,
+    });
+
+    const text = await runModule('nelmio-security-bundle.js', app);
+
+    expect(text).toContain('frame_options');
+  });
+
+  test('a schema registry on the loopback address, an open one, and schema files with nothing in them', async () => {
+    const app = appWith('kafka-open-registry', {
+      'composer.json': JSON.stringify({
+        require: { 'flix-tech/avro-serde-php': '^1.9' },
+      }, null, 2),
+      '.env': `SCHEMA_REGISTRY_URL=http://127.0.0.1:8081
+KAFKA_SCHEMA_REGISTRY_URL=https://registry.example.com
+`,
+      'src/Kafka/Producer.php': `<?php
+
+namespace App\\Kafka;
+
+use AvroSchema;
+
+class Producer
+{
+    public function schema(): AvroSchema
+    {
+        $serializer = new RecordSerializer($registry, ['compatibility' => 'BACKWARD']);
+
+        return AvroSchema::parse('{"type": "record", "name": "Order"}');
+    }
+}
+`,
+      'schemas/empty.avsc': '{}',
+      'schemas/order.avsc': JSON.stringify({
+        type: 'record',
+        name: 'Order',
+        fields: [{ name: 'id', type: 'string' }],
+      }, null, 2),
+    });
+
+    const text = await runModule('kafka-schema-registry.js', app);
+
+    expect(text).toContain('registry');
+  });
+
+  test('a PayPal integration that names no environment anywhere', async () => {
+    const app = appWith('paypal-no-env', {
+      'composer.json': JSON.stringify({
+        require: { 'paypal/paypal-checkout-sdk': '^1.0' },
+      }, null, 2),
+      '.env': `DATABASE_URL=sqlite:///%kernel.project_dir%/var/data.db
+`,
+      'src/Payment/Checkout.php': `<?php
+
+namespace App\\Payment;
+
+use PayPalCheckoutSdk\\Core\\SandboxEnvironment;
+
+class Checkout
+{
+    public function client(): void
+    {
+        $environment = new SandboxEnvironment('id', 'secret');
+    }
+}
+`,
+    });
+
+    const text = await runModule('paypal-checkout-v2.js', app);
+
+    expect(text).toContain('SandboxEnvironment');
+  });
+
+  test('the SDK required by an application that has no source tree yet', async () => {
+    const app = appWith('paypal-no-src', {
+      'composer.json': JSON.stringify({
+        require: { 'paypal/paypal-checkout-sdk': '^1.0' },
+      }, null, 2),
+    });
+
+    const text = await runModule('paypal-checkout-v2.js', app);
+
+    expect(text).toContain('paypal-checkout-sdk');
+  });
+
+  test('a composer.json that requires nothing, in an application with no src/', async () => {
+    const app = appWith('paypal-no-require', { 'composer.json': '{}' });
+
+    const paypal = await runModule('paypal-checkout-v2.js', app);
+    const kafka = await runModule('kafka-schema-registry.js', app);
+    const icons = await runModule('symfony-twig-ux-icons.js', app);
+
+    expect(paypal.length).toBeGreaterThan(0);
+    expect(kafka.length).toBeGreaterThan(0);
+    expect(icons.length).toBeGreaterThan(0);
+  });
+
+  test('workflows that leave the marking store, the type and the supported class unsaid', async () => {
+    const app = appWith('workflow-marking-bare', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        bare: ~
+        no_store:
+            supports: App\\Entity\\Article
+        single:
+            type: workflow
+            marking_store:
+                type: single_state
+            supports: [App\\Entity\\Order]
+        empty_store:
+            marking_store: {}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-marking.js', app);
+
+    expect(text).toContain('single');
+  });
+
+  test('access control rules with a list, a scalar and nothing at all', async () => {
+    const app = appWith('access-control-shapes', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - ~
+        - { path: ^/admin, roles: [ROLE_ADMIN], methods: [GET, POST], ips: [10.0.0.1] }
+        - { path: ^/profile, roles: ROLE_USER }
+        - { host: legacy.example.com }
+`,
+    });
+
+    const text = await runModule('symfony-access-control.js', app);
+
+    expect(text).toContain('access');
+  });
+
+  test('UX icons with a sprite, a repeated icon, a long list and one call inside a loop', async () => {
+    const app = appWith('ux-icons-sprite', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/ux-icons': '^2.0' },
+      }, null, 2),
+      'config/packages/ux_icons.yaml': `ux_icons:
+    icon_sets:
+        tabler:
+            path: '%kernel.project_dir%/assets/icons'
+    fallback_icon:
+        name: 'tabler:help'
+    sprite: true
+`,
+      'templates/gallery.html.twig': `<div>
+${Array.from({ length: 12 }, (_, i) => `    <twig:UX:Icon name="tabler:icon-${i}" aria-hidden="true" />`).join('\n')}
+    <twig:UX:Icon name="tabler:icon-0" aria-hidden="true" />
+</div>
+`,
+      'templates/loop.html.twig': `{% for item in items %}
+    {{ ux_icon('tabler:star', {'aria-hidden': 'true'}) }}
+{% endfor %}
+{% component 'ux:icon' with {name: 'tabler:star'} %}{% endcomponent %}
+{% component 'ux:icon' with {name: 'tabler:star'} %}{% endcomponent %}
+`,
+    });
+
+    const text = await runModule('symfony-twig-ux-icons.js', app);
+
+    expect(text).toContain('tabler');
+  });
+});
+
+describe('batch 176: parameters, plural catalogues and parallel workflows', () => {
+  test('parameters repeated across files, one with no value, and an env reference the pattern cannot read', async () => {
+    const app = appWith('di-parameter-shapes', {
+      'config/services.yaml': `parameters:
+    app.name: 'Test'
+    app.empty: ~
+    app.locales: ['en', 'es']
+    app.secret: '%env(resolve:APP_SECRET)%'
+`,
+      'config/services_prod.yml': `services:
+    _defaults:
+        autowire: true
+`,
+      'src/Service/notes.txt': 'Not PHP.\n',
+      'config/services_test.yaml': `parameters:
+    app.name: 'Test again'
+    app.only_in_test: 1
+`,
+      'src/Service/Reader.php': `<?php
+
+namespace App\\Service;
+
+class Reader
+{
+    public function name(): string
+    {
+        return '%app.name%';
+    }
+}
+`,
+      'src/functions.php': `<?php
+
+// Holds a %app.name% reference and declares no type of its own.
+function app_name(): string
+{
+    return 'app.name';
+}
+`,
+    });
+
+    const text = await runModule('di-parameters.js', app, ['app']);
+
+    expect(text).toContain('app.name');
+  });
+
+  test('a catalogue with a commented value, and more duplicates than the report prints', async () => {
+    const duplicates = Array.from({ length: 22 }, (_, i) => `dup_${i}: One\ndup_${i}: Two`).join('\n');
+    const app = appWith('yaml-lint-many-duplicates', {
+      'translations/messages.en.yaml': `${duplicates}
+title: # left for the translator
+- a list item, which is not a key
+`,
+      'translations/nested/messages.pt.yaml': `title: Titulo
+`,
+    });
+
+    const text = await runModule('symfony-translation-yaml-lint.js', app);
+
+    expect(text).toContain('DUPLICATE-KEY');
+  });
+
+  test('plural keys that agree across locales, a commented one, and more mismatches than fit', async () => {
+    const wrong = Array.from({ length: 18 }, (_, i) => `count_${i}: 'one|two|many'`).join('\n');
+    const app = appWith('plural-many-issues', {
+      'translations/messages.en.yaml': `agreed: 'one apple|%count% apples'
+mixed: 'one|two'
+${wrong}
+# commented: 'one|two'
+`,
+      'translations/messages.de.yaml': `agreed: 'ein Apfel|%count% Aepfel'
+mixed: 'eins|zwei|drei'
+`,
+      'translations/nested/messages.it.yaml': `agreed: 'una mela|%count% mele'
+`,
+      'translations/messages.fr.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+  <file source-language="en" target-language="fr" datatype="plaintext">
+    <body>
+      <trans-unit id="1"><source>apples</source><target>une pomme|%count% pommes</target></trans-unit>
+      <trans-unit id="2"><source>title</source><target>Titre</target></trans-unit>
+    </body>
+  </file>
+</xliff>
+`,
+    });
+
+    const clean = appWith('plural-agreed', {
+      'translations/messages.en.yaml': `apples: 'one apple|%count% apples'
+`,
+      'translations/messages.es.yaml': `apples: 'una manzana|%count% manzanas'
+`,
+    });
+
+    const text = await runModule('symfony-translation-plurals.js', app);
+    const quiet = await runModule('symfony-translation-plurals.js', clean);
+
+    expect(text).toContain('plural');
+    expect(quiet.length).toBeGreaterThan(0);
+  });
+
+  test('a parallel workflow that joins its branches, one with no split, and one whose transitions are inline', async () => {
+    const app = appWith('workflow-parallel-shapes', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        shipping:
+            type: workflow
+            marking_store:
+                type: multiple_state
+            supports:
+                - App\\Entity\\Order
+            places:
+                - start
+                - packed
+                - invoiced
+                - done
+            transitions:
+                split:
+                    from: start
+                    to: [packed, invoiced]
+                    guard: "is_fully_authenticated()"
+                join:
+                    from: [packed, invoiced]
+                    to: done
+                    guard: "packed and invoiced"
+                orphan:
+                    to: done
+                dead_end:
+                    from: packed
+        simple:
+            type: state_machine
+            places:
+                - draft
+                - published
+            transitions:
+                publish:
+                    from: draft
+                    to: published
+        linear:
+            type: workflow
+            marking_store:
+                type: multiple_state
+            places:
+                - one
+                - two
+            transitions:
+                advance:
+                    from: one
+                    to: two
+        unjoined:
+            type: workflow
+            marking_store:
+                type: multiple_state
+            places:
+                - root
+                - left
+                - right
+            transitions:
+                fork:
+                    from: root
+                    to: [left, right]
+        inline:
+            type: workflow
+            places:
+                - a
+                - b
+            transitions:
+                move: {from: a, to: b}
+`,
+    });
+
+    const text = await runModule('symfony-workflow-parallel-transitions.js', app);
+
+    expect(text).toContain('shipping');
+    expect(text).toContain('unjoined');
+    expect(text).toContain('no synchronization transition joins all branches');
+  });
+});

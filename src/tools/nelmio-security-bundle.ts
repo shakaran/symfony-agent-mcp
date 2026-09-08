@@ -14,8 +14,25 @@ interface NelmioSecurityInfo {
 function extractYamlBool(content: string, key: string): boolean | null {
   const re = new RegExp(`${key}\\s*:\\s*(true|false)`);
   const m = re.exec(content);
-  if (!m) return null;
-  return m[1] === 'true';
+  if (m) return m[1] === 'true';
+
+  // The flag is as often written under the section it belongs to, which is
+  // how the bundle's own documentation writes it:
+  //   forced_ssl:
+  //       enabled: false
+  const lines = content.split('\n');
+  const header = new RegExp(`^\\s*${key}\\s*:\\s*$`);
+  const start = lines.findIndex((line) => header.test(line));
+  if (start === -1) return null;
+
+  const indent = lines[start].length - lines[start].trimStart().length;
+  for (const line of lines.slice(start + 1)) {
+    if (!line.trim()) continue;
+    if (line.length - line.trimStart().length <= indent) break;
+    const nested = /^\s*enabled\s*:\s*(true|false)\s*$/.exec(line);
+    if (nested) return nested[1] === 'true';
+  }
+  return null;
 }
 
 function extractYamlValue(content: string, key: string): string | null {

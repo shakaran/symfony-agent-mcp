@@ -107,7 +107,10 @@ function extractWorkflowsFromYaml(filePath: string, base: string): WorkflowParal
     const transSection = /transitions:\s*\n([\s\S]+?)(?=\n\s{4}\w|\n\w|(?![\s\S]))/m.exec(section);
     if (!transSection) continue;
 
-    const transContent = transSection[1];
+    // Splitting the file into sections drops the newline that separated them,
+    // so the last line of every workflow but the last one is not there for the
+    // body pattern below to take: the "to:" of its final transition was lost.
+    const transContent = `${transSection[1]}\n`;
 
     // Find each transition
     // The body is every line indented deeper than the name itself: taking any

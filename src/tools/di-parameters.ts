@@ -51,8 +51,8 @@ function maskValue(value: string, sensitive: boolean): string {
 
 function flattenParameters(
   obj: Record<string, unknown>,
-  prefix: string = '',
-  source: string = ''
+  prefix: string,
+  source: string
 ): DiParameter[] {
   const params: DiParameter[] = [];
 
