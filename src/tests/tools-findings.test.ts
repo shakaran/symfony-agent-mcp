@@ -45432,3 +45432,405 @@ class Lonely
     expect(lonely).toContain('Lonely');
   });
 });
+
+describe('batch 179: schema managers, entity graphs, transports and hashers', () => {
+  test('a schema manager that creates, drops and alters tables, with no migrations beside it', async () => {
+    const app = appWith('dbal-schema-manager-usage', {
+      'src/Service/SchemaTool.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class SchemaTool
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function rebuild(): void
+    {
+        $manager = $this->connection->createSchemaManager();
+        $manager->createTable($table);
+        $manager->alterTable($diff);
+        $manager->dropTable('legacy_sessions');
+    }
+}
+`,
+    });
+
+    const platformOnly = appWith('dbal-schema-platform-only', {
+      'src/Service/PlatformReader.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class PlatformReader
+{
+    public function name(Connection $connection): string
+    {
+        return $connection->getDatabasePlatform()->getName();
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-schema-manager.js', platformOnly)).toContain('PlatformReader');
+
+    const alterOnly = appWith('dbal-schema-alter-only', {
+      'src/Service/ColumnTool.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class ColumnTool
+{
+    public function widen($manager, $diff): void
+    {
+        $manager->alterTable($diff);
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-schema-manager.js', alterOnly)).toContain('ColumnTool');
+
+    const text = await runModule('doctrine-dbal-schema-manager.js', app);
+
+    expect(text).toContain('SchemaTool');
+  });
+
+  test('entity associations written in every spelling, with inheritance four deep', async () => {
+    const app = appWith('entity-graph-shapes', {
+      'src/Entity/Marker.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+interface Marker
+{
+}
+`,
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Article
+{
+    #[ORM\\ManyToOne(targetEntity = 'App\\Entity\\User')]
+    private $author;
+
+    #[ORM\\ManyToOne(inversedBy: 'articles')]
+    private $section;
+
+    #[ORM\\OneToOne(inversedBy: 'article', targetEntity: Metadata::class)]
+    private $metadata;
+
+    #[ORM\\ManyToMany(targetEntity: Tag::class, inversedBy: 'articles')]
+    private $tags;
+
+    #[ORM\\OneToMany(mappedBy: 'article', targetEntity: Comment::class)]
+    private $comments;
+}
+`,
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Category
+{
+    // Nesting is bounded by the level column.
+    #[ORM\\ManyToOne(targetEntity: Category::class, inversedBy: 'children')]
+    private $parent;
+
+    #[ORM\\Column]
+    private int $level = 0;
+}
+`,
+      'src/Entity/Deep.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\InheritanceType('JOINED')]
+class Level1
+{
+    #[ORM\\ManyToOne(targetEntity: Article::class)]
+    private $article;
+}
+
+class Level2 extends Level1
+{
+}
+
+class Level3 extends Level2
+{
+}
+
+class Level4 extends Level3
+{
+}
+
+class Level5 extends Level4
+{
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-graph.js', app, ['Article']);
+
+    expect(text).toContain('Article');
+  });
+
+  test('messenger transports given as an object with no DSN, and a message class with no namespace', async () => {
+    const app = appWith('messenger-object-transport', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            no_dsn:
+                retry_strategy:
+                    max_retries: 3
+            not_a_transport: 42
+            custom: 'in-memory'
+        routing:
+            'App\\Message\\AnExtremelyLongMessageClassNameForTheReport': no_dsn
+`,
+      'src/Message/Loose.php': `<?php
+
+use Symfony\\Component\\Messenger\\Attribute\\AsMessage;
+
+#[AsMessage]
+class Loose
+{
+}
+`,
+    });
+
+    const text = await runModule('messenger.js', app);
+
+    expect(text).toContain('no_dsn');
+  });
+
+  test('monolog handlers with no type, a single channel and an unknown kind', async () => {
+    const app = appWith('monolog-handler-shapes', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        no_type:
+            path: '%kernel.logs_dir%/app.log'
+            channels: '!event'
+        exotic:
+            type: quokka
+            path: 'udp://localhost:1234'
+        bare_fingers:
+            type: fingers_crossed
+`,
+    });
+
+    const text = await runModule('monolog.js', app);
+
+    expect(text).toContain('no_type');
+    expect(text).toContain('quokka');
+  });
+
+  test('notifier transports under each key, and DSNs that no URL parser accepts', async () => {
+    const texter = appWith('notifier-texter-only', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        texter_transports:
+            twilio: 'twilio://SID:TOKEN@default?from=FROM'
+            unparseable: 'http://[invalid'
+            unknown_proto: 'quokka://token@default'
+            unresolved: '%env(NOTIFIER_DSN)%'
+        channel_policy:
+            urgent: 'sms'
+`,
+    });
+    const plain = appWith('notifier-plain-transports', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        transports:
+            slack: 'slack://TOKEN@default?channel=general'
+`,
+    });
+    const emailOnly = appWith('notifier-email-only', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        email_transports:
+            main: 'smtp://localhost'
+`,
+    });
+
+    expect(await runModule('notifier.js', texter)).toContain('twilio');
+    expect(await runModule('notifier.js', plain)).toContain('slack');
+    expect((await runModule('notifier.js', emailOnly)).length).toBeGreaterThan(0);
+  });
+
+  test('password hashers of every kind, including one given as a bare string', async () => {
+    const app = appWith('password-hasher-shapes', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        App\\Entity\\User:
+            algorithm: auto
+            migrate_from: sha256
+        App\\Entity\\Admin:
+            algorithm: bcrypt
+            cost: 15
+            migrate_from: [md5, sha1]
+        App\\Entity\\Legacy: ~
+        App\\Entity\\Odd:
+            algorithm: pbkdf2
+        App\\Entity\\Tuned:
+            cost: 13
+        App\\Entity\\Argon:
+            algorithm: argon2i
+`,
+    });
+
+    const text = await runModule('password-hashers.js', app);
+
+    expect(text).toContain('pbkdf2');
+  });
+
+  test('DNF and intersection types under three different PHP requirements', async () => {
+    const files = {
+      'src/Service/Types.php': `<?php
+
+namespace App\\Service;
+
+class Types
+{
+    /**
+     * @param (Countable&Traversable)|null $items
+     */
+    public function documented((Countable&Traversable)|null $items): void
+    {
+    }
+
+    public function undocumented((Countable&ArrayAccess)|null $items): void
+    {
+    }
+
+    public function intersection(Countable&Traversable $items): void
+    {
+    }
+
+    public function bitwise(): int
+    {
+        return ($this->flags & 0xFF) | 0x100;
+    }
+}
+`,
+    };
+    const low = appWith('dnf-php-80', {
+      ...files,
+      'composer.json': JSON.stringify({ require: { php: '>=8.0' } }, null, 2),
+    });
+    const caret = appWith('dnf-php-caret', {
+      ...files,
+      'composer.json': JSON.stringify({ require: { php: '^8.1' } }, null, 2),
+    });
+    const none = appWith('dnf-php-unset', {
+      ...files,
+      'composer.json': JSON.stringify({ require: {} }, null, 2),
+    });
+
+    expect(await runModule('php-dnf-types.js', low)).toContain('8.2');
+    expect(await runModule('php-dnf-types.js', caret)).toContain('8.2');
+    expect(await runModule('php-dnf-types.js', none)).toContain('8.2');
+  });
+
+  test('deserialisation whose input comes from a line above, and some that comes from nowhere', async () => {
+    const app = appWith('object-injection-context', {
+      'src/Service/Unpacker.php': `<?php
+
+namespace App\\Service;
+
+class Unpacker
+{
+    public function fromRequest(): void
+    {
+        $raw = $_POST['payload'];
+        $data = igbinary_unserialize($raw);
+        $more = msgpack_unpack($raw);
+    }
+
+    public function fromCache(string $blob): void
+    {
+        $data = igbinary_unserialize($blob);
+        $more = msgpack_unpack($blob);
+    }
+
+    public function decode(string $json): void
+    {
+        $object = json_decode($json, false);
+    }
+}
+`,
+      'src/Service/Other.php': `<?php
+
+namespace App\\Service;
+
+class Other
+{
+    public function fromRequest(): void
+    {
+        $raw = $_GET['payload'];
+        $data = igbinary_unserialize($raw);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-object-injection.js', app);
+
+    expect(text).toContain('igbinary');
+  });
+
+  test('a PDO transaction with no try and no rollback', async () => {
+    const app = appWith('pdo-no-rollback', {
+      'src/Service/Ledger.php': `<?php
+
+namespace App\\Service;
+
+use PDO;
+
+class Ledger
+{
+    public function post(PDO $pdo): void
+    {
+        $pdo->beginTransaction();
+        $pdo->exec('INSERT INTO entries VALUES (1)');
+        $pdo->commit();
+    }
+
+    public function postSafely(PDO $pdo): void
+    {
+        try {
+            $pdo->beginTransaction();
+            $pdo->exec('INSERT INTO entries VALUES (2)');
+            $pdo->commit();
+        } catch (\\Throwable $e) {
+            $pdo->rollBack();
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-pdo-patterns.js', app);
+
+    expect(text).toContain('Ledger');
+  });
+});

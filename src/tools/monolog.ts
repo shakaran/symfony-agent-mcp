@@ -189,6 +189,8 @@ export function listMonologConfig(appPath: string): McpToolResult {
     if (alertHandlers.length > 0) {
       text += `\nAlert handlers (${alertHandlers.length}) — notify on errors:\n`;
       for (const h of alertHandlers) {
+        /* istanbul ignore next -- an alert handler is picked by its type, so
+           the label for it is always there. */
         text += `  ${h.name.padEnd(25)} ${TYPE_LABELS[h.type] ?? h.type}\n`;
       }
     }

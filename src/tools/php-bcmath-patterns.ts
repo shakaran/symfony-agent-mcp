@@ -105,6 +105,7 @@ function analyseFile(content: string, relFile: string): BcmathPatternInfo[] {
       const strippedLine = line.replace(/bc(?:add|sub|mul|div|mod|sqrt|pow|comp|scale)\s*\([^)]{0,200}\)/g, '');
       const hasNativeFloat = /\$[a-zA-Z_]\w{0,50}\s*[*+/-]\s*\$[a-zA-Z_]\w{0,50}|\$[a-zA-Z_]\w{0,50}\s*[*+/-]\s*[\d.]|[\d.]\s*[*+/-]\s*\$[a-zA-Z_]\w{0,50}/.test(strippedLine);
       if (hasNativeFloat) {
+        /* istanbul ignore next -- the guard above is the same search. */
         const foundFn = BC_FUNCTIONS.find((fn) => line.includes(fn + '(')) ?? 'bcmath';
         infos.push({ file: relFile, line: i + 1, fn: foundFn, issue: 'mixed-float-bcmath: native float arithmetic operator used on same line as bcmath function — mixing float and bcmath loses arbitrary-precision guarantees; use bcmath for all operations on the same variable' });
       }
@@ -181,7 +182,9 @@ export function getPhpBcmathPatternsStats(appPath: string): McpToolResult {
     };
     for (const info of infos) {
       const key = info.issue.split(':')[0];
-      if (key in countByIssue) countByIssue[key] = (countByIssue[key] ?? 0) + 1;
+      /* istanbul ignore else -- every issue is written with one of these
+         six prefixes. */
+      if (key in countByIssue) countByIssue[key]! += 1;
     }
 
     const filesAffected = new Set(infos.map((i) => i.file)).size;
@@ -190,12 +193,12 @@ export function getPhpBcmathPatternsStats(appPath: string): McpToolResult {
     text += `Total findings:                  ${infos.length}\n`;
     text += `Files affected:                  ${filesAffected}\n\n`;
     text += `By issue type:\n`;
-    text += `  missing-bcscale:               ${countByIssue['missing-bcscale'] ?? 0}\n`;
-    text += `  bcdiv-no-zero-check:           ${countByIssue['bcdiv-no-zero-check'] ?? 0}\n`;
-    text += `  large-bcscale:                 ${countByIssue['large-bcscale'] ?? 0}\n`;
-    text += `  bccomp-usage (info):           ${countByIssue['bccomp-usage'] ?? 0}\n`;
-    text += `  number_format-precision-loss:  ${countByIssue['number_format-precision-loss'] ?? 0}\n`;
-    text += `  mixed-float-bcmath:            ${countByIssue['mixed-float-bcmath'] ?? 0}\n\n`;
+    text += `  missing-bcscale:               ${countByIssue['missing-bcscale']}\n`;
+    text += `  bcdiv-no-zero-check:           ${countByIssue['bcdiv-no-zero-check']}\n`;
+    text += `  large-bcscale:                 ${countByIssue['large-bcscale']}\n`;
+    text += `  bccomp-usage (info):           ${countByIssue['bccomp-usage']}\n`;
+    text += `  number_format-precision-loss:  ${countByIssue['number_format-precision-loss']}\n`;
+    text += `  mixed-float-bcmath:            ${countByIssue['mixed-float-bcmath']}\n\n`;
     text += `By function:\n`;
     for (const [fn, count] of Object.entries(countByFn)) {
       text += `  ${fn}:${' '.repeat(Math.max(1, 22 - fn.length))}${count}\n`;

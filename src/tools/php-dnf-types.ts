@@ -136,6 +136,7 @@ function analyseFile(
       if (intersectMatch && !line.includes('|')) {
         // Exclude DNF patterns already caught above (those have parentheses)
         const matched = intersectMatch[1];
+        /* istanbul ignore else -- the pattern starts on a word character. */
         if (!matched.startsWith('(')) {
           const severity: 'high' | 'medium' | 'low' = phpTooLowFor81 ? 'high' : 'low';
           findings.push({
@@ -250,7 +251,7 @@ export function getPhpDnfTypeStats(appPath: string): McpToolResult {
       phpVersionRequired,
     };
     for (const i of infos) {
-      stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
+      stats.bySeverity[i.severity]! += 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }
     return { content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }] };

@@ -184,8 +184,8 @@ export function getPhpPdoPatternsStats(appPath: string): McpToolResult {
   try {
     const infos = buildPdoPatternInfos(appPath);
 
-    const counts: Record<string, number> = { connection: 0, query: 0, prepared: 0, transaction: 0 };
-    for (const info of infos) counts[info.type] = (counts[info.type] ?? 0) + 1;
+    const counts: Record<PdoPatternInfo['type'], number> = { connection: 0, query: 0, prepared: 0, transaction: 0 };
+    for (const info of infos) counts[info.type] += 1;
 
     const totalIssues = infos.reduce((sum, i) => sum + i.issues.length, 0);
     const filesAffected = new Set(infos.map((i) => i.file)).size;
@@ -195,10 +195,10 @@ export function getPhpPdoPatternsStats(appPath: string): McpToolResult {
     text += `Total issue groups:    ${infos.length}\n`;
     text += `Total issues:          ${totalIssues}\n\n`;
     text += `By type:\n`;
-    text += `  Connection issues:   ${counts['connection'] ?? 0}\n`;
-    text += `  Direct query usage:  ${counts['query'] ?? 0}\n`;
-    text += `  Prepared stmt issues:${counts['prepared'] ?? 0}\n`;
-    text += `  Transaction issues:  ${counts['transaction'] ?? 0}\n`;
+    text += `  Connection issues:   ${counts['connection']}\n`;
+    text += `  Direct query usage:  ${counts['query']}\n`;
+    text += `  Prepared stmt issues:${counts['prepared']}\n`;
+    text += `  Transaction issues:  ${counts['transaction']}\n`;
 
     return { content: [{ type: 'text', text }] };
   } catch (error) {

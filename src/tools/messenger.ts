@@ -217,6 +217,7 @@ function detectTransportType(dsn: string): string {
   if (dsn.startsWith('kafka://')) return 'Kafka';
   if (dsn.startsWith('in-memory://')) return 'In-Memory';
   if (dsn.startsWith('null://')) return 'Null (disabled)';
+  /* istanbul ignore next -- split never returns an empty array. */
   return dsn.split('://')[0] ?? 'custom';
 }
 
