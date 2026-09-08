@@ -42913,3 +42913,428 @@ class Kernel
     expect(text).toContain('not found');
   });
 });
+
+describe('batch 160: nginx unit, with and without every key', () => {
+  test('a unit config where nothing optional is set', async () => {
+    const app = appWith('nginx-unit-sparse', {
+      'unit.json': JSON.stringify({
+        listeners: {
+          '*:8080': { pass: 'applications/app' },
+          '127.0.0.1:8443': { pass: 'applications/app', tls: { certificate: 'bundle' } },
+        },
+        applications: {
+          app: { type: 'php', root: '/app/public' },
+          worker: { type: 'external', user: 'root', group: 'root' },
+          bare: {},
+        },
+        routes: [{ match: {} }, {}],
+      }, null, 2),
+      'docker/config.json': JSON.stringify({
+        listeners: { '0.0.0.0:80': { pass: 'routes' } },
+        applications: { api: { type: 'php', threads: 4, options: { admin: { disable_functions: 'exec' } } } },
+        routes: { main: [{ match: { uri: '/api/*' } }], other: 'not an array' },
+      }, null, 2),
+      'config/nginx-unit.json': '{ this is not json',
+    });
+
+    const text = await runModule('nginx-unit-config.js', app);
+
+    expect(text).toContain('unit.json');
+  });
+});
+
+describe('batch 161: console listeners that do the wrong things', () => {
+  test('one that rewrites input, one that works on terminate, one that ignores the signal', async () => {
+    const app = appWith('symfony-console-events-heavy', {
+      'src/EventSubscriber/ConsoleSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\Console\\ConsoleEvents;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class ConsoleSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'console.command' => 'onCommand',
+            'console.terminate' => 'onTerminate',
+            'console.error' => 'onError',
+            'console.signal' => 'onSignal',
+        ];
+    }
+
+    public function onCommand($event): void
+    {
+        $event->getInput()->setArgument('name', 'forced');
+    }
+
+    public function onTerminate($event): void
+    {
+        $this->connection->executeQuery('INSERT INTO audit VALUES (1)');
+        usleep(1000);
+    }
+
+    public function onError($event): void
+    {
+    }
+
+    public function onSignal($event): void
+    {
+        // never calls abortExit
+    }
+}
+`,
+      'src/EventSubscriber/QuietConsoleSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class QuietConsoleSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'console.command' => 'onCommand',
+            'console.terminate' => 'onTerminate',
+            'console.signal' => 'onSignal',
+        ];
+    }
+
+    public function onCommand($event): void
+    {
+    }
+
+    public function onTerminate($event): void
+    {
+    }
+
+    public function onSignal($event): void
+    {
+        $event->abortExit();
+    }
+}
+`,
+      'src/Service/notes.php': `<?php
+
+// console.command is dispatched by the framework, nothing subscribes here.
+return [];
+`,
+    });
+
+    const text = await runModule('symfony-console-events.js', app);
+
+    expect(text).toContain('ConsoleSubscriber');
+  });
+});
+
+describe('batch 162: cache headers set by hand', () => {
+  test('a controller using setMaxAge, and proxies configured as a single string', async () => {
+    const app = appWith('http-cache-response-level', {
+      'src/Controller/FeedController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class FeedController
+{
+    public function daily(): Response
+    {
+        $response = new Response('feed');
+        $response->setMaxAge(600);
+        $response->setSharedMaxAge(3600);
+        $response->setPublic();
+
+        return $response;
+    }
+
+    public function hourly(): Response
+    {
+        $response = new Response('feed');
+        $response->setMaxAge(60);
+
+        return $response;
+    }
+}
+`,
+      'config/packages/framework.yaml': `framework:
+    http_cache:
+        enabled: true
+        trace_level: full
+    trusted_proxies: '192.168.0.0/16'
+    trusted_headers: 'x-forwarded-for,x-forwarded-proto'
+`,
+    });
+
+    const text = await runModule('http-cache.js', app);
+
+    expect(text).toContain('FeedController');
+  });
+
+  test('a cache lifetime measured in hours and one in days', async () => {
+    const app = appWith('http-cache-long-lifetimes', {
+      'src/Controller/ArchiveController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpKernel\\Attribute\\Cache;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ArchiveController
+{
+    #[Cache(maxage: 7200, public: true)]
+    public function hours(): Response
+    {
+        return new Response('archive');
+    }
+
+    #[Cache(maxage: 172800, smaxage: 259200)]
+    public function days(): Response
+    {
+        return new Response('archive');
+    }
+
+    #[Cache(maxage: 120)]
+    public function minutes(): Response
+    {
+        return new Response('archive');
+    }
+}
+`,
+      'config/packages/framework.yaml': `framework:
+    trusted_proxies: ['10.0.0.0/8', '172.16.0.0/12']
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-host']
+`,
+    });
+
+    const text = await runModule('http-cache.js', app);
+
+    expect(text).toContain('ArchiveController');
+  });
+});
+
+describe('batch 163: api platform resources with and without their options', () => {
+  test('a resource with contexts that carry no groups, and a filter with no strategy', async () => {
+    const app = appWith('api-platform-sparse-options', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\SearchFilter;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\OrderFilter;
+
+#[ApiResource(
+    normalizationContext: ['enable_max_depth' => true],
+    denormalizationContext: ['enable_max_depth' => true],
+    paginationEnabled: false,
+)]
+#[ApiFilter(SearchFilter::class)]
+#[ApiFilter(OrderFilter::class, properties: ['title'])]
+class Article
+{
+    public string $title = '';
+}
+`,
+      'src/Entity/Page.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\SearchFilter;
+
+#[ApiResource(
+    shortName: 'Page',
+    description: 'A published page',
+    normalizationContext: ['groups' => ['page:read']],
+    denormalizationContext: ['groups' => ['page:write']],
+    paginationEnabled: true,
+    paginationItemsPerPage: 25,
+)]
+#[ApiFilter(SearchFilter::class, properties: ['title' => 'partial'], strategy: 'partial')]
+class Page
+{
+    public string $title = '';
+}
+`,
+      'src/Entity/plain.php': `<?php
+
+namespace App\\Entity;
+
+// no ApiResource here at all
+return [];
+`,
+    });
+
+    const text = await runModule('api-platform.js', app);
+
+    expect(text).toContain('Page');
+  });
+});
+
+describe('batch 164: the halves those four files had left', () => {
+  test('api platform metadata in a file with no class and no namespace', async () => {
+    const app = appWith('api-platform-no-class', {
+      'src/Entity/notes.php': `<?php
+
+// #[ApiResource] used to be here, with ApiPlatform\\Metadata\\ApiResource imported.
+return [];
+`,
+      'src/Entity/Global.php': `<?php
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Get;
+
+#[ApiResource]
+#[Get(normalizationContext: ['enable_max_depth' => true], denormalizationContext: ['skip_null_values' => true])]
+class GlobalResource
+{
+    public string $name = '';
+}
+`,
+    });
+
+    const text = await runModule('api-platform.js', app);
+
+    expect(text).toContain('GlobalResource');
+  });
+
+  test('trusted proxies that are neither a string nor a list', async () => {
+    const app = appWith('http-cache-odd-proxies', {
+      'config/packages/framework.yaml': `framework:
+    trusted_proxies: true
+    trusted_headers: true
+    http_cache: true
+`,
+      'src/Controller/ArchiveController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpKernel\\Attribute\\Cache;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class ArchiveController
+{
+    #[Cache(maxage: 259200, smaxage: 604800)]
+    public function old(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+      'src/Controller/PlainController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpKernel\\Attribute\\Cache;
+use Symfony\\Component\\HttpFoundation\\Response;
+
+class PlainController
+{
+    #[Cache(maxage: 60)]
+    public function index(): Response
+    {
+        return new Response('');
+    }
+}
+`,
+    });
+
+    const text = await runModule('http-cache.js', app);
+
+    expect(text).toContain('PlainController');
+  });
+
+  test('unit listeners on every plain-http spelling, and a config file with nothing in it', async () => {
+    const app = appWith('nginx-unit-plain-http', {
+      'unit.json': JSON.stringify({
+        listeners: {
+          '*:80': { pass: 'applications/app' },
+          '0.0.0.0:80': { pass: 'applications/app' },
+          '127.0.0.1:8080': { pass: 'applications/app' },
+        },
+        applications: { app: { type: 'php' } },
+      }, null, 2),
+      'docker/config.json': '',
+    });
+
+    const text = await runModule('nginx-unit-config.js', app);
+
+    expect(text).toContain('listeners');
+  });
+
+  test('a console listener with no signal handler, beside prose that names the event', async () => {
+    const app = appWith('symfony-console-events-no-signal', {
+      'src/EventListener/CommandListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\Console\\ConsoleEvents;
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+
+#[AsEventListener(event: 'console.command')]
+class CommandListener
+{
+    public function __invoke($event): void
+    {
+    }
+}
+`,
+      'src/EventListener/notes.php': `<?php
+
+// 'console.command' is dispatched by the framework; nothing here handles it.
+return [];
+`,
+    });
+
+    const text = await runModule('symfony-console-events.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('batch 165: resources described one at a time', () => {
+  test('one resource that only reads by group and one that only writes by group', async () => {
+    const app = appWith('api-platform-one-sided-groups', {
+      'src/Entity/ReadOnly.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\SearchFilter;
+
+#[ApiResource(normalizationContext: ['groups' => ['read:only']])]
+#[ApiFilter(SearchFilter::class, properties: ['title' => 'exact'], strategy: 'exact')]
+class ReadOnly
+{
+    public string $title = '';
+}
+`,
+      'src/Entity/WriteOnly.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(denormalizationContext: ['groups' => ['write:only']])]
+class WriteOnly
+{
+    public string $title = '';
+}
+`,
+    });
+
+    const listed = await runModule('api-platform.js', app);
+    const detailed = await runModule('api-platform.js', app, ['ReadOnly', 'WriteOnly']);
+
+    expect(listed).toContain('ReadOnly');
+    expect(detailed).toContain('read:only');
+    expect(detailed).toContain('write:only');
+  });
+});

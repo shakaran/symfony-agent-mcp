@@ -53,7 +53,8 @@ function buildNginxUnitConfigInfos(appPath: string): NginxUnitConfigInfo[] {
       results.push({ section: `${relFile} > listeners`, key: addr, value: JSON.stringify(listener).slice(0, 200), issue: null });
 
       const hasTls = listener['tls'] !== undefined;
-      if (!hasTls && (addr.includes(':80') || addr.includes(':8080') || addr === '*:80' || addr === '0.0.0.0:80')) {
+      // ':80' already matches ':8080', '*:80' and '0.0.0.0:80'.
+      if (!hasTls && addr.includes(':80')) {
         results.push({
           section: `${relFile} > listeners`,
           key: addr,

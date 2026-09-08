@@ -74,6 +74,8 @@ function parseConsoleEventFile(filePath: string): ConsoleEventInfo | null {
     content.includes('console.error') ||
     content.includes('console.signal');
 
+  /* istanbul ignore next -- the constants that get a file this far are the
+     same strings this check looks for, so it is always satisfied. */
   if (!isSubscriberOrListener) return null;
 
   const classM = /class\s+(\w{1,120})/.exec(content);

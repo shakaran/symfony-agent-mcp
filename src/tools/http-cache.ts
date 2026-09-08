@@ -59,9 +59,15 @@ function getAllPhpFiles(dir: string): string[] {
 
 // ─── Cache attribute parsing ───────────────────────────────────────────────
 
-function parseNumericOption(options: string, key: string): number | undefined {
-  const m = new RegExp(`${key}\\s*:\\s*(\\d+)`).exec(options);
-  return m ? parseInt(m[1], 10) : undefined;
+// Symfony spells the attribute's arguments maxage and smaxage, all lowercase;
+// asking only for the camel-cased names found nothing in real code. The word
+// boundary keeps `maxage` from matching inside `smaxage`.
+function parseNumericOption(options: string, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const m = new RegExp(`\\b${key}\\s*:\\s*(\\d+)`, 'i').exec(options);
+    if (m) return parseInt(m[1], 10);
+  }
+  return undefined;
 }
 
 function parseBoolOption(options: string, key: string): boolean | undefined {
@@ -100,8 +106,8 @@ function parseCacheAttributes(filePath: string): CacheAttribute[] {
       controller,
       action: actionM?.[1] ?? '(unknown)',
       file: path.basename(filePath),
-      maxAge: parseNumericOption(options, 'maxAge'),
-      sharedMaxAge: parseNumericOption(options, 'sharedMaxAge'),
+      maxAge: parseNumericOption(options, 'maxage', 'maxAge'),
+      sharedMaxAge: parseNumericOption(options, 'smaxage', 'sharedMaxAge'),
       isPublic: parseBoolOption(options, 'public'),
       vary: parseVaryOption(options),
       hasLastModified: options.includes('lastModified'),
