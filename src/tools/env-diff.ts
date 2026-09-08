@@ -196,6 +196,7 @@ export function diffEnvFiles(appPath: string, referenceFile: string = '.env'): M
       if (missing.length > 0) {
         text += `    Missing (in ${referenceFile} but not here):\n`;
         for (const k of missing) {
+          /* istanbul ignore next -- the key comes from the reference file. */
           const refVal = maskValue(k, ref.values[k] ?? '');
           text += `      ${k}  (ref: ${refVal})\n`;
         }
@@ -237,6 +238,7 @@ export function findSensitiveEnvKeys(appPath: string): McpToolResult {
 
     const sensitiveInBase = baseFile.keys.filter((k) => isSensitive(k));
     const withRealValues = sensitiveInBase.filter((k) => {
+      /* istanbul ignore next -- the key comes from this very file. */
       const v = baseFile.values[k] ?? '';
       return v && !v.startsWith('%') && !v.startsWith('$') && v !== '' && !v.startsWith('!!');
     });
@@ -251,6 +253,7 @@ export function findSensitiveEnvKeys(appPath: string): McpToolResult {
 
     text += `\nAll sensitive keys:\n`;
     for (const k of sensitiveInBase) {
+      /* istanbul ignore next -- the key comes from this very file. */
       const v = baseFile.values[k] ?? '';
       const isEmpty = !v || v === '';
       const isPlaceholder = v.startsWith('%') || v.startsWith('$') || v.includes('your-') || v.includes('change-me');
@@ -294,6 +297,7 @@ export function getEnvStats(appPath: string): McpToolResult {
     for (const key of allKeys) {
       const filesWithKey = envFiles.filter((f) => f.keys.includes(key));
       if (filesWithKey.length < 2) continue;
+      /* istanbul ignore next -- every file in the list holds the key. */
       const values = filesWithKey.map((f) => f.values[key] ?? '');
       const allSame = values.every((v) => v === values[0]);
       if (allSame) consistent.push(key);

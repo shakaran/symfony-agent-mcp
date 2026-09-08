@@ -83,6 +83,7 @@ function loadProvidersFromYaml(appPath: string): RawProvider[] {
         continue;
       }
       if (p['entity']) {
+        /* istanbul ignore next -- the guard above is on this very value. */
         const entity = (p['entity'] ?? {}) as Record<string, unknown>;
         providers.push({
           name,

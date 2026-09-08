@@ -39,7 +39,7 @@ import { McpToolResult } from '../server.js';
 interface TwigComponent {
   class: string;
   file: string;
-  name?: string;
+  name: string;
   template?: string;
   props: string[];
   hasMountWith: boolean;
@@ -169,17 +169,17 @@ export function listTwigComponents(appPath: string): McpToolResult {
       };
     }
 
-    const compNames = new Set(components.map((c) => c.name ?? c.class));
+    const compNames = new Set(components.map((c) => c.name));
     const usage     = scanComponentUsage(appPath, compNames);
     const totalIssues = components.reduce((s, c) => s + c.issues.length, 0);
 
     let text = `UX Twig Components\n${'='.repeat(55)}\n`;
     text += `\nComponents: ${components.length}  Issues: ${totalIssues}\n`;
 
-    for (const c of components.sort((a, b) => b.issues.length - a.issues.length || (a.name ?? a.class).localeCompare(b.name ?? b.class))) {
-      const usageCount = usage.get(c.name ?? c.class) ?? 0;
+    for (const c of components.sort((a, b) => b.issues.length - a.issues.length || a.name.localeCompare(b.name))) {
+      const usageCount = usage.get(c.name) ?? 0;
       const tplOk  = c.templateExists ? '✓' : '⚠';
-      text += `\n  ${tplOk} ${(c.name ?? c.class).padEnd(30)} props: ${c.props.join(', ') || 'none'}  used: ${usageCount}x\n`;
+      text += `\n  ${tplOk} ${c.name.padEnd(30)} props: ${c.props.join(', ') || 'none'}  used: ${usageCount}x\n`;
       if (c.hasMountWith) text += `    [mount()]\n`;
       for (const issue of c.issues) text += `    ⚠ ${issue}\n`;
     }

@@ -216,10 +216,9 @@ export function auditControllerSecurity(appPath: string): McpToolResult {
       text += `\nControllers with unprotected actions:\n`;
       for (const c of openControllers) {
         const open = c.actions.filter((a) => a.isOpen);
+        // A class-level grant closes every action of the controller, so a
+        // controller listed here has none.
         text += `\n  ${c.class}  (${c.file})\n`;
-        if (c.classGrants.length > 0) {
-          text += `    class-level: ${c.classGrants.join(', ')}\n`;
-        }
         for (const a of open) {
           text += `    ⚠ ${a.action}()  [no #[IsGranted]]\n`;
         }

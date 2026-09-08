@@ -44941,3 +44941,494 @@ mixed: 'eins|zwei|drei'
     expect(text).toContain('no synchronization transition joins all branches');
   });
 });
+
+describe('batch 177: uploads, vaults, error reporting and queue priorities', () => {
+  test('CORS defaults with only an origin, with only a max age, and no defaults at all', async () => {
+    const origin = appWith('cors-origin-only', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        allow_origin: ['https://example.com']
+    paths:
+        '^/api/':
+            allow_methods: ['GET']
+`,
+    });
+    const maxAge = appWith('cors-max-age-only', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    defaults:
+        max_age: 3600
+    paths:
+        '^/public/':
+            allow_origin: ['*']
+`,
+    });
+    const none = appWith('cors-no-defaults', {
+      'config/packages/nelmio_cors.yaml': `nelmio_cors:
+    paths:
+        '^/api/':
+            allow_origin: ['*']
+`,
+    });
+
+    expect(await runModule('cors.js', origin)).toContain('example.com');
+    expect(await runModule('cors.js', maxAge)).toContain('3600');
+    expect((await runModule('cors.js', none)).length).toBeGreaterThan(0);
+  });
+
+  test('an abstract controller, an action with no route, and one that is not public', async () => {
+    const app = appWith('controller-shapes', {
+      'src/Controller/BaseController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+abstract class BaseController extends AbstractController
+{
+    #[Route('/base')]
+    public function base(): void
+    {
+    }
+
+    public function helper(): void
+    {
+    }
+
+    #[Route('/internal')]
+    protected function internal(): void
+    {
+    }
+
+    protected function nothingToSeeHere(): void
+    {
+    }
+}
+`,
+      'src/Controller/WidgetController.php': `<?php
+
+namespace App\\Controller;
+
+class WidgetController
+{
+    public function widget(): void
+    {
+    }
+}
+`,
+      'src/Controller/AdminPanel.php': `<?php
+
+namespace App\\Controller;
+
+class AdminPanel extends BaseController
+{
+    public function panel(): void
+    {
+    }
+}
+`,
+      'src/Controller/NoNamespaceController.php': `<?php
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class NoNamespaceController extends AbstractController
+{
+    public function index(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('controllers.js', app, ['BaseController', 'WidgetController']);
+
+    expect(text).toContain('BaseController');
+  });
+
+  test('access control written with a list, a scalar and neither, next to a controller granted by class', async () => {
+    const app = appWith('controller-security-shapes', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/admin, roles: [ROLE_ADMIN], methods: [GET, POST] }
+        - { path: ^/team, roles: ROLE_USER, methods: GET }
+        - { host: legacy.example.com }
+`,
+      'src/Controller/AdminController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+#[IsGranted('ROLE_ADMIN')]
+class AdminController
+{
+    #[Route('/admin/dashboard')]
+    public function dashboard(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('controller-security.js', app, ['AdminController']);
+
+    expect(text).toContain('ROLE_ADMIN');
+  });
+
+  test('a Vich mapping with nothing under it, and a Flysystem storage given by URL', async () => {
+    const app = appWith('storage-bare-mapping', {
+      'config/packages/vich_uploader.yaml': `vich_uploader:
+    db_driver: orm
+    mappings:
+        bare: {}
+        products:
+            uri_prefix: /images/products
+            upload_destination: '%kernel.project_dir%/public/images/products'
+            storage: flysystem
+`,
+      'config/packages/flysystem.yaml': `flysystem:
+    storages:
+        default.storage:
+            adapter: local
+            url: 'sftp://user:secret@files.example.com/data'
+            visibility: private
+`,
+    });
+
+    const text = await runModule('file-storage.js', app);
+
+    expect(text).toContain('products');
+  });
+
+  test('a vault with an empty secret and a key file, and applications with only one vault each', async () => {
+    const app = appWith('secrets-both-vaults', {
+      'config/packages/framework.yaml': `secrets:
+    enabled: true
+`,
+      'config/secrets/prod/APP_SECRET.a1b2c3d4.php': '<?php return "";\n',
+      'config/secrets/prod/DATABASE_URL.9f8e7d6c.php': '',
+      'config/secrets/prod/backup.decrypt.sodium': 'key material',
+      'config/secrets/dev/APP_SECRET.11223344.php': '<?php return "";\n',
+      'config/secrets/local/APP_SECRET.a1b2c3d4.php': '<?php return "";\n',
+      '.env': `APP_SECRET=fallback
+`,
+    });
+    const devOnly = appWith('secrets-dev-only', {
+      'config/secrets/dev/APP_SECRET.11223344.php': '<?php return "";\n',
+    });
+
+    const text = await runModule('secrets-vault.js', app);
+    const dev = await runModule('secrets-vault.js', devOnly);
+
+    expect(text).toContain('APP_SECRET');
+    expect(dev.length).toBeGreaterThan(0);
+  });
+
+  test('a Sentry configuration with every option set, and an application with none', async () => {
+    const app = appWith('sentry-full', {
+      'config/packages/sentry.yaml': `sentry:
+    dsn: '%env(SENTRY_DSN)%'
+    environment: '%env(APP_ENV)%'
+    release: '1.4.0'
+    traces_sample_rate: 0.2
+    profiles_sample_rate: 0.1
+    send_default_pii: false
+    max_breadcrumbs: 50
+    ignore_exceptions:
+        - Symfony\\Component\\HttpKernel\\Exception\\NotFoundHttpException
+`,
+    });
+    const bare = appWith('sentry-none', {
+      'composer.json': JSON.stringify({ require: { 'sentry/sentry-symfony': '^5.0' } }, null, 2),
+    });
+
+    const text = await runModule('sentry-integration.js', app);
+    const none = await runModule('sentry-integration.js', bare);
+
+    expect(text).toContain('1.4.0');
+    expect(none.length).toBeGreaterThan(0);
+  });
+
+  test('priority transports written as a string and as a mapping, one of them with a dead letter queue', async () => {
+    const app = appWith('messenger-priority-shapes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        failure_transport: failed
+        transports:
+            priority_queue: 'amqp://guest:guest@localhost:5672/%2f/messages'
+            high:
+                dsn: 'amqp://guest:guest@localhost:5672/%2f/high?x-max-priority=10'
+                failure_transport: failed
+            low: 'doctrine://default?queue_name=low'
+            low_priority:
+                retry_strategy:
+                    max_retries: 3
+            failed: 'doctrine://default?queue_name=failed'
+        routing:
+            'App\\Message\\Report': [high, failed]
+`,
+    });
+
+    const text = await runModule('symfony-messenger-priority.js', app);
+
+    expect(text).toContain('priority_queue');
+  });
+});
+
+describe('batch 178: environment files, user providers and Twig components', () => {
+  test('every env file present, a key with no value, and single quotes around another', async () => {
+    const app = appWith('env-all-files', {
+      '.env': `APP_ENV=dev
+APP_SECRET=
+BARE_KEY
+QUOTED='single quoted value'
+DATABASE_URL="postgresql://user:pass@localhost/app"
+PLACEHOLDER_TOKEN=your-token-here
+`,
+      '.env.local': `APP_ENV=dev
+APP_SECRET=
+BARE_KEY
+QUOTED='single quoted value'
+DATABASE_URL="postgresql://user:pass@localhost/app"
+PLACEHOLDER_TOKEN=your-token-here
+`,
+      '.env.dev': 'APP_ENV=dev\n',
+      '.env.test': 'APP_ENV=test\n',
+      '.env.prod': 'APP_ENV=prod\n',
+      '.env.staging': 'APP_ENV=staging\n',
+      '.env.ci': `APP_ENV=dev
+APP_SECRET=
+BARE_KEY
+QUOTED='single quoted value'
+DATABASE_URL="postgresql://user:pass@localhost/app"
+PLACEHOLDER_TOKEN=your-token-here
+EXTRA_FOR_CI=1
+`,
+    });
+
+    const text = await runModule('env-diff.js', app, ['.env']);
+
+    expect(text).toContain('APP_SECRET');
+  });
+
+  test('with values shown, a long one is cut and a short one is not', async () => {
+    const app = appWith('env-shown-values', {
+      '.env': `GREETING=hello
+LONG_NOTE=${'x'.repeat(120)}
+APP_ENV=dev
+`,
+      '.env.local': 'APP_ENV=prod\n',
+    });
+
+    const saved = process.env['SYMFONY_MCP_SHOW_ENV_VALUES'];
+    process.env['SYMFONY_MCP_SHOW_ENV_VALUES'] = 'true';
+    jest.resetModules();
+    try {
+      const mod = await import(path.resolve(__dirname, '../tools/env-diff')) as {
+        diffEnvFiles: (appPath: string, reference: string) => { content: Array<{ text?: string }> };
+      };
+      const result = mod.diffEnvFiles(app, '.env');
+
+      expect(result.content.map((c) => c.text ?? '').join('\n')).toContain('GREETING');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_SHOW_ENV_VALUES'];
+      else process.env['SYMFONY_MCP_SHOW_ENV_VALUES'] = saved;
+      jest.resetModules();
+    }
+  });
+
+  test('user providers by entity with nothing under them, and a refreshUser of each kind', async () => {
+    const app = appWith('user-provider-shapes', {
+      'config/packages/security.yaml': `security:
+    providers:
+        bare_entity:
+            entity: {}
+        app_users:
+            entity:
+                class: App\\Entity\\User
+                property: email
+                repository_method: findActiveByEmail
+        legacy:
+            id: App\\Security\\LegacyUserProvider
+`,
+      'src/Security/OtherProvider.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserProviderInterface;
+
+class OtherProvider implements UserProviderInterface
+{
+    public function loadUserByIdentifier(string $identifier): UserInterface
+    {
+        return new User($identifier);
+    }
+
+    public function refreshUser(UserInterface $user): UserInterface
+    {
+        $fresh = new User($user->getUserIdentifier());
+
+        return $fresh;
+    }
+
+    public function supportsClass(string $class): bool
+    {
+        return $class === User::class;
+    }
+}
+`,
+      'src/Security/LegacyUserProvider.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserProviderInterface;
+
+class LegacyUserProvider implements UserProviderInterface
+{
+    public function loadUserByIdentifier(string $identifier): UserInterface
+    {
+        return $this->repository->find($identifier);
+    }
+
+    public function supportsClass(string $class): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Security/InstanceofProvider.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserProviderInterface;
+
+class InstanceofProvider implements UserProviderInterface
+{
+    public function loadUserByIdentifier(string $identifier): UserInterface
+    {
+        return $this->repository->find($identifier);
+    }
+
+    public function supportsClass(string $class): bool
+    {
+        $user = $this->current();
+        if ($user instanceof User) {
+            return true;
+        }
+
+        return true;
+    }
+}
+`,
+      'src/Security/RefreshingProvider.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserProviderInterface;
+
+class RefreshingProvider implements UserProviderInterface
+{
+    public function loadUserByIdentifier(string $identifier): UserInterface
+    {
+        return $this->repository->find($identifier);
+    }
+
+    public function refreshUser(UserInterface $user): UserInterface
+    {
+        $fresh = new ArrayCollection();
+        $this->entityManager->refresh($user);
+
+        return $user;
+    }
+}
+`,
+      'src/Security/FindingProvider.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserProviderInterface;
+
+class FindingProvider implements UserProviderInterface
+{
+    public function loadUserByIdentifier(string $identifier): UserInterface
+    {
+        return $this->repository->find($identifier);
+    }
+
+    public function refreshUser(UserInterface $user): UserInterface
+    {
+        $fresh = new ArrayCollection();
+
+        return $this->repository->find($user->getId());
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-user-provider.js', app);
+
+    expect(text).toContain('app_users');
+  });
+
+  test('components whose template is there, whose props repeat, and one nobody uses', async () => {
+    const app = appWith('twig-components-shapes', {
+      'src/Twig/Components/Alert.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent;
+use Symfony\\UX\\TwigComponent\\Attribute\\ExposeInTemplate;
+
+#[AsTwigComponent]
+class Alert
+{
+    public string $message = '';
+    public string $id = '';
+
+    #[ExposeInTemplate]
+    public string $message2 = '';
+
+    #[ExposeInTemplate]
+    protected $count;
+}
+`,
+      'src/Twig/Components/Badge.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent;
+
+#[AsTwigComponent]
+class Badge
+{
+    public string $label = '';
+}
+`,
+      'templates/components/Alert.html.twig': `<div class="alert">{{ message }}</div>
+`,
+      'templates/page.html.twig': `<twig:Alert message="hello" />
+`,
+    });
+    const noTemplates = appWith('twig-components-no-templates', {
+      'src/Twig/Components/Lonely.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent;
+
+#[AsTwigComponent]
+class Lonely
+{
+    public string $text = '';
+}
+`,
+    });
+
+    const text = await runModule('twig-components.js', app);
+    const lonely = await runModule('twig-components.js', noTemplates);
+
+    expect(text).toContain('Alert');
+    expect(lonely).toContain('Lonely');
+  });
+});

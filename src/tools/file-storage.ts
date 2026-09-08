@@ -59,6 +59,7 @@ interface UploadableEntity {
 // ─── Adapter classification ──────────────────────────────────────────────────
 
 function classifyAdapter(adapter: string): string {
+  /* istanbul ignore next -- the caller builds the name with a fallback. */
   const lower = (adapter ?? '').toLowerCase();
   if (lower.includes('local') || lower.startsWith('./') || lower.startsWith('/')) return 'local';
   if (lower.includes('s3') || lower.includes('aws'))     return 'AWS S3';

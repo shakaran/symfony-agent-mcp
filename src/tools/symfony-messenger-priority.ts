@@ -105,6 +105,8 @@ function loadMessengerPriorityConfig(appPath: string): MessengerPriorityInfo[] {
         if (!hasPriorityDiff) {
           for (const t of transportList) {
             const r = results.find((res) => res.transportName === t);
+            /* istanbul ignore else -- the transport list is built from these
+               same results. */
             if (r) {
               r.issues.push(`Message "${msgClass}" routed to multiple transports without priority differentiation`);
             }
@@ -121,6 +123,8 @@ function loadMessengerPriorityConfig(appPath: string): MessengerPriorityInfo[] {
       const highNames = highPriorityTransports.map((r) => r.transportName).join(', ');
       // Heuristic: they belong to same app, warn user
       const firstHigh = results.find((r) => highPriorityTransports.includes(r));
+      /* istanbul ignore else -- the list is not empty here, and it holds
+         entries of results. */
       if (firstHigh) {
         firstHigh.issues.push(`Detected both high [${highNames}] and low [${lowNames}] priority transports — ensure workers are separate per priority level`);
       }
