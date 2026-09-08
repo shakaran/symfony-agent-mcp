@@ -242,6 +242,7 @@ export function listContainerTags(appPath: string): McpToolResult {
     if (customTags.length > 0) {
       text += `Custom tags:\n`;
       for (const tag of customTags.sort()) {
+        /* istanbul ignore next -- the tag list comes from the map. */
         const svcs = tagMap.get(tag) ?? [];
         const consumed = consumedTags.has(tag);
         const orphan = !consumed ? '  ⚠ orphan' : '';
@@ -256,6 +257,7 @@ export function listContainerTags(appPath: string): McpToolResult {
     if (builtinUsed.length > 0) {
       text += `\nSymfony built-in tags used on custom classes:\n`;
       for (const tag of builtinUsed.sort()) {
+        /* istanbul ignore next -- the tag list comes from the map. */
         const svcs = tagMap.get(tag) ?? [];
         text += `  ${tag.padEnd(45)} ${svcs.length} service${svcs.length > 1 ? 's' : ''}\n`;
       }

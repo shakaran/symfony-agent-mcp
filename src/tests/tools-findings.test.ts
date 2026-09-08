@@ -43962,6 +43962,7 @@ return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->paths([__DIR__ . '/src']);
     $rectorConfig->sets([
         LevelSetList::UP_TO_PHP_74,
+        DeadCodeSetList::DEAD_CODE,
         SetList::PHP_74,
         LevelSetList::UP_TO_PHP_82,
         SetList::CODE_QUALITY,
@@ -46401,5 +46402,422 @@ class Suppressed
     const text = await runModule('static-analysis.js', app);
 
     expect(text).toContain('baseline');
+  });
+});
+
+describe('batch 181: connections, ini files, tags and clients', () => {
+  test('DBAL connections given by parts, by URL, and replicas with only half of them', async () => {
+    const app = appWith('dbal-connection-parts', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            parts:
+                driver: pdo_pgsql
+                host: db.example.com
+                port: 5432
+                user: app
+                dbname: app
+                replicas:
+                    replica_full:
+                        host: replica.example.com
+                        port: 5433
+                        user: reader
+                        dbname: app
+                    replica_bare:
+                        dbname: app
+            from_url:
+                url: 'postgresql://user:pass@localhost:5432/app'
+            nameless:
+                dbname: app
+`,
+    });
+    const urlOnly = appWith('dbal-url-only', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            only_url:
+                url: 'postgresql://user:pass@localhost:5432/app'
+`,
+    });
+    const oddDriver = appWith('dbal-odd-driver', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            odd:
+                driver: pdo_quokka
+                host: db.example.com
+`,
+    });
+
+    expect(await runModule('dbal-config.js', app)).toContain('replica_full');
+    expect((await runModule('dbal-config.js', urlOnly)).length).toBeGreaterThan(0);
+    expect(await runModule('dbal-config.js', oddDriver)).toContain('pdo_quokka');
+  });
+
+  test('php.ini files with a timezone set, unset and at UTC', async () => {
+    const app = appWith('php-ini-timezones', {
+      'php.ini': `memory_limit = 262144K
+expose_php = 1
+error_reporting = 0
+date.timezone =
+`,
+      '.docker/php.ini': `expose_php = Off
+memory_limit = 268435456
+max_execution_time = 0
+`,
+      'docker/php.ini': `date.timezone = UTC
+log_errors = Off
+`,
+      'config/php/php.ini': `date.timezone = Europe/Madrid
+memory_limit = 512M
+`,
+    });
+
+    const text = await runModule('php-ini-analysis.js', app);
+
+    expect(text).toContain('error_reporting');
+  });
+
+  test('service tags written as a map, as a string, and one with no name at all', async () => {
+    const app = appWith('container-tag-shapes', {
+      'config/services.yaml': `services:
+    App\\Handler\\First:
+        tags:
+            - { name: app.handler, priority: 10 }
+            - 'app.plain'
+    App\\Handler\\Second:
+        tags:
+            - { name: app.handler }
+    App\\Handler\\Nameless:
+        tags:
+            - { priority: 5 }
+            - 42
+`,
+    });
+
+    const builtinOnly = appWith('container-tags-builtin-only', {
+      'config/services.yaml': `services:
+    App\\Listener\\OnRequest:
+        tags:
+            - { name: kernel.event_listener, event: kernel.request }
+`,
+    });
+
+    const text = await runModule('container-tags.js', app);
+
+    expect(await runModule('container-tags.js', builtinOnly)).toContain('kernel.event_listener');
+    expect(text).toContain('app.handler');
+  });
+
+  test('an API resource with no description, a name that repeats itself and a type that is not a URL', async () => {
+    const app = appWith('api-resource-metadata-shapes', {
+      'src/Entity/BookResource.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(types: ['Book'])]
+class BookResource
+{
+}
+`,
+      'src/Entity/Author.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(
+    shortName: 'Author',
+    description: 'A person who writes books',
+    types: ['https://schema.org/Person']
+)]
+class Author
+{
+}
+`,
+    });
+
+    const text = await runModule('api-platform-resource-metadata.js', app);
+
+    expect(text).toContain('BookResource');
+  });
+
+  test('OAuth clients with a scope as a string, a redirect uri and nothing at all', async () => {
+    const knpu = appWith('oauth-knpu-shapes', {
+      'config/packages/knpu_oauth2_client.yaml': `knpu_oauth2_client:
+    clients:
+        google_client:
+            type: google
+            client_id: '%env(GOOGLE_ID)%'
+            client_secret: '%env(GOOGLE_SECRET)%'
+            redirect_route: connect_google_check
+            scope: [email, profile]
+        bare_client:
+            client_id: '%env(BARE_ID)%'
+        odd_client:
+            type: quokka_oauth2
+            scope: 'email,profile'
+            redirect_uri: 'https://example.com/callback'
+`,
+    });
+    const hwi = appWith('oauth-hwi-shapes', {
+      'config/packages/hwi_oauth.yaml': `hwi_oauth:
+    resource_owners:
+        github:
+            type: github
+            client_id: '%env(GITHUB_ID)%'
+            scope: 'user:email'
+        untyped:
+            client_id: '%env(OTHER_ID)%'
+`,
+    });
+
+    expect(await runModule('oauth-sso.js', knpu)).toContain('bare_client');
+    expect(await runModule('oauth-sso.js', hwi)).toContain('untyped');
+  });
+
+  test('a kernel whose overrides the pattern cannot read, and a services file with many _instanceof entries', async () => {
+    const many = Array.from({ length: 11 }, (_, i) => `        App\\Contract\\Interface${i}:\n            tags: ['app.tag${i}']`).join('\n');
+    const app = appWith('container-compile-shapes', {
+      'config/services.yaml': `services:
+    _instanceof:
+${many}
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+
+class Kernel
+{
+    use MicroKernelTrait;
+
+    public function getCacheDir(): string /* padding padding padding padding padding padding */
+    {
+        return $this->getProjectDir() . '/var/cache/' . $this->environment;
+    }
+
+    public function getBuildDir(): string /* padding padding padding padding padding padding */
+    {
+        return $this->getProjectDir() . '/var/build';
+    }
+}
+`,
+    });
+    const emptyBlock = appWith('container-compile-empty-instanceof', {
+      'config/services.yaml': `services:
+    _instanceof:
+
+parameters:
+    app.name: 'test'
+`,
+    });
+    const few = appWith('container-compile-few-instanceof', {
+      'config/services.yaml': `services:
+    _instanceof:
+        App\\Contract\\Only:
+            tags: ['app.only']
+`,
+    });
+
+    expect(await runModule('symfony-container-compile.js', app)).toContain('_instanceof');
+    expect((await runModule('symfony-container-compile.js', emptyBlock)).length).toBeGreaterThan(0);
+    expect(await runModule('symfony-container-compile.js', few)).toContain('_instanceof');
+  });
+
+  test('a mailer with a sensitive header, a DSN with no host, and templates of each kind', async () => {
+    const app = appWith('mailer-shapes', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'null://'
+        headers:
+            X-Api-Key: 'secret-value'
+            From: 'no-reply@example.com'
+`,
+      'templates/email/welcome.html.twig': '<p>Welcome</p>\n',
+      'templates/email/welcome.txt.twig': 'Welcome\n',
+      'templates/email/plain.twig': 'Plain\n',
+    });
+    const noDsn = appWith('mailer-no-dsn', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '%env(MAILER_DSN)%'
+`,
+    });
+
+    expect(await runModule('mailer.js', app)).toContain('Mailer');
+    expect((await runModule('mailer.js', noDsn)).length).toBeGreaterThan(0);
+  });
+
+  test('a compose file with a service that names no image and repeats a port', async () => {
+    const app = appWith('docker-inspector-shapes', {
+      'docker-compose.yml': `services:
+  php:
+    build: .
+    ports:
+      - "9000:9000"
+      - "9000:9000"
+  nginx:
+    image: nginx:1.27
+    ports:
+      - "80:80"
+  nameless:
+    image:
+  cache:
+    image: redis:7
+  other:
+    image: redis:7
+`,
+      'Dockerfile': `FROM php:8.2-fpm AS builder
+RUN composer install
+
+FROM php:8.2-fpm AS runtime
+COPY --from=builder /app /app
+`,
+      'composer.json': JSON.stringify({ require: { php: '>=8.3' } }, null, 2),
+    });
+
+    const matching = appWith('docker-inspector-matching', {
+      'docker-compose.yml': `services:
+  php:
+    image: php:8.3-fpm
+`,
+      'Dockerfile': `FROM php:8.3-fpm
+RUN composer install
+`,
+      'composer.json': JSON.stringify({ require: { php: '>=8.3' } }, null, 2),
+    });
+
+    const text = await runModule('docker-inspector.js', app);
+
+    expect(await runModule('docker-inspector.js', matching)).toContain('8.3');
+    expect(text).toContain('nginx');
+  });
+
+  test('an OAuth2 client that puts the secret in the URL and keeps the token in the session', async () => {
+    const app = appWith('league-oauth2-shapes', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-client': '^2.7' } }, null, 2),
+      'src/Security/OAuthLogin.php': `<?php
+
+namespace App\\Security;
+
+use League\\OAuth2\\Client\\Provider\\GenericProvider;
+
+class OAuthLogin
+{
+    public function authorize(): void
+    {
+        $url = 'https://example.com/oauth?client_secret=' . $this->secret;
+        $token = $this->provider->getAccessToken('authorization_code', ['code' => $code]);
+        $owner = $this->provider->getResourceOwner($token);
+    }
+
+    public function configure(): array
+    {
+        return [
+            'redirect_uri' => 'https://example.com/callback',
+        ];
+    }
+
+    public function store($token): void
+    {
+        $_SESSION['access_token'] = $token;
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+    }
+
+    public function checked($token): void
+    {
+        $_SESSION['access_token'] = $token;
+        if ($token->isExpired()) {
+            $this->refresh($token);
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('league-oauth2-client.js', app);
+
+    expect(text).toContain('OAuthLogin');
+  });
+
+  test('a rector config whose sets name a PHP version below the one composer requires', async () => {
+    const app = appWith('rector-config-versions', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\SetList;
+use Rector\\Symfony\\Set\\SymfonySetList;
+
+return RectorConfig::configure()
+    ->withSets([
+        SetList::PHP_74,
+        SetList::PHP_74,
+        SymfonySetList::SYMFONY_54,
+    ])
+    ->withSkip([
+${Array.from({ length: 22 }, (_, i) => `        App\\Legacy\\Rule${i}::class,`).join('\n')}
+    ]);
+`,
+      'composer.json': JSON.stringify({ require: { php: '>=8.2' } }, null, 2),
+    });
+
+    const text = await runModule('rector-config.js', app);
+
+    expect(text).toContain('Sets applied');
+
+    const current = appWith('rector-config-current', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\LevelSetList;
+
+return RectorConfig::configure()
+    ->withSets([LevelSetList::UP_TO_PHP_83]);
+`,
+      'composer.json': JSON.stringify({ require: { php: '>=8.2' } }, null, 2),
+    });
+
+    expect(await runModule('rector-config.js', current)).toContain('Sets applied');
+
+    const noPhpRequirement = appWith('rector-config-no-php', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\LevelSetList;
+use Rector\\DeadCode\\Set\\DeadCodeSetList;
+
+return RectorConfig::configure()
+    ->withSets([LevelSetList::UP_TO_PHP_82, DeadCodeSetList::DEAD_CODE]);
+`,
+      'composer.json': JSON.stringify({ require: { 'symfony/framework-bundle': '^7.0' } }, null, 2),
+    });
+    const looseRequirement = appWith('rector-config-loose-php', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\LevelSetList;
+
+return RectorConfig::configure()
+    ->withSets([LevelSetList::UP_TO_PHP_82]);
+`,
+      'composer.json': JSON.stringify({ require: { php: '>=8' } }, null, 2),
+    });
+
+    expect(await runModule('rector-config.js', noPhpRequirement)).toContain('Sets applied');
+    expect(await runModule('rector-config.js', looseRequirement)).toContain('Sets applied');
   });
 });

@@ -58,6 +58,7 @@ const SET_PATTERNS: Array<{ pattern: RegExp; category: RectorSet['category']; pr
 ];
 
 function formatVersion(raw: string, prefix: string): string {
+  /* istanbul ignore next -- the caller keeps the empty case to itself. */
   if (!raw) return prefix;
   if (/^\d+$/.test(raw) && raw.length >= 2) {
     return `${prefix}${raw.slice(0, -1)}.${raw.slice(-1)}`;
@@ -102,6 +103,7 @@ function parseRectorPhp(appPath: string): RectorConfig | null {
     const skipped: string[] = [];
     for (const m of content.matchAll(/->(?:withSkip|skip)\s*\(\s*\[([^\]]+)\]/gs)) {
       for (const item of m[1].split(',')) {
+        /* istanbul ignore next -- split never returns an empty array. */
         const clean = item.trim().replace(/::class\s*$/, '').replace(/['"]/g, '').split('\\').pop() ?? '';
         if (clean && !clean.startsWith('//') && clean.length > 2) skipped.push(clean);
       }

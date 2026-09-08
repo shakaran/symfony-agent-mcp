@@ -13,7 +13,10 @@ interface PhpIniSetting {
 }
 
 function parseIniValue(content: string, key: string): string | null {
-  const re = new RegExp(`^\\s*${key}\\s*=\\s*(.+)$`, 'm');
+  // "date.timezone =" with nothing after it is a setting that is present and
+  // empty, which is what the check for it is looking for: requiring a
+  // character here read it as absent instead.
+  const re = new RegExp(`^\\s*${key}\\s*=(.*)$`, 'm');
   const m = re.exec(content);
   return m ? m[1].trim() : null;
 }

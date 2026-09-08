@@ -179,6 +179,7 @@ function parseEmailClass(filePath: string): EmailClass | null {
   if (!classMatch) return null;
 
   const extendsMatch = /extends\s+([\w\\]+Email)/.exec(content);
+  /* istanbul ignore next -- split never returns an empty array. */
   const extendsClass = extendsMatch ? extendsMatch[1].split('\\').pop() ?? '' : 'Email';
 
   // Detect template path
@@ -288,6 +289,8 @@ export function getMailerConfig(appPath: string): McpToolResult {
       if (t.host) text += `Host:      ${t.host}\n`;
       if (t.isNull) text += `\n⚠ Null transport active — no emails will be sent.\n`;
       if (t.isSMTP) text += `\nSMTP mode — emails sent directly via SMTP server.\n`;
+      /* istanbul ignore next -- the transport is parsed from the DSN, so a
+         configuration with one and not the other does not occur. */
     } else if (config.dsn) {
       text += `DSN: ${config.dsn}\n`;
     }
