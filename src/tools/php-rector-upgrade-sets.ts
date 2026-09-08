@@ -26,6 +26,8 @@ function normalizePhpVersion(raw: string): string {
   // of a pattern that already required the digits, so the fallback is only
   // there to keep the function total.
   const m = /(?:php[_]?)([0-9])([0-9]+)/i.exec(raw.toLowerCase().replace(/_/g, ''));
+  /* istanbul ignore next -- both callers read the name out of a pattern that
+     already required the digits, so the expression always matches. */
   return m ? `${m[1]}.${m[2]}` : raw;
 }
 

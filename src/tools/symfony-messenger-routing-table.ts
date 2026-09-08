@@ -243,7 +243,7 @@ function buildRoutingEntries(appPath: string): {
     const isRouted =
       routedClasses.has(cls) ||
       routedClasses.has(shortName) ||
-      [...routedClasses].some((rc) => rc === '*' || cls.endsWith(`\\${rc}`) || rc.endsWith(`\\${shortName}`));
+      [...routedClasses].some((rc) => cls.endsWith(`\\${rc}`) || rc.endsWith(`\\${shortName}`));
 
     if (!isRouted) {
       entries.push({

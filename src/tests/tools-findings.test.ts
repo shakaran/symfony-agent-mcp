@@ -44092,3 +44092,471 @@ only_in_spanish: Si
     expect(text).toContain('default');
   });
 });
+
+describe('batch 172: configuration written with the optional half left out', () => {
+  test('a vercel.json whose routes, rewrites, redirects and header blocks carry no keys', async () => {
+    const app = appWith('vercel-bare-entries', {
+      'vercel.json': JSON.stringify({
+        routes: [
+          { source: '/from-source', destination: '/to-destination' },
+          {},
+          { dest: '/only-a-destination' },
+        ],
+        rewrites: [{}],
+        redirects: [{}],
+        headers: [{}],
+        build: { env: 'not-an-object' },
+        env: { EMPTY: null },
+      }, null, 2),
+    });
+
+    const text = await runModule('vercel-deploy-config.js', app);
+
+    expect(text).toContain('Vercel');
+  });
+
+  test('a SymfonyCloud application with workers and crons that declare nothing', async () => {
+    const app = appWith('symfony-cloud-bare', {
+      '.platform.app.yaml': `name: app
+type: "php:8.3"
+build:
+    unrelated: value
+workers:
+    messenger:
+        commands: {}
+        size: 512
+    nothing: {}
+crons:
+    nightly: {}
+`,
+      '.platform/routes.yaml': `"https://{default}/":
+`,
+      '.platform/services.yaml': `db:
+`,
+    });
+
+    const text = await runModule('symfony-cli.js', app);
+
+    expect(text).toContain('Cloud');
+  });
+
+  test('a SymfonyCloud application with routes and services but no application file', async () => {
+    const app = appWith('symfony-cloud-no-app', {
+      '.platform/routes.yaml': `"https://{default}/":
+    type: upstream
+    upstream: "app:http"
+`,
+      '.platform/services.yaml': `db:
+    type: "postgresql:16"
+    disk: 1024
+`,
+    });
+
+    const text = await runModule('symfony-cli.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('scoped HTTP clients declared with nothing under them, in an application with no src/', async () => {
+    const app = appWith('httpclient-bare-clients', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        scoped_clients:
+            nothing.client: ~
+            bare.client:
+                scope: '^https://example\\.com'
+            basic.client:
+                base_uri: 'https://example.com'
+                auth_basic: 'user:hunter2'
+            retrying.client:
+                base_uri: 'https://example.com'
+                retry_failed:
+                    max_retries: 3
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-scopes.js', app);
+
+    expect(text).toContain('client');
+  });
+
+  test('a scoped client that src/ actually injects', async () => {
+    const app = appWith('httpclient-used-client', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        scoped_clients:
+            github.client:
+                base_uri: 'https://api.github.com'
+                auth_bearer: '%env(GITHUB_TOKEN)%'
+                retry_failed:
+                    max_retries: 2
+`,
+      'src/Service/GithubClient.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class GithubClient
+{
+    public function __construct(private HttpClientInterface $github_client)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-scopes.js', app);
+
+    expect(text).toContain('github');
+  });
+
+  test('messenger routing written in every shape a list can take', async () => {
+    const app = appWith('messenger-routing-shapes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            '#not-a-transport': ignored
+        routing:
+            'App\\Message\\Inline': [async, , failed]
+            'App\\Message\\Dashed': - async
+            'App\\Message\\EmptyDash': -
+            'App\\Message\\Listed':
+                - async
+                - failed
+            'App\\Message\\NotAList':
+                comment: this is not a transport
+            'App\\Message\\Commented': async # routed to async
+            'App\\Message\\OnlyComment': # nothing but a comment
+`,
+      'src/Message/Listed.php': `<?php
+
+namespace App\\Message;
+
+use Symfony\\Component\\Messenger\\Attribute\\AsMessage;
+
+#[AsMessage]
+class Listed
+{
+}
+`,
+      'src/Message/Orphan.php': `<?php
+
+namespace App\\Message;
+
+use Symfony\\Component\\Messenger\\Attribute\\AsMessage;
+
+#[AsMessage]
+class Orphan
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text).toContain('Listed');
+    expect(text).toContain('Orphan');
+  });
+
+  test('a message covered only by the wildcard entry is reported as such', async () => {
+    const app = appWith('messenger-routing-wildcard', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+        routing:
+            '*': async
+`,
+      'src/Message/Unrouted.php': `<?php
+
+namespace App\\Message;
+
+use Symfony\\Component\\Messenger\\Attribute\\AsMessage;
+
+#[AsMessage]
+class Unrouted
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-messenger-routing-table.js', app);
+
+    expect(text).toContain('covered only by wildcard');
+  });
+});
+
+describe('batch 173: sets, voters, route requirements and catalogues', () => {
+  test('rector sets named in lower case, an unknown version, and a Symfony set that matches composer', async () => {
+    const app = appWith('rector-unknown-sets', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Set\\ValueObject\\SetList;
+use Rector\\Symfony\\Set\\SymfonySetList;
+
+return RectorConfig::configure()
+    ->withPhpSets(PHP82: true, php99: true)
+    ->withSets([
+        SetList::PHP_74,
+        SetList::PHP_99,
+        SymfonySetList::SYMFONY_7_0,
+    ]);
+`,
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+    });
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('PHP_74');
+  });
+
+  test('a Symfony set with no composer.json to compare it against', async () => {
+    const app = appWith('rector-no-composer', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Symfony\\Set\\SymfonySetList;
+
+return RectorConfig::configure()
+    ->withSets([SymfonySetList::SYMFONY_6_4]);
+`,
+    });
+    fs.rmSync(path.join(app, 'composer.json'));
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('SYMFONY_6_4');
+  });
+
+  test('a voter with repeated subjects and access control written in both list and scalar form', async () => {
+    const app = appWith('voters-scalar-and-list', {
+      'src/Security/Voter/DocumentVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use App\\Entity\\Document;
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class DocumentVoter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        if (!in_array($attribute, ['VIEW', 'EDIT', 'VIEW'], true)) {
+            return false;
+        }
+
+        if ($subject instanceof Document) {
+            return true;
+        }
+
+        return $subject instanceof Document || is_a($subject, Folder::class);
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return true;
+    }
+}
+`,
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: ROLE_USER
+        ROLE_SUPER_ADMIN: [ROLE_ADMIN, ROLE_ALLOWED_TO_SWITCH]
+    firewalls:
+        main:
+            custom_authenticators: App\\Security\\LoginAuthenticator
+    access_control:
+        - { path: ^/admin, roles: [ROLE_ADMIN], methods: [GET, POST], ips: [10.0.0.0/8] }
+        - { host: admin.example.com, roles: ROLE_USER, methods: GET, ips: 127.0.0.1 }
+`,
+    });
+
+    const text = await runModule('security-voters.js', app);
+
+    expect(text).toContain('DocumentVoter');
+  });
+
+  test('route parameters of every ambiguous spelling, and a host without https', async () => {
+    const app = appWith('routing-requirement-shapes', {
+      'src/Controller/ReportController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ReportController
+{
+    #[Route('/report/{ownerId}', name: 'report_owner', schemes: [])]
+    public function owner(): void
+    {
+    }
+
+    #[Route('/report/{customer_id}', name: 'report_customer', options: ['utf8' => false])]
+    public function customer(): void
+    {
+    }
+
+    #[Route('/report/{slug}', name: 'report_slug')]
+    public function slug(): void
+    {
+    }
+}
+`,
+      'config/routes/reports.yaml': `report_empty:
+
+report_host:
+    path: /reports
+    host: reports.example.com
+    options:
+        utf8: true
+
+report_secure:
+    path: /secure-reports
+    host: reports.example.com
+    schemes: [https]
+`,
+    });
+
+    const text = await runModule('symfony-routing-requirements.js', app);
+
+    expect(text).toContain('report');
+  });
+
+  test('an XLIFF catalogue with units missing a source, a target, or neither', async () => {
+    const app = appWith('translation-xliff-units', {
+      'translations/messages.en.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+  <file source-language="en" target-language="en" datatype="plaintext">
+    <body>
+      <trans-unit id="both">
+        <source>Save</source>
+        <target>Save</target>
+      </trans-unit>
+      <trans-unit id="no-target">
+        <source>Delete</source>
+      </trans-unit>
+      <trans-unit id="no-source">
+        <target>Cancel</target>
+      </trans-unit>
+      <trans-unit id="neither">
+        <note>nothing here</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+`,
+      'translations/messages.yaml': `plain: A catalogue with no locale in its name
+`,
+    });
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+
+    expect(text).toContain('messages');
+  });
+});
+
+describe('batch 174: prepared sets, and translations spread over a tree', () => {
+  test('prepared sets, a version span wide enough to warn, and a Symfony set ahead of composer', async () => {
+    const app = appWith('rector-prepared-sets', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Symfony\\Set\\SymfonySetList;
+
+return RectorConfig::configure()
+    ->withPhpSets(php56: true, php82: true)
+    ->withPreparedSets(deadCode: true, codeQuality:true)
+    ->withSets([SymfonySetList::SYMFONY_6_4]);
+`,
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0', php: '>=8.2' },
+      }, null, 2),
+    });
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('deadCode');
+  });
+
+  test('a narrow version span, and a composer.json that requires no Symfony package', async () => {
+    const app = appWith('rector-narrow-span', {
+      'rector.php': `<?php
+
+use Rector\\Config\\RectorConfig;
+use Rector\\Symfony\\Set\\SymfonySetList;
+
+return RectorConfig::configure()
+    ->withPhpSets(php80: true, php82: true)
+    ->withSets([SymfonySetList::SYMFONY_6_4]);
+`,
+      'composer.json': JSON.stringify({ require: { php: '>=8.2' } }, null, 2),
+    });
+
+    const text = await runModule('php-rector-upgrade-sets.js', app);
+
+    expect(text).toContain('8.0');
+  });
+
+  test('a translations tree with a subdirectory, a symlink, a file of another kind and a JSON catalogue', async () => {
+    const app = appWith('translation-tree', {
+      'translations/messages.en.yaml': `top: A top-level key
+app:
+    nested: Nested
+not a key at all
+`,
+      'translations/messages.es.json': JSON.stringify({ top: 'Una clave', count: 3 }, null, 2),
+      'translations/messages.en.xliff': `<?xml version="1.0"?>
+<xliff version="1.2">
+  <file source-language="en" datatype="plaintext">
+    <body>
+      <trans-unit id="same">
+        <source>Same</source>
+        <target>Same</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+`,
+      'translations/README.md': 'Not a catalogue.\n',
+      'translations/messages.de.php': `<?php\n\nreturn ['top' => 'Ein Schluessel'];\n`,
+      'translations/legacy/messages.fr.yaml': `top: Une cle
+`,
+    });
+    fs.symlinkSync(path.join(app, 'translations', 'messages.en.yaml'), path.join(app, 'translations', 'linked.en.yaml'));
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+
+    expect(text).toContain('messages');
+  });
+
+  test('an application with no translations directory, and a path that does not exist', async () => {
+    const app = appWith('translation-no-dir', {});
+    const missing = path.join(root, 'translation-nowhere');
+
+    const present = await runModule('symfony-translation-lint-all.js', app);
+    const absent = await runModule('symfony-translation-lint-all.js', missing);
+
+    expect(present.length).toBeGreaterThan(0);
+    expect(absent.length).toBeGreaterThan(0);
+  });
+
+  test('an empty translations directory, and more type problems than the report prints', async () => {
+    const app = appWith('translation-many-issues', {
+      'translations/messages.en.yaml': `shared: Shared\n` + Array.from({ length: 25 }, (_, i) => `key_${i}: 'Value ${i}'`).join('\n') + '\n',
+      'translations/messages.es.yaml': `shared: Compartido\n`,
+    });
+    const empty = appWith('translation-empty-dir', {});
+    fs.mkdirSync(path.join(empty, 'translations'), { recursive: true });
+
+    const text = await runModule('symfony-translation-lint-all.js', app);
+    const none = await runModule('symfony-translation-lint-all.js', empty);
+
+    expect(text).toContain('messages');
+    expect(none.length).toBeGreaterThan(0);
+  });
+});
