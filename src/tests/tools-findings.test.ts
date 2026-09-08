@@ -43338,3 +43338,85 @@ class WriteOnly
     expect(detailed).toContain('write:only');
   });
 });
+
+describe('batch 166: commands described in full and in none', () => {
+  test('arguments and options with every field, and with none of them', async () => {
+    const app = appWith('commands-full-signature', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputArgument;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+class ImportCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this
+            ->setName('app:import')
+            ->setDescription('Imports the catalogue')
+            ->addArgument('file', InputArgument::REQUIRED, 'The file to read', 'catalogue.csv')
+            ->addArgument('bare')
+            ->addArgument('rest', InputArgument::IS_ARRAY)
+            ->addOption('dry-run', 'd', InputOption::VALUE_NONE, 'Report without writing')
+            ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'How many rows')
+            ->addOption('tag', 't', InputOption::VALUE_IS_ARRAY)
+            ->addOption('quiet-mode');
+    }
+}
+`,
+      'src/Command/SilentCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class SilentCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->setName('app:silent');
+    }
+}
+`,
+      'src/Command/LegacyCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class LegacyCommand extends Command
+{
+    protected static $defaultName = 'legacy';
+    protected static $defaultDescription = 'The old way of naming a command';
+}
+`,
+      'src/Command/GlobalCommand.php': `<?php
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(hidden: true)]
+class GlobalCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->setName('global');
+    }
+}
+`,
+      'src/Command/helpers.php': `<?php
+
+// The class that extends Command moved; only helpers remain.
+return [];
+`,
+    });
+
+    const text = await runModule('commands.js', app, ['app:import', 'app:silent', 'legacy']);
+
+    expect(text).toContain('app:import');
+    expect(text).toContain('dry-run');
+  });
+});

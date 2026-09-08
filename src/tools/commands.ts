@@ -110,9 +110,10 @@ function parseCommandFile(content: string, filePath: string): ConsoleCommand | n
     if (defaultNameMatch) name = defaultNameMatch[1];
   }
 
-  // Fallback: $this->setName('app:foo') in configure()
+  // Fallback: ->setName('app:foo') in configure(). A command configures
+  // itself with a fluent chain, so the call rarely sits right after $this.
   if (!name) {
-    const setNameMatch = /\$this->setName\(\s*['"]([^'"]+)['"]\s*\)/.exec(content);
+    const setNameMatch = /->\s*setName\(\s*['"]([^'"]+)['"]\s*\)/.exec(content);
     if (setNameMatch) name = setNameMatch[1];
   }
 
@@ -124,7 +125,7 @@ function parseCommandFile(content: string, filePath: string): ConsoleCommand | n
     if (defaultDescMatch) description = defaultDescMatch[1];
   }
   if (!description) {
-    const setDescMatch = /\$this->setDescription\(\s*['"]([^'"]+)['"]\s*\)/.exec(content);
+    const setDescMatch = /->\s*setDescription\(\s*['"]([^'"]+)['"]\s*\)/.exec(content);
     if (setDescMatch) description = setDescMatch[1];
   }
 
@@ -147,7 +148,8 @@ function parseCommandFile(content: string, filePath: string): ConsoleCommand | n
 function parseArguments(content: string): CommandArgument[] {
   const args: CommandArgument[] = [];
   // ->addArgument('name', InputArgument::REQUIRED, 'description', 'default')
-  const pattern = /->addArgument\(\s*['"](\w+)['"]\s*(?:,\s*(InputArgument::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"])?\s*(?:,\s*['"]([^'"]*)['"])?\s*\)/g;
+  // Names are hyphenated as often as not: --dry-run, --no-interaction.
+  const pattern = /->addArgument\(\s*['"]([\w-]+)['"]\s*(?:,\s*(InputArgument::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"])?\s*(?:,\s*['"]([^'"]*)['"])?\s*\)/g;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(content)) !== null) {
     const modeStr = m[2] ?? 'InputArgument::OPTIONAL';
@@ -167,7 +169,7 @@ function parseArguments(content: string): CommandArgument[] {
 function parseOptions(content: string): CommandOption[] {
   const opts: CommandOption[] = [];
   // ->addOption('name', 'n', InputOption::VALUE_REQUIRED, 'description', 'default')
-  const pattern = /->addOption\(\s*['"](\w+)['"]\s*(?:,\s*(?:null|['"](\w+)['"]))?\s*(?:,\s*(InputOption::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"])?\s*(?:,\s*['"]([^'"]*)['"])?\s*\)/g;
+  const pattern = /->addOption\(\s*['"]([\w-]+)['"]\s*(?:,\s*(?:null|['"]([\w-]+)['"]))?\s*(?:,\s*(InputOption::\w+|\d+))?\s*(?:,\s*['"]([^'"]*)['"])?\s*(?:,\s*['"]([^'"]*)['"])?\s*\)/g;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(content)) !== null) {
     const modeStr = m[3] ?? 'InputOption::VALUE_NONE';
