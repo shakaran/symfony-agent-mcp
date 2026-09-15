@@ -43,6 +43,11 @@ function parseTemplate(filePath: string, appPath: string): TemplateInfo {
 function buildDepths(templates: TemplateInfo[]): void {
   const byFile = new Map<string, TemplateInfo>();
   for (const t of templates) byFile.set(t.file, t);
+  // "extends" names a template relative to the template directory, not to the
+  // application root, so an exact lookup on the relative path found nothing and
+  // every chain stopped at the first parent.
+  const find = (name: string): TemplateInfo | undefined =>
+    byFile.get(name) ?? templates.find((t) => t.file.endsWith(`/${name}`));
   for (const t of templates) {
     if (!t.parent) { t.depth = 0; continue; }
     let depth = 0;
@@ -51,7 +56,7 @@ function buildDepths(templates: TemplateInfo[]): void {
     while (cur?.parent && !seen.has(cur.file)) {
       seen.add(cur.file);
       depth++;
-      cur = byFile.get(cur.parent);
+      cur = find(cur.parent);
     }
     t.depth = depth;
     if (depth > 4) t.issues.push(`Inheritance depth ${depth} — deeply nested templates are hard to maintain`);
