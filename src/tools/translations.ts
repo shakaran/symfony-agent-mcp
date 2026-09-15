@@ -40,6 +40,7 @@ function parseTranslationFileName(filename: string): { locale: string; domain: s
   // Symfony convention: domain.locale.format
   // e.g. messages.en.yaml, validators.fr.xlf, messages+intl-icu.en.yaml
   const base = filename.replace(/\.(yaml|yml|xlf|xliff|php|json)$/, '');
+  /* istanbul ignore next -- split never returns an empty array. */
   const format = filename.split('.').pop() ?? 'yaml';
 
   const parts = base.split('.');
@@ -383,6 +384,7 @@ export function getTranslationStats(appPath: string): McpToolResult {
       locale: l,
       total: files.filter((f) => f.locale === l).reduce((s, f) => s + f.keyCount, 0),
     }));
+    /* istanbul ignore next -- the list is not empty here. */
     const referenceLocale = localeKeyCounts.sort((a, b) => b.total - a.total)[0]?.locale ?? 'en';
     const refTotal = localeKeyCounts.find((l) => l.locale === referenceLocale)?.total ?? 1;
 

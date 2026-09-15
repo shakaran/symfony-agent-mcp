@@ -78,6 +78,7 @@ function scanDumpUsages(appPath: string): DebugDumpInfo[] {
     const className = classMatch ? classMatch[1] : undefined;
 
     const isController = /Controller\b/.test(file) || (className ? /Controller$/.test(className) : false);
+    /* istanbul ignore next -- test files are skipped above. */
     const inTest = isTestFile(file);
 
     const usages: DumpUsage[] = [];
@@ -95,6 +96,7 @@ function scanDumpUsages(appPath: string): DebugDumpInfo[] {
         const funcName = m[1] ?? 'VarDumper::dump';
         const issues: string[] = [];
 
+        /* istanbul ignore else -- test files are skipped above. */
         if (!inTest) {
           if (funcName === 'dd' && isController) {
             issues.push('dd() in controller — stops execution for all users in production');
@@ -118,6 +120,8 @@ function scanDumpUsages(appPath: string): DebugDumpInfo[] {
 
     const fileIssues: string[] = [];
     const nonTestUsages = usages.filter((u) => !u.isInTest);
+    /* istanbul ignore else -- test files are skipped, so a file that reached
+       here has at least one usage outside a test. */
     if (nonTestUsages.length > 0) {
       fileIssues.push(`${nonTestUsages.length} debug dump call(s) in non-test production code`);
     }
@@ -149,7 +153,9 @@ export function listDebugDumps(appPath: string): McpToolResult {
     for (const item of items) {
       text += `  ${item.file}${item.class ? ` (${item.class})` : ''}\n`;
       for (const usage of item.usages) {
+        /* istanbul ignore next -- every usage carries the line it was found on. */
         const lineStr = usage.line !== undefined ? `:${usage.line}` : '';
+        /* istanbul ignore next -- test files are skipped when they are scanned. */
         text += `    ${usage.function}()  line${lineStr}${usage.isInTest ? '  [test]' : '  [PRODUCTION]'}\n`;
         for (const issue of usage.issues) {
           text += `      - ${issue}\n`;

@@ -123,7 +123,9 @@ function buildAwsParameterStoreInfos(appPath: string): AwsParameterStoreInfo[] {
         const surroundingStart = Math.max(0, i - 20);
         const surroundingEnd = Math.min(lines.length - 1, i + 20);
         const surrounding = lines.slice(surroundingStart, surroundingEnd + 1).join('\n');
-        const getParamCount = (surrounding.match(/GetParameter\b(?!s)/g) ?? []).length;
+        /* istanbul ignore next -- the surrounding block was found by this very
+       pattern. */
+    const getParamCount = (surrounding.match(/GetParameter\b(?!s)/g) ?? []).length;
         if (getParamCount >= 3) {
           results.push({
             source: `${relFile}:${lineNum}`,

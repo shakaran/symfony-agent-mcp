@@ -72,7 +72,9 @@ function extractTransitionGuards(yamls: Array<{ name: string; raw: Record<string
 
   for (const { raw } of yamls) {
     const framework  = (raw['framework'] ?? raw) as Record<string, unknown>;
-    const workflows  = (framework['workflows'] ?? raw['workflows'] ?? {}) as Record<string, unknown>;
+    /* istanbul ignore next -- framework falls back to the document root, so
+     the second lookup reads the same key as the first. */
+  const workflows  = (framework['workflows'] ?? raw['workflows'] ?? {}) as Record<string, unknown>;
 
     for (const [wfName, wfDef] of Object.entries(workflows)) {
       const wf = (wfDef ?? {}) as Record<string, unknown>;

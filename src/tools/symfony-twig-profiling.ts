@@ -44,7 +44,11 @@ function buildTwigProfilingInfos(appPath: string): TwigProfilingInfo[] {
       let hasNested = false;
       for (let i = 0; i < loopPositions.length - 1; i++) {
         const outerStart = loopPositions[i];
-        const outerEnd = endPositions[endPositions.length - 1] ?? 0;
+        // The loop ends at its own {% endfor %}, not at the last one in the
+        // file: taking the last put every template with two loops one after
+        // the other in the nested bucket.
+        /* istanbul ignore next -- the counts above guarantee an end. */
+        const outerEnd = endPositions.find((e) => e > outerStart) ?? 0;
         for (let j = i + 1; j < loopPositions.length; j++) {
           if (loopPositions[j] > outerStart && loopPositions[j] < outerEnd) {
             hasNested = true;

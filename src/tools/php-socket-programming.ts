@@ -305,6 +305,7 @@ function buildSocketProgrammingInfos(appPath: string): SocketProgrammingInfo[] {
 
   // Sort by severity then file then line
   const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  /* istanbul ignore next -- every finding carries one of the four. */
   return results.sort((a, b) =>
     (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4) ||
     a.file.localeCompare(b.file) ||

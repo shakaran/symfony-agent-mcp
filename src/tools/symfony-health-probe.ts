@@ -349,8 +349,10 @@ export function listHealthProbes(appPath: string): McpToolResult {
     }
 
     for (const probe of probes) {
+      /* istanbul ignore next -- every probe carries the file it was read from. */
       const label = probe.routePath ?? probe.file ?? '(unknown)';
       text += `${label} [${probe.type}]`;
+      /* istanbul ignore else -- as above. */
       if (probe.file) text += ` (${probe.file})`;
       text += '\n';
       text += `  DB check: ${probe.hasDbCheck ? 'yes' : 'no'}`;

@@ -49188,6 +49188,44 @@ class Bag
     }
 }
 `,
+      'src/Model/Dispatcher.php': `<?php
+
+namespace App\\Model;
+
+class Dispatcher
+{
+    public function __call(string $name, array $arguments)
+    {
+        return match ($name) {
+            'first' => $this->first(...$arguments),
+            default => null,
+        };
+    }
+
+    public function __debugInfo(): array
+    {
+        return ['id' => $this->id, 'name' => $this->name];
+    }
+}
+`,
+      'src/Model/AbstractBag.php': `<?php
+
+namespace App\\Model;
+
+abstract class AbstractBag
+{
+    abstract public function __call(string $name, array $arguments);
+
+    /**
+     * A long comment so the pattern that reads a method body finds no brace
+     * close enough to the declaration above: ......................................
+     * ......................................................................
+     */
+    public function other(): void
+    {
+    }
+}
+`,
       'src/Model/notaclass.php': `<?php
 
 // Magic method names in a file with no declaration: __get, __call.
@@ -49214,6 +49252,12 @@ class Server
         socket_bind($socket, '0.0.0.0', 8080);
         socket_listen($socket, 128);
         $client = stream_socket_client('tcp://example.com:9000', $errno, $errstr, 30);
+        $data = socket_read($socket, 1048576);
+        $single = socket_read($socket);
+        $server = stream_socket_server($this->dsn, $errno, $errstr);
+        $plain = stream_socket_server('tcp://0.0.0.0:8081', $errno, $errstr);
+        $more = socket_read($socket, $length);
+        $rest = socket_recv($socket, $buffer, 2048, 0);
     }
 
     public function secure(): void
@@ -49231,6 +49275,61 @@ class Server
 
   test('a template rendered from a string with user input, and one without', async () => {
     const app = appWith('template-injection-shapes', {
+      'src/Render/Markers.php': `<?php
+
+namespace App\\Render;
+
+class Markers
+{
+    public function build(): string
+    {
+        $layout = self::LAYOUT;
+
+        return eval('return "{{ ' . $layout . ' }}";');
+    }
+}
+`,
+      'src/Render/SmartyRenderer.php': `<?php
+
+namespace App\\Render;
+
+class SmartyRenderer
+{
+    public function render($smarty): string
+    {
+        $name = $_GET['tpl'];
+        $file = trim($name);
+
+        return $smarty->display($file);
+    }
+
+    public function fixed($smarty): string
+    {
+        $file = self::TEMPLATE;
+        $other = 'nothing here';
+        $more = 'nor here';
+
+        return $smarty->display($file);
+    }
+}
+`,
+      'src/Render/Contextual.php': `<?php
+
+namespace App\\Render;
+
+use Twig\\Environment;
+
+class Contextual
+{
+    public function render(Environment $twig): string
+    {
+        $raw = $_POST['template'];
+        $prepared = trim($raw);
+
+        return $twig->createTemplate($prepared)->render([]);
+    }
+}
+`,
       'src/Render/Renderer.php': `<?php
 
 namespace App\\Render;
@@ -49284,6 +49383,40 @@ class DeployCommand extends Command
         if ($input->mustSuggestArgumentValuesFor('environment')) {
             $suggestions->suggestValues(['prod', 'staging']);
         }
+    }
+}
+`,
+      'src/Command/PlainArgumentCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputArgument;
+
+#[AsCommand(name: 'app:plain')]
+class PlainArgumentCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->addArgument('name', InputArgument::REQUIRED, 'A name');
+    }
+}
+`,
+      'src/Command/OptionOnlyCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+#[AsCommand(name: 'app:option')]
+class OptionOnlyCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->addOption('force', null, InputOption::VALUE_NONE, 'Force it');
     }
 }
 `,
@@ -49349,6 +49482,8 @@ class StyledCommand extends Command
         $table->render();
         $progress = new ProgressBar($output, 10);
         $progress->finish();
+        $io->section('Results');
+        $io->ask('Continue?');
         $io->success('done');
 
         return Command::SUCCESS;
@@ -49373,7 +49508,36 @@ class DebugController
     public function index(): void
     {
         dump($this->service);
-        VarDumper::dump($this->service, 2, 'depth');
+        var_dump($this->service);
+        dd($this->service);
+        debug_backtrace();
+        debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5); // depth limited
+    }
+}
+`,
+      'src/Support/Tracer.php': `<?php
+
+namespace App\\Support;
+
+class Tracer
+{
+    public function trace(): array
+    {
+        return debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5); // depth limited
+    }
+}
+`,
+      'src/Tests/InlineTest.php': `<?php
+
+namespace App\\Tests;
+
+use PHPUnit\\Framework\\TestCase;
+
+class InlineTest extends TestCase
+{
+    public function testSomething(): void
+    {
+        dump($this->service);
     }
 }
 `,
@@ -49416,7 +49580,16 @@ class QuietController
     const app = appWith('health-endpoint-shapes', {
       'config/packages/security.yaml': `security:
     access_control:
-        - { path: ^/health, roles: IS_AUTHENTICATED_FULLY, ips: [10.0.0.0/8] }
+        - { path: /health, roles: IS_AUTHENTICATED_FULLY, ips: [10.0.0.0/8] }
+`,
+      'config/routes/health.yaml': `health:
+    path: /health
+    controller: App\\Controller\\HealthController::health
+`,
+      'apache.conf': `<Location /health>
+    Require ip 10.0.0.0/8
+    # handled by the security layer in front
+</Location>
 `,
       'src/Controller/HealthController.php': `<?php
 
@@ -49436,6 +49609,15 @@ class HealthController
 `,
     });
     const open = appWith('health-endpoint-open', {
+      'config/routes/health.yaml': `health:
+    path: /health
+    controller: App\\Controller\\StatusController::health
+`,
+      'apache.conf': `<Location /health>
+    Require ip 10.0.0.0/8
+    allow from 10.0.0.0/8
+</Location>
+`,
       'src/Controller/StatusController.php': `<?php
 
 namespace App\\Controller;
@@ -49486,6 +49668,32 @@ spec:
               port: 8080
             periodSeconds: 5
 `,
+      'k8s/worker.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          livenessProbe:
+            exec:
+              command: ["true"]
+            periodSeconds: 20
+`,
+      'src/Health/DatabaseIndicator.php': `<?php
+
+namespace App\\Health;
+
+class DatabaseIndicator implements HealthIndicatorInterface
+{
+    public function check(): bool
+    {
+        return $this->connection->executeQuery('SELECT 1')->fetchOne() === 1;
+    }
+}
+`,
       'src/Controller/ProbeController.php': `<?php
 
 namespace App\\Controller;
@@ -49507,5 +49715,1014 @@ class ProbeController
     const text = await runModule('symfony-health-probe.js', app);
 
     expect(text).toContain('readyz');
+  });
+});
+
+describe('batch 188: caches, retries, transports and voters', () => {
+  test('a runtime section that names nothing, and one that names everything', async () => {
+    const bare = appWith('runtime-extra-bare', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/runtime': '^7.0' },
+        extra: { runtime: {} },
+      }, null, 2),
+    });
+    const full = appWith('runtime-extra-full', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/runtime': '^7.0' },
+        extra: {
+          runtime: {
+            class: 'App\\Runtime\\CustomRuntime',
+            env_var_name: 'APP_RUNTIME_ENV',
+            dotenv_path: 'config/.env',
+            prod_envs: ['prod', 'production'],
+            test_envs: ['test', 'ci'],
+            disable_dotenv: true,
+          },
+        },
+      }, null, 2),
+    });
+
+    expect((await runModule('symfony-runtime.js', bare)).length).toBeGreaterThan(0);
+    expect(await runModule('symfony-runtime.js', full)).toContain('CustomRuntime');
+  });
+
+  test('an HTTP cache store built with arguments, and cache headers in a controller', async () => {
+    const app = appWith('http-cache-store-shapes', {
+      'src/Cache/CacheKernel.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\HttpKernel\\HttpCache\\HttpCache;
+use Symfony\\Component\\HttpKernel\\HttpCache\\Store;
+
+class CacheKernel extends HttpCache
+{
+    protected function createStore(): Store
+    {
+        return new Store($this->kernel->getCacheDir() . '/http_cache');
+    }
+}
+`,
+      'src/Cache/PlainKernel.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\HttpKernel\\HttpCache\\HttpCache;
+
+class PlainKernel
+{
+    public function wrap($kernel): HttpCache
+    {
+        $cache = new HttpCache($kernel, new Store());
+
+        return $cache;
+    }
+}
+`,
+      'src/Cache/BareKernel.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\HttpKernel\\HttpCache\\HttpCache;
+
+class BareKernel
+{
+    public function wrap($kernel): HttpCache
+    {
+        return new HttpCache($kernel);
+    }
+}
+`,
+      'src/Cache/store_trait.php': `<?php
+
+namespace App\\Cache;
+
+trait StoreTrait implements StoreInterface
+{
+}
+`,
+      'src/Cache/bootstrap.php': `<?php
+
+// No type declaration, but the file mentions the cache store.
+$store = new Store(__DIR__ . '/cache');
+`,
+      'config/packages/framework.yaml': `framework:
+    http_cache:
+        enabled: true
+    cache:
+        max_age: 3600
+        s_maxage: 600
+        public: true
+`,
+    });
+
+    const text = await runModule('symfony-http-cache-store.js', app);
+
+    expect(text).toContain('Store');
+  });
+
+  test('a retrying HTTP client with too many attempts and a client with nothing under it', async () => {
+    const app = appWith('httpclient-retry-shapes', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        default_options:
+            retry_failed:
+                max_retries: 8
+                retry_on_status: [401, 429, 503]
+        scoped_clients:
+            bare.client:
+                base_uri: 'https://bare.example.com'
+                retry_failed:
+                    delay: 1000
+            nothing.client: ~
+            good.client:
+                base_uri: 'https://example.com'
+                retry_failed:
+                    max_retries: 2
+                    retry_on_status: [429]
+`,
+    });
+
+    const text = await runModule('symfony-httpclient-retry.js', app);
+
+    expect(text).toContain('Retry');
+  });
+
+  test('mailer transports written as a string, in failover and round robin, and commented out', async () => {
+    const app = appWith('mailer-transport-shapes', {
+      '.env': `MAILER_DSN=failover(smtp://one.example.com smtp://two.example.com)
+`,
+      '.env.local': `MAILER_DSN=roundrobin(smtp://one.example.com smtp://two.example.com)
+`,
+      '.env.prod': `MAILER_DSN=null://null
+MAILER_DSN= # disabled for now
+MAILER_DSN=test://default
+`,
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '%env(MAILER_DSN)%'
+        transports:
+            main: 'smtp://main.example.com'
+            broken: 42
+`,
+    });
+
+    const text = await runModule('symfony-mailer-transport.js', app);
+
+    expect(text).toContain('Transport');
+  });
+
+  test('messenger retry strategies with and without a maximum delay', async () => {
+    const app = appWith('messenger-retry-shapes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                retry_strategy:
+                    max_retries: 5
+                    delay: 1000
+                    multiplier: 2
+            bounded:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                retry_strategy:
+                    max_retries: 3
+                    max_delay: 60000
+            bare:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                retry_strategy:
+                    delay: 500
+            nothing: ~
+`,
+    });
+
+    const text = await runModule('symfony-messenger-retry.js', app);
+
+    expect(text).toContain('async');
+  });
+
+  test('a voter with attribute constants, a match expression and an array of attributes', async () => {
+    const app = appWith('custom-voter-shapes', {
+      'src/Security/Voter/DocumentVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class DocumentVoter extends Voter
+{
+    public const VIEW = 'DOCUMENT_VIEW';
+    public const EDIT = 'DOCUMENT_EDIT';
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, [self::VIEW, self::EDIT, self::VIEW, 'DOCUMENT_DELETE', 'DOCUMENT_DELETE', ''], true);
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        return match ($attribute) {
+            self::VIEW => true,
+            self::EDIT => $this->canEdit($subject),
+            'DOCUMENT_PUBLISH' => false,
+            'DOCUMENT_VIEW' => true,
+            default => false,
+        };
+    }
+}
+`,
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/documents, roles: [DOCUMENT_VIEW] }
+        - { path: ^/documents/archive, roles: [DOCUMENT_VIEW, ROLE_ADMIN] }
+`,
+      'src/Security/Voter/ConstVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class ConstVoter extends Voter
+{
+    public const READ = 'CONST_READ';
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return $attribute === self::READ || $attribute === self::READ;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        if ($attribute === 'CONST_READ') {
+            return true;
+        }
+
+        if ($attribute === 'CONST_READ') {
+            return true;
+        }
+
+        return false;
+    }
+}
+`,
+      'src/Security/Voter/LegacyVoter.php': `<?php
+
+namespace App\\Security\\Voter;
+
+use Symfony\\Component\\Security\\Core\\Authorization\\Voter\\Voter;
+
+class LegacyVoter extends Voter
+{
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        if ($attribute === 'LEGACY_VIEW') {
+            return true;
+        }
+
+        if ($attribute === 'LEGACY_VIEW') {
+            return true;
+        }
+
+        return false;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, $token): bool
+    {
+        switch ($attribute) {
+            case 'LEGACY_VIEW':
+                return true;
+            case 'LEGACY_VIEW':
+                return true;
+            default:
+                return false;
+        }
+    }
+}
+`,
+      'src/Controller/DocumentController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+class DocumentController
+{
+    #[IsGranted('DOCUMENT_ARCHIVE')]
+    #[IsGranted('DOCUMENT_ARCHIVE')]
+    public function archive(): void
+    {
+        $this->denyAccessUnlessGranted('DOCUMENT_VIEW');
+        $this->denyAccessUnlessGranted('DOCUMENT_VIEW');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-security-custom-voter.js', app);
+
+    expect(text).toContain('DocumentVoter');
+  });
+
+  test('access control by IP, including a public IPv6 address and a rule with no roles', async () => {
+    const app = appWith('security-ip-access-shapes', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/admin, ips: ['2001:db8::1', '10.0.0.0/8'], roles: [ROLE_ADMIN] }
+        - { path: ^/internal, ips: ['192.168.1.0/24', 'fd00::1'] }
+        - { path: ^/nothing, ips: ['not-an-address'] }
+        - ~
+`,
+    });
+
+    const text = await runModule('symfony-security-ip-access.js', app);
+
+    expect(text).toContain('admin');
+  });
+
+  test('a Twig template with nested loops and one with loops in sequence', async () => {
+    const app = appWith('twig-profiling-shapes', {
+      'templates/nested.html.twig': `{% for category in categories %}
+    <h2>{{ category.name }}</h2>
+    {% for product in category.products %}
+        <p>{{ product.name }}</p>
+    {% endfor %}
+{% endfor %}
+`,
+      'templates/sequential.html.twig': `{% for a in first %}
+    <p>{{ a }}</p>
+{% endfor %}
+{% for b in second %}
+    <p>{{ b }}</p>
+{% endfor %}
+`,
+    });
+
+    const text = await runModule('symfony-twig-profiling.js', app);
+
+    expect(text).toContain('nested');
+  });
+});
+
+describe('batch 189: guards, translations, sockets and bundles', () => {
+  test('workflows declared at the top level, with a transition that says nothing', async () => {
+    const app = appWith('workflow-guards-shapes', {
+      'config/packages/workflow.yaml': `workflows:
+    order:
+        type: state_machine
+        transitions:
+            submit:
+                from: draft
+                to: submitted
+                guard: "is_granted('ROLE_USER') and subject.getTotal() > 0 and subject.isComplete() and not subject.isLocked()"
+            plain:
+                from: submitted
+                to: accepted
+            nothing: ~
+    bare: ~
+`,
+    });
+
+    const text = await runModule('symfony-workflow-guards.js', app);
+
+    expect(text).toContain('order');
+  });
+
+  test('translation catalogues with an unusual extension, used keys and many entries', async () => {
+    const many = Array.from({ length: 14 }, (_, i) => `only_en_${i}: 'Value ${i}'`).join('\n');
+    const app = appWith('translations-shapes', {
+      'translations/messages.en.yaml': `greeting: 'Hello'
+${many}
+`,
+      'translations/messages.es.yaml': `greeting: 'Hola'
+`,
+      'translations/legacy.en.ini': `greeting = Hello
+`,
+      'templates/page.html.twig': `<p>{{ 'greeting'|trans }}</p>
+<p>{{ ''|trans }}</p>
+`,
+      'src/Controller/PageController.php': `<?php
+
+namespace App\\Controller;
+
+class PageController
+{
+    public function index(): string
+    {
+        return $this->translator->trans('greeting');
+    }
+}
+`,
+    });
+
+    const text = await runModule('translations.js', app, ['greeting', 'nothing_matches_here', 'en']);
+
+    expect(text).toContain('greeting');
+  });
+
+  test('a websocket handler that checks nothing on open, and a mercure secret in the open', async () => {
+    const app = appWith('websocket-shapes', {
+      'composer.json': JSON.stringify({ require: { 'cboden/ratchet': '^0.4' } }, null, 2),
+      'config/mercure.yaml': `mercure:
+    hubs:
+        default:
+            url: 'https://example.com/.well-known/mercure'
+            jwt_secret: 'plaintextsecret'
+`,
+      'src/Socket/ChatServer.php': `<?php
+
+namespace App\\Socket;
+
+use Ratchet\\MessageComponentInterface;
+
+class ChatServer implements MessageComponentInterface
+{
+    public function onOpen($conn)
+    {
+        $this->clients->attach($conn);
+    }
+
+    public function onMessage($from, $msg)
+    {
+    }
+}
+`,
+      'src/Socket/QuietServer.php': `<?php
+
+namespace App\\Socket;
+
+use Ratchet\\MessageComponentInterface;
+
+class QuietServer implements MessageComponentInterface
+{
+    public function onMessage($from, $msg)
+    {
+    }
+}
+`,
+      'src/Socket/SecureServer.php': `<?php
+
+namespace App\\Socket;
+
+use Ratchet\\MessageComponentInterface;
+
+class SecureServer implements MessageComponentInterface
+{
+    public function onOpen($conn)
+    {
+        $token = $conn->httpRequest->getHeader('Authorization');
+        $origin = $conn->httpRequest->getHeader('Origin');
+        $this->clients->attach($conn);
+    }
+}
+`,
+    });
+
+    const noSrc = appWith('websocket-no-src', {
+      'composer.json': JSON.stringify({ require: { 'cboden/ratchet': '^0.4' } }, null, 2),
+    });
+
+    const text = await runModule('websocket-integration.js', app);
+
+    expect((await runModule('websocket-integration.js', noSrc)).length).toBeGreaterThan(0);
+    expect(text).toContain('ChatServer');
+  });
+
+  test('an API Platform state provider bound to a resource, and one bound to nothing', async () => {
+    const app = appWith('api-state-shapes', {
+      'src/State/BookProvider.php': `<?php
+
+namespace App\\State;
+
+use ApiPlatform\\State\\ProviderInterface;
+
+class BookProvider implements ProviderInterface
+{
+    public function provide($operation, array $uriVariables = [], array $context = []): object
+    {
+        return new Book();
+    }
+}
+`,
+      'src/State/OrphanProcessor.php': `<?php
+
+namespace App\\State;
+
+use ApiPlatform\\State\\ProcessorInterface;
+
+class OrphanProcessor implements ProcessorInterface
+{
+    public function process($data, $operation, array $uriVariables = [], array $context = []): void
+    {
+    }
+}
+`,
+      'src/Entity/Book.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use App\\State\\BookProvider;
+
+#[ApiResource(provider: BookProvider::class)]
+class Book
+{
+}
+`,
+    });
+
+    const noSrc = appWith('api-state-no-src', {
+      'composer.json': JSON.stringify({ require: { 'api-platform/core': '^3.2' } }, null, 2),
+    });
+
+    const text = await runModule('api-platform-state.js', app, ['BookProvider']);
+
+    expect((await runModule('api-platform-state.js', noSrc, ['BookProvider'])).length).toBeGreaterThan(0);
+    expect(text).toContain('BookProvider');
+  });
+
+  test('AWS parameter store with a hardcoded path, an env reference and a short ARN', async () => {
+    const app = appWith('aws-parameter-store-shapes', {
+      'composer.json': JSON.stringify({ require: { 'aws/aws-sdk-php': '^3.0' } }, null, 2),
+      '.env': `AWS_SSM_PATH=%env(SSM_PATH)%
+AWS_SSM_PREFIX=\${SSM_PREFIX}
+AWS_SSM_ARN=arn:aws
+`,
+      '.env.local': `AWS_SSM_PATH=/demo/app/prod
+`,
+      'src/Config/Parameters.php': `<?php
+
+namespace App\\Config;
+
+use Aws\\Ssm\\SsmClient;
+
+class Parameters
+{
+    public function load(SsmClient $ssm): array
+    {
+        $first = $ssm->getParameter(['Name' => '/demo/app/prod/database_url']);
+        $second = $ssm->getParameter(['Name' => '/demo/app/prod/mailer_dsn']);
+
+        return [$first, $second];
+    }
+}
+`,
+    });
+
+    const text = await runModule('aws-parameter-store.js', app);
+
+    expect(text).toContain('SSM');
+  });
+
+  test('a behat configuration with contexts as strings and as maps, and paths as a scalar', async () => {
+    const app = appWith('behat-config-shapes', {
+      'behat.yml': `default:
+    suites:
+        default:
+            paths: '%paths.base%/features'
+            contexts:
+                - App\\Tests\\Behat\\FeatureContext
+                - App\\Tests\\Behat\\ApiContext:
+                    baseUrl: 'https://example.com'
+    extensions:
+        Behat\\MinkExtension:
+            base_url: 'https://example.com'
+`,
+      'features/bootstrap/FeatureContext.php': `<?php
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+}
+`,
+      'features/login.feature': `Feature: Login
+  Scenario: A user logs in
+    Given I am on "/login"
+`,
+    });
+
+    const text = await runModule('behat-config.js', app);
+
+    expect(text).toContain('FeatureContext');
+  });
+
+  test('an installed.json written as an array and as an object with packages', async () => {
+    const asArray = appWith('bundles-installed-array', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+];
+`,
+      'vendor/composer/installed.json': JSON.stringify([
+        { name: 'symfony/framework-bundle', version: 'v7.0.3', type: 'symfony-bundle' },
+      ], null, 2),
+    });
+    const asObject = appWith('bundles-installed-object', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+];
+`,
+      'vendor/composer/installed.json': JSON.stringify({
+        packages: [{ version: 'v7.0.3', type: 'symfony-bundle' }],
+      }, null, 2),
+    });
+    const withoutPackages = appWith('bundles-installed-empty', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+];
+`,
+      'vendor/composer/installed.json': JSON.stringify({ 'dev-package-names': [] }, null, 2),
+    });
+
+    expect(await runModule('bundles.js', asArray, ['FrameworkBundle'])).toContain('FrameworkBundle');
+    expect(await runModule('bundles.js', asObject, ['FrameworkBundle'])).toContain('FrameworkBundle');
+    expect(await runModule('bundles.js', withoutPackages, ['FrameworkBundle'])).toContain('FrameworkBundle');
+  });
+
+  test('cache pools without an app pool, and a cache directory on disk', async () => {
+    const app = appWith('cache-inspector-shapes', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            doctrine.result_cache_pool:
+                adapter: cache.app
+            custom.pool:
+                adapter: cache.adapter.redis
+            app:
+                adapter: cache.adapter.filesystem
+`,
+      'var/cache/prod/pools/app/x/y': 'cached\n',
+      'var/cache/prod/pools/custom.pool/a/b': 'cached\n',
+    });
+
+    const text = await runModule('cache-inspector.js', app);
+
+    expect(text).toContain('pool');
+  });
+});
+
+describe('batch 190: pipelines, wranglers, exceptions and factories', () => {
+  test('a pipeline that deploys twice to the same environment, and a Makefile with a phony target', async () => {
+    const app = appWith('cicd-config-shapes', {
+      '.gitlab-ci.yml': `stages:
+  - test
+  - deploy
+
+test:
+  stage: test
+  script:
+    - vendor/bin/phpunit
+
+deploy_staging:
+  stage: deploy
+  environment: staging
+  script:
+    - bin/console doctrine:migrations:migrate --no-interaction
+    - bin/console cache:warmup
+
+deploy_staging_again:
+  stage: deploy
+  environment: staging
+  script:
+    - echo done
+`,
+      'Makefile': `.PHONY: test deploy
+
+test:
+\tvendor/bin/phpunit
+
+deploy:
+\tbin/console cache:clear
+`,
+      '.github/workflows/ci.yml': `name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: composer install
+`,
+    });
+
+    const text = await runModule('cicd-config.js', app);
+
+    expect(text).toContain('deploy');
+  });
+
+  test('a wrangler.toml with routes, a KV binding and a compatibility date from long ago', async () => {
+    const app = appWith('cloudflare-wrangler-shapes', {
+      'wrangler.toml': `name = "demo-worker"
+main = "src/index.js"
+compatibility_date = "2021-05-05"
+
+[[routes]]
+pattern = "example.com/*"
+zone_name = "example.com"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "abc123"
+
+[vars]
+APP_ENV = "production"
+`,
+    });
+    const bare = appWith('cloudflare-wrangler-bare', {
+      'wrangler.toml': `main = "src/index.js"
+compatibility_date = "2030-01-01"
+
+[[routes]]
+zone_name = "example.com"
+
+[[kv_namespaces]]
+id = "abc123"
+`,
+    });
+
+    expect(await runModule('cloudflare-config.js', app)).toContain('demo-worker');
+    expect((await runModule('cloudflare-config.js', bare)).length).toBeGreaterThan(0);
+  });
+
+  test('console commands with arguments in each spelling, and one that declares neither', async () => {
+    const app = appWith('console-options-shapes', {
+      'src/Command/FullCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputArgument;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+#[AsCommand(name: 'app:full', description: 'Everything')]
+class FullCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->addArgument('name');
+        $this->addArgument('target', InputArgument::OPTIONAL, 'Where to send it', 'default');
+        $this->addOption('force', 'f', InputOption::VALUE_NONE, 'Force it');
+    }
+}
+`,
+      'src/Command/EmptyCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+
+#[AsCommand(name: 'app:empty')]
+class EmptyCommand extends Command
+{
+    protected function configure(): void
+    {
+    }
+}
+`,
+      'src/Command/LegacyCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class LegacyCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->setName('app:legacy');
+        $this->addArgument('name');
+    }
+}
+`,
+    });
+
+    const text = await runModule('console-command-options.js', app, ['app:full']);
+
+    expect(text).toContain('app:full');
+  });
+
+  test('a Consul service definition with and without a sidecar', async () => {
+    const app = appWith('consul-shapes', {
+      'consul.json': JSON.stringify({
+        service: {
+          name: 'demo',
+          port: 8080,
+          connect: { sidecar_service: {} },
+          checks: [{ http: 'http://localhost:8080/health', interval: '10s' }],
+        },
+      }, null, 2),
+      'config/consul.yaml': `consul:
+    service_name: demo
+    tags: [php, symfony]
+`,
+    });
+    const bare = appWith('consul-no-sidecar', {
+      'consul.json': JSON.stringify({
+        service: { name: 'plain', port: 8080 },
+      }, null, 2),
+    });
+
+    expect(await runModule('consul-service-discovery.js', app)).toContain('demo');
+    expect((await runModule('consul-service-discovery.js', bare)).length).toBeGreaterThan(0);
+  });
+
+  test('exception classes with a status code in range, out of range and none at all', async () => {
+    const app = appWith('exception-hierarchy-shapes', {
+      'src/Exception/DomainException.php': `<?php
+
+namespace App\\Exception;
+
+class DomainException extends \\RuntimeException
+{
+    public const HTTP_STATUS = 422;
+}
+`,
+      'src/Exception/OddException.php': `<?php
+
+namespace App\\Exception;
+
+class OddException extends \\RuntimeException
+{
+    public const HTTP_STATUS = 200;
+}
+`,
+      'src/Exception/PlainException.php': `<?php
+
+namespace App\\Exception;
+
+class PlainException extends \\RuntimeException
+{
+}
+`,
+    });
+
+    const text = await runModule('custom-exception-hierarchy.js', app);
+
+    expect(text).toContain('DomainException');
+  });
+
+  test('an entity with a composite key, repeated fields and a join column with no name', async () => {
+    const app = appWith('composite-key-shapes', {
+      'src/Entity/OrderLine.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class OrderLine
+{
+    #[ORM\\Id]
+    #[ORM\\ManyToOne(targetEntity: Order::class)]
+    #[ORM\\JoinColumn]
+    private $order;
+
+    #[ORM\\Id]
+    #[ORM\\Column(type: 'integer')]
+    private $position;
+
+    #[ORM\\Id]
+    #[ORM\\Column(type: 'integer')]
+    private $position;
+}
+`,
+      'src/Repository/OrderLineRepository.php': `<?php
+
+namespace App\\Repository;
+
+class OrderLineRepository
+{
+    public function load($id): void
+    {
+        $this->find($id);
+        $this->find(['order' => 1, 'position' => 2]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-composite-primary-keys.js', app, ['OrderLine']);
+
+    expect(text).toContain('OrderLine');
+  });
+
+  test('entity factories with defaults, states and an initialize hook', async () => {
+    const app = appWith('entity-factory-shapes', {
+      'composer.json': JSON.stringify({ require: { 'zenstruck/foundry': '^2.0' } }, null, 2),
+      'src/Factory/UserFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+class UserFactory extends ModelFactory
+{
+    protected function getDefaults(): array
+    {
+        return [
+            'email' => self::faker()->email(),
+            'name' => self::faker()->name(),
+        ];
+    }
+
+    protected function initialize(): self
+    {
+        return $this->afterInstantiate(function () {});
+    }
+
+    public function admin(): self
+    {
+        return $this->addState(['roles' => ['ROLE_ADMIN']]);
+    }
+}
+`,
+      'src/Factory/PlainFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+class PlainFactory extends ModelFactory
+{
+    protected function getDefaults(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-entity-factory.js', app);
+
+    expect(text).toContain('UserFactory');
+  });
+
+  test('Gedmo blameable and timestampable fields with and without the field argument', async () => {
+    const app = appWith('gedmo-blameable-shapes', {
+      'src/Entity/Post.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+class Post
+{
+    #[Gedmo\\Blameable(on: 'create')]
+    #[ORM\\Column(type: 'string')]
+    private ?string $createdBy = null;
+
+    #[Gedmo\\Blameable(on: 'change', field: 'title')]
+    #[ORM\\Column(type: 'string')]
+    private ?string $changedBy = null;
+
+    #[Gedmo\\Timestampable(on: 'create')]
+    #[ORM\\Column(type: 'datetime')]
+    private $createdAt;
+
+    #[Gedmo\\Timestampable(on: 'change', field: 'title')]
+    #[ORM\\Column(type: 'datetime')]
+    private $changedAt;
+}
+`,
+      'src/Entity/LegacyPost.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+/**
+ * @ORM\\Entity
+ * @Gedmo\\Loggable(logEntryClass="App\\Entity\\CustomLogEntry")
+ */
+class LegacyPost
+{
+    /**
+     * @Gedmo\\Blameable(on="change")
+     * @ORM\\Column(type="string")
+     */
+    private $changedBy;
+
+    /**
+     * @Gedmo\\Blameable(on="change", field="title")
+     * @ORM\\Column(type="string")
+     */
+    private $titleChangedBy;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-blameable.js', app);
+
+    expect(text).toContain('Post');
   });
 });
