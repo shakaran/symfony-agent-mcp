@@ -73,9 +73,21 @@ afterEach(() => {
 });
 
 /** Writes one audit entry and waits for the stream to flush it. */
+function countLogLines(): number {
+  try {
+    return fs.readFileSync(logPath, 'utf-8').split('\n').filter(Boolean).length;
+  } catch { return 0; }
+}
+
 async function writeEntry(tool = 'list_routes'): Promise<void> {
+  const before = countLogLines();
   await withAudit(tool, '/var/www/app', async () => ({ content: [{ type: 'text', text: 'ok' }] }));
-  await new Promise((r) => setTimeout(r, 30));
+
+  // The entry is written asynchronously. Waiting a fixed 30 ms is a race on a
+  // loaded machine, so wait for the line itself.
+  for (let i = 0; i < 400 && countLogLines() <= before; i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
 }
 
 describe('key age and TTL', () => {

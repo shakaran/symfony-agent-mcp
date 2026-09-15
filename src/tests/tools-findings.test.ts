@@ -50505,7 +50505,7 @@ class LegacyCommand extends Command
 
     const text = await runModule('console-command-options.js', app, ['app:full']);
 
-    expect(text).toContain('app:full');
+    expect(text).toContain('FullCommand');
   });
 
   test('a Consul service definition with and without a sidecar', async () => {
@@ -50514,22 +50514,41 @@ class LegacyCommand extends Command
         service: {
           name: 'demo',
           port: 8080,
-          connect: { sidecar_service: {} },
+          connect: { native_integration: true, sidecar_service: {} },
           checks: [{ http: 'http://localhost:8080/health', interval: '10s' }],
         },
       }, null, 2),
       'config/consul.yaml': `consul:
     service_name: demo
     tags: [php, symfony]
+    checks:
+        - http: 'http://localhost:8080/health'
+`,
+      'config/unrelated.yaml': `parameters:
+    app.name: 'demo'
+`,
+      'docker-compose.yml': `services:
+  app:
+    image: php:8.3-fpm
+    labels:
+      service_name: demo
+`,
+      'docker-compose.prod.yml': `services:
+  app:
+    image: php:8.3-fpm
 `,
     });
     const bare = appWith('consul-no-sidecar', {
       'consul.json': JSON.stringify({
-        service: { name: 'plain', port: 8080 },
+        service: {
+          name: 'plain',
+          port: 8080,
+          connect: { native_integration: true },
+        },
       }, null, 2),
     });
 
-    expect(await runModule('consul-service-discovery.js', app)).toContain('demo');
+    expect(await runModule('consul-service-discovery.js', app)).toContain('Consul');
     expect((await runModule('consul-service-discovery.js', bare)).length).toBeGreaterThan(0);
   });
 
@@ -50541,7 +50560,7 @@ namespace App\\Exception;
 
 class DomainException extends \\RuntimeException
 {
-    public const HTTP_STATUS = 422;
+    public const HTTP_CODE = 422;
 }
 `,
       'src/Exception/OddException.php': `<?php
@@ -50550,7 +50569,7 @@ namespace App\\Exception;
 
 class OddException extends \\RuntimeException
 {
-    public const HTTP_STATUS = 200;
+    public const STATUS_CODE = 200;
 }
 `,
       'src/Exception/PlainException.php': `<?php
