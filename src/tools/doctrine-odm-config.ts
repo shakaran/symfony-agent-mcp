@@ -85,6 +85,9 @@ function readOdmConfig(appPath: string): { defaultDatabase?: string; issues: str
       (config as Record<string, unknown>)['doctrine_odm'];
     if (!odmSection || typeof odmSection !== 'object') continue;
 
+    const topLevelDatabase = (odmSection as Record<string, unknown>)['default_database'];
+    if (typeof topLevelDatabase === 'string') defaultDatabase = topLevelDatabase;
+
     const connections = (odmSection as Record<string, unknown>)['connections'];
     if (connections && typeof connections === 'object') {
       for (const [, connConfig] of Object.entries(connections as Record<string, unknown>)) {
