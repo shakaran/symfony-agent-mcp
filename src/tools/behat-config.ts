@@ -133,7 +133,8 @@ function loadBehatConfig(appPath: string): BehatConfig | null {
       const contexts: string[] = [];
       if (Array.isArray(contextsRaw)) {
         for (const c of contextsRaw) {
-          contexts.push(typeof c === 'string' ? c.split('\\').pop()! : Object.keys(c as object)[0].split('\\').pop() ?? '');
+          const fqcn = typeof c === 'string' ? c : Object.keys(c as object)[0];
+          contexts.push(fqcn.split('\\').pop()!);
         }
       }
 
@@ -216,6 +217,7 @@ function scanContexts(appPath: string): BehatContext[] {
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) continue;
     for (const file of getAllPhpFiles(dir)) {
+      /* istanbul ignore if -- the four directories above never overlap. */
       if (seen.has(file)) continue;
       seen.add(file);
 
