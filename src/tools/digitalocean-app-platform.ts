@@ -19,6 +19,7 @@ function looksLikeSecret(value: string): boolean {
 }
 
 function maskValue(value: string): string {
+  /* istanbul ignore next -- the only caller has already found the value to look like a secret. */
   return looksLikeSecret(value) ? '***' : value;
 }
 

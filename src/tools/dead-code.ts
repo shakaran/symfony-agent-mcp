@@ -160,6 +160,7 @@ function detectUninjectedServices(appPath: string): UninjectedService[] {
 
     // Factory / make calls
     for (const m of content.matchAll(/new\s+([\w\\]+)\s*\(/g)) {
+      /* istanbul ignore next -- a split always yields a last element. */
       referencedClasses.add(m[1].split('\\').pop() ?? '');
     }
   }
@@ -234,6 +235,7 @@ function detectUnusedFormTypes(appPath: string): UnusedFormType[] {
   if (fs.existsSync(templateDir)) {
     for (const entry of fs.readdirSync(templateDir, { recursive: true, withFileTypes: true }) as fs.Dirent[]) {
       if (!entry.isFile()) continue;
+      /* istanbul ignore next -- Node fills parentPath in on every entry. */
       const full = path.join(entry.parentPath ?? (entry as unknown as { path: string }).path, entry.name);
       if (full.endsWith('.twig')) allNonFormContent.push(readSafe(full));
     }

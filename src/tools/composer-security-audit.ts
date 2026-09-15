@@ -61,6 +61,7 @@ function buildComposerAuditInfos(appPath: string): ComposerAuditInfo[] {
 
   for (const [pkg, replacement] of Object.entries(KNOWN_ABANDONED)) {
     if (require[pkg] || requireDev[pkg]) {
+      /* istanbul ignore next -- the guard above found the package in one of the two lists. */
       const ver = require[pkg] ?? requireDev[pkg] ?? '';
       results.push({ package: pkg, version: ver, type: 'abandoned', issues: [`"${pkg}" may be abandoned or superseded — consider migrating to: ${replacement}`] });
     }

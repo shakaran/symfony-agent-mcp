@@ -71,6 +71,7 @@ function analyzeCypressConfig(filePath: string, appPath: string): CypressE2eConf
   const specPatternIssues: string[] = [];
   const specPatternMatch = /specPattern\s*[=:]\s*['"`]([^'"`]+)['"`]/.exec(content);
   if (specPatternMatch) {
+    /* istanbul ignore next -- the pattern requires the group. */
     const pattern = specPatternMatch[1] ?? '';
     if (pattern.includes('**') && !content.includes('node_modules')) {
       specPatternIssues.push(`specPattern "${pattern}" is broad and does not exclude node_modules — may pick up vendor test files`);
