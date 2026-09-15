@@ -114,7 +114,9 @@ function parseOperations(content: string): ApiOperation[] {
     const nameMatch = /\bname\s*:\s*['"]([^'"]+)['"]/.exec(args);
     if (nameMatch) op.name = nameMatch[1];
 
-    const normMatch = /normalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(args);
+    // "denormalizationContext" ends in the same word, so an unanchored pattern
+    // read the write context as the read one.
+    const normMatch = /\bnormalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(args);
     if (normMatch) {
       // In PHP the context is an array — ['groups' => ['read']] — and only the
       // named-argument spelling uses a colon.
@@ -208,7 +210,7 @@ function parseApiResourceFile(filePath: string): ApiResource | null {
   const descMatch = /\bdescription\s*:\s*['"]([^'"]+)['"]/.exec(resourceArgs);
 
   // Global normalization/denormalization groups
-  const normMatch = /normalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(resourceArgs);
+  const normMatch = /\bnormalizationContext\s*:\s*\[([^\][]{0,300}(?:\[[^\][]{0,300}\][^\][]{0,300}){0,10})\]/.exec(resourceArgs);
   let normGroups: string[] = [];
   if (normMatch) {
     const gm = /['"]?groups['"]?\s*(?::|=>)\s*\[([^\]]+)\]/.exec(normMatch[1]);
