@@ -56745,3 +56745,276 @@ class Address
     expect(text).toContain('and 1 more');
   });
 });
+
+describe('batch 215: Pusher, Sentinel, domain events and notifier transports', () => {
+  test('a Pusher package named only in prose, a truncated DSN, a client built from the environment and a webhook with no signature check', async () => {
+    const app = appWith('pusher-loose-config', {
+      'composer.json': JSON.stringify({
+        description: 'shop that talks to pusher/pusher-php-server',
+        require: { 'symfony/framework-bundle': '^7.0' },
+      }, null, 2),
+      '.env': `PUSHER_DSN=pusher://
+`,
+      'src/Realtime/Broadcaster.php': `<?php
+
+namespace App\\Realtime;
+
+use Pusher\\Pusher;
+
+class Broadcaster
+{
+    public function client(): Pusher
+    {
+        return new Pusher(getenv('PUSHER_APP_KEY'), getenv('PUSHER_APP_SECRET'), getenv('PUSHER_APP_ID'));
+    }
+}
+`,
+      'src/Controller/PusherWebhookController.php': `<?php
+
+namespace App\\Controller;
+
+class PusherWebhookController
+{
+    public function handlePusher($request, $pusher): array
+    {
+        $payload = json_decode($request->getContent(), true);
+        $pusher->trigger('log', 'webhook', $payload);
+
+        return $payload;
+    }
+}
+`,
+    });
+
+    expect(await runModule('pusher-integration.js', app)).toContain('signature');
+  });
+
+  test('a Sentinel DSN with no master path, in a file that also sets a timeout', async () => {
+    const app = appWith('sentinel-no-path', {
+      '.env': `REDIS_SENTINEL_DSN=redis+sentinel://user:secret@sentinel-a:26379,sentinel-b:26379
+REDIS_SENTINEL_EMPTY=redis+sentinel://
+REDIS_TIMEOUT=2
+`,
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            sessions:
+                dsn: redis+sentinel://user:secret@sentinel-a:26379,sentinel-b:26379,sentinel-c:26379/mymaster
+                options:
+                    timeout: 2
+`,
+    });
+
+    expect(await runModule('symfony-cache-redis-sentinel.js', app)).toContain('mymaster');
+  });
+
+  test('an aggregate that records the same event twice, in its constructor', async () => {
+    const app = appWith('domain-events-constructor', {
+      'src/Domain/Order.php': `<?php
+
+namespace App\\Domain;
+
+class Order implements AggregateRoot
+{
+    private array $events = [];
+
+    public function __construct()
+    {
+        $this->recordEvent(new OrderPlacedEvent($this));
+        $this->recordEvent(new OrderPlacedEvent($this));
+    }
+
+    public function place(): void
+    {
+        $this->events[] = new OrderPlacedEvent($this);
+        $this->events[] = new OrderPlacedEvent($this);
+    }
+
+    public function releaseEvents(): array
+    {
+        return $this->events;
+    }
+
+    private function recordEvent($event): void
+    {
+        $this->events[] = $event;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-domain-events.js', app)).toContain('constructor');
+  });
+
+  test('a unit that never consumes, one that names the command without an ExecStart, a compose worker with no memory limit and a Procfile with one', async () => {
+    const app = appWith('worker-declarations', {
+      'cron.service': `[Unit]
+Description=Nightly report
+
+[Service]
+ExecStart=/usr/bin/php /srv/app/bin/console app:report
+`,
+      'worker.service': `[Unit]
+Description=Runs messenger:consume for the async transport
+
+[Install]
+WantedBy=multi-user.target
+`,
+      'docker-compose.yml': `services:
+  worker:
+    image: shop
+    command: php bin/console messenger:consume  --time-limit=3600
+`,
+      'Procfile': `worker: php bin/console messenger:consume async --memory-limit=128M
+`,
+    });
+
+    expect(await runModule('symfony-messenger-worker.js', app)).toContain('memory-limit');
+  });
+
+  test('a handler with no type that writes to stdout outside production, and a group with no repeated member', async () => {
+    const app = appWith('monolog-handler-shapes', {
+      'src/Logger/QueueHandler.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Handler\\HandlerInterface as MonologHandlerInterface;
+
+class QueueHandler
+{
+    public function handle(array $record): bool
+    {
+        return true;
+    }
+}
+`,
+      'config/packages/dev/monolog.yaml': `monolog:
+    handlers:
+        console_out:
+            path: 'php://stdout'
+        grouped:
+            type: group
+            members: ['console_out', 'nested']
+`,
+      'src/Logger/PlainHandler.php': `<?php
+
+namespace App\\Logger;
+
+use Monolog\\Handler\\HandlerInterface;
+
+class PlainHandler implements HandlerInterface
+{
+    public function handle(array $record): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-monolog-handler.js', app)).toContain('PlainHandler');
+  });
+
+  test('a push transport whose key comes from the environment, and a message built without validation or escaping', async () => {
+    const app = appWith('notifier-push-raw', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            firebase: 'firebase://%env(FIREBASE_API_KEY)%@default?api_key=%env(FIREBASE_API_KEY)%'
+            onesignal: 'onesignal://%env(ONESIGNAL_KEY)%@default?api_key=%env(ONESIGNAL_KEY)%'
+`,
+      'src/Notification/PushSender.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Message\\PushMessage;
+
+class PushSender
+{
+    public function send($texter, string $title, string $body): void
+    {
+        $message = new PushMessage($title, $body);
+        $message->setRecipientId($_GET['device']);
+        $message->setTitle($title);
+        $message->setBody($body);
+
+        $texter->send($message);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-notifier-push.js', app)).toContain('push');
+  });
+
+  test('an SMS transport read from the environment with a sender, and one of an unknown provider', async () => {
+    const app = appWith('notifier-sms-env', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        # from: the sender ID travels in the DSN
+        texter_transports:
+            gateway: %env(SMS_DSN)%
+            house: smshouse://token@default
+            vonage: %env(vonage_dsn)%
+        admin_recipients:
+            - { phone: '+34000000000' }
+`,
+      'src/Notification/SmsSender.php': `<?php
+
+namespace App\\Notification;
+
+class SmsSender
+{
+    public const FROM = 'from: shop';
+}
+`,
+    });
+
+    expect(await runModule('symfony-notifier-sms.js', app)).toContain('(env)');
+
+    const noSender = appWith('notifier-sms-no-sender', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        texter_transports:
+            twilio: twilio://AC123:token@default
+`,
+    });
+
+    expect(await runModule('symfony-notifier-sms.js', noSender)).toContain('sender');
+  });
+
+  test('an OIDC bundle from HWI, one from the League client, and a firewall that mentions neither', async () => {
+    const oidcYaml = `security:
+    firewalls:
+        main:
+            oidc:
+                client_id: shop
+`;
+
+    const hwi = appWith('oidc-hwi', {
+      'composer.json': JSON.stringify({ require: { 'hwi/oauth-bundle': '^2.0' } }, null, 2),
+      'config/packages/security.yaml': oidcYaml,
+    });
+
+    expect(await runModule('symfony-security-oidc.js', hwi)).toContain('hwi/oauth-bundle');
+
+    const league = appWith('oidc-league', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-client': '^2.7' } }, null, 2),
+      'config/packages/security.yaml': oidcYaml,
+    });
+
+    expect(await runModule('symfony-security-oidc.js', league)).toContain('league/oauth2-client');
+
+    const plain = appWith('oidc-none', {
+      'composer.json': JSON.stringify({ name: 'shop/app' }, null, 2),
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            oauth2:
+                client_id: shop
+`,
+    });
+
+    expect(await runModule('symfony-security-oidc.js', plain)).toContain('OIDC');
+  });
+});

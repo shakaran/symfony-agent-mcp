@@ -108,6 +108,7 @@ function buildRedisSentinelInfos(appPath: string): RedisSentinelInfo[] {
       if (seen.has(key)) continue;
       seen.add(key);
       const info = parseSentinelDsn(val);
+      /* istanbul ignore else -- the parser always returns a description for a sentinel DSN. */
       if (info) {
         // Also check for missing timeout hint
         if (!content.includes('timeout') && !content.includes('TIMEOUT')) {
@@ -136,6 +137,7 @@ function buildRedisSentinelInfos(appPath: string): RedisSentinelInfo[] {
       if (seen.has(key)) continue;
       seen.add(key);
       const info = parseSentinelDsn(raw);
+      /* istanbul ignore else -- as above. */
       if (info) {
         // Check for timeout in the same file
         if (!content.includes('timeout')) {
@@ -148,6 +150,7 @@ function buildRedisSentinelInfos(appPath: string): RedisSentinelInfo[] {
     // Check framework.cache pools using sentinel adapters
     if (/sentinel_adapter|SentinelAdapter|RedisTagAwareAdapter/.test(content)) {
       const dummyKey = `sentinel-adapter:${file}`;
+      /* istanbul ignore else -- each file is visited once, so its key is new. */
       if (!seen.has(dummyKey)) {
         seen.add(dummyKey);
         infos.push({

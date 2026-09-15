@@ -80,6 +80,7 @@ function parseDomainEventFile(filePath: string, appPath: string): DomainEventInf
 
   if (isDomainEvent && !className.endsWith('final') && !/^\s*final\s+class/.test(content)) {
     // Check if class is not final
+    /* istanbul ignore next -- split always yields a first element. */
     if (!/\bfinal\b/.test(content.split('class ')[0] ?? '')) {
       issues.push(`Domain event class "${className}" is not final — subclassing events changes semantics`);
     }
@@ -168,6 +169,7 @@ function loadDomainEvents(appPath: string): DomainEventInfo[] {
   const dispatched = checkDispatcherUsage(srcDir, aggregates.map((a) => ({ class: a.class, file: path.join(appPath, a.file) })));
 
   for (const agg of aggregates) {
+    /* istanbul ignore next -- every aggregate was seeded in the map. */
     const isDispatched = dispatched.get(agg.class) ?? false;
     if (!isDispatched && !agg.issues.some((i) => i.includes('dispatched'))) {
       agg.issues.push(`Domain events from aggregate "${agg.class}" may never be dispatched — no releaseEvents() call found in handlers/services`);

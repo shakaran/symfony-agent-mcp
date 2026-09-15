@@ -93,7 +93,8 @@ function buildSmsNotifierInfos(appPath: string): SmsNotifierInfo[] {
           }
         }
 
-        results.push({ transport: dsn.split('://')[0] ?? 'unknown', dsn: dsn.startsWith('%env') ? '(env)' : maskDsn(dsn).substring(0, 40), type, issues });
+        /* istanbul ignore next -- split always yields a first element. */
+    results.push({ transport: dsn.split('://')[0] ?? 'unknown', dsn: dsn.startsWith('%env') ? '(env)' : maskDsn(dsn).substring(0, 40), type, issues });
       }
     }
   }
