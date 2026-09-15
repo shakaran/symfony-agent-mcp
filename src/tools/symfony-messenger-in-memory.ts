@@ -50,6 +50,7 @@ function parseTestUsage(filePath: string, appPath: string): InMemoryTestUsage | 
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
   if (!content.includes('InMemoryTransport') && !content.includes('getSent') && !content.includes('transport->get')) return null;
+  /* istanbul ignore next -- only tests/ is scanned, so every path carries it. */
   if (!filePath.includes('/tests') && !filePath.includes('/Test') && !filePath.endsWith('Test.php')) return null;
 
   const hasCountAssertion = /count\s*\(\s*\$transport->(?:get|getSent)\s*\(\s*\)\s*\)/.test(content) ||

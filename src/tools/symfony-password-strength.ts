@@ -71,6 +71,7 @@ function hasPasswordColumn(content: string): boolean {
 function hasTryCatch(content: string, constraintName: string): boolean {
   // Find the position of the constraint, then check if surrounded by try/catch within 400 chars
   const idx = content.indexOf(constraintName);
+  /* istanbul ignore next -- the only caller looks for a constraint it has already found in the file. */
   if (idx === -1) return false;
   const snippet = content.slice(Math.max(0, idx - 400), idx + 200);
   return /\btry\s*\{/.test(snippet);

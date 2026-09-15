@@ -94,6 +94,7 @@ function parseKernelListeners(appPath: string): KernelListener[] {
 
     // Attribute-based: #[AsEventListener(event: ...)]
     for (const m of content.matchAll(/#\[AsEventListener\s*\([^)]*event\s*:\s*(?:KernelEvents::(\w+)|['"](kernel\.[a-z_]+)['"])[^)]*\)/g)) {
+      /* istanbul ignore next -- the pattern matches one spelling or the other, so m[2] is set whenever m[1] is not. */
       const eventKey   = m[1] ? `kernel.${m[1].toLowerCase()}` : (m[2] ?? '');
       const priorityM  = /#\[AsEventListener[^\]]*priority\s*:\s*(-?\d+)/.exec(m[0]);
       const methodM    = /#\[AsEventListener[^\]]*method\s*:\s*['"]([^'"]+)['"]/.exec(m[0]);
@@ -121,6 +122,7 @@ function parseKernelListeners(appPath: string): KernelListener[] {
       // the KernelEvents::REQUEST constant the docblock above names.
       const entryRe = /(?:['"](kernel\.[a-z_]{1,40})['"]|KernelEvents::([A-Z_]{1,40}))\s*=>\s*(?:\[?\s*['"]([^'"]{1,120})['"](?:\s*,\s*(-?\d+))?)?/g;
       for (const evM of body.matchAll(entryRe)) {
+        /* istanbul ignore next -- the pattern matches one spelling or the other, so evM[2] is set whenever evM[1] is not. */
         const event    = evM[1] ?? `kernel.${(evM[2] ?? '').toLowerCase()}`;
         const method   = evM[3] ?? 'on' + event.split('.').map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('');
         const priority = evM[4] ? parseInt(evM[4], 10) : undefined;

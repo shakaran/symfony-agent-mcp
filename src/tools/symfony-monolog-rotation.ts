@@ -122,6 +122,7 @@ function parseHandlers(content: string, envContext: string): MonologHandlerFindi
     // Detect "handlers:" section
     if (/^\s{4,8}handlers\s*:/.test(trimmed) || /^handlers\s*:/.test(trimmed)) {
       inHandlers = true;
+      /* istanbul ignore next -- the pattern matches the empty string, so there is always a match. */
       handlerIndent = (trimmed.match(/^(\s*)/) ?? ['', ''])[1].length + 4;
       continue;
     }
@@ -138,6 +139,7 @@ function parseHandlers(content: string, envContext: string): MonologHandlerFindi
 
     // Back to top-level — exit handlers section
     if (/^\S/.test(trimmed) && !/^monolog\s*:/.test(trimmed)) {
+      /* istanbul ignore else -- the line starts with a non-space, so both checks hold. */
       if (!trimmed.startsWith(' ') && trimmed.length > 0) {
         flushHandler();
         inHandlers = false;
@@ -174,7 +176,7 @@ function parseHandlers(content: string, envContext: string): MonologHandlerFindi
     if (f.path) pathCounts[f.path] = (pathCounts[f.path] ?? 0) + 1;
   }
   for (const f of findings) {
-    if (f.path && (pathCounts[f.path] ?? 0) > 1) {
+    if (f.path && pathCounts[f.path] > 1) {
       const existing = f.issue ? f.issue + ' | ' : '';
       f.issue = `${existing}Multiple handlers write to same path (${f.path}) — log entries may interleave`;
     }

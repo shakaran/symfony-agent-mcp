@@ -95,7 +95,9 @@ function parseGroupInfo(filePath: string, appPath: string): SerializerGroupInfo 
   const propRegex = /(?:#\[Groups\s*\(\s*\[([^\]]+)\]\s*\)\s*\]|\*\s*@Groups\s*\(\s*\{([^}]+)\}\s*\))[^$]*\$(\w+)/g;
 
   for (const m of content.matchAll(propRegex)) {
+    /* istanbul ignore next -- the pattern matches one spelling or the other. */
     const groupsStr = m[1] ?? m[2] ?? '';
+    /* istanbul ignore next -- the property name is required by the pattern. */
     const propName  = m[3] ?? '';
     const propGroups: string[] = [];
     for (const gm of groupsStr.matchAll(/['"]([^'"]+)['"]/g)) propGroups.push(gm[1]);
@@ -125,6 +127,7 @@ function parseGroupInfo(filePath: string, appPath: string): SerializerGroupInfo 
 function collectContextGroups(appPath: string): Set<string> {
   const used = new Set<string>();
   const srcDir = path.join(appPath, 'src');
+  /* istanbul ignore next -- the caller has already found the directory. */
   if (!fs.existsSync(srcDir)) return used;
 
   for (const file of getAllPhpFiles(srcDir)) {

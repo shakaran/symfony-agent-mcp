@@ -54385,3 +54385,457 @@ class OrderMapper implements DataMapperInterface
     expect(await runModule('symfony-form-data-mapper.js', app)).toContain('null-safe');
   });
 });
+
+describe('batch 204: sanitizers, kernel listeners, messenger transports and log rotation', () => {
+  test('a sanitizer with no body, one allowing an event attribute, and both injected in src/', async () => {
+    const app = appWith('html-sanitizer-injected', {
+      'config/packages/framework.yaml': `framework:
+    html_sanitizer:
+        sanitizers:
+            comment:
+                allow_attributes:
+                    '*': ['class', 'onclick']
+            bare_one:
+`,
+      'src/Service/CommentRenderer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HtmlSanitizer\\HtmlSanitizerInterface;
+
+class CommentRenderer
+{
+    public function __construct(
+        private HtmlSanitizerInterface $comment,
+        private HtmlSanitizerInterface $bare_one,
+    ) {
+    }
+
+    public function render(string $html): string
+    {
+        return $this->comment->sanitize($html);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-html-sanitizer.js', app);
+
+    expect(text).toContain('onclick');
+  });
+
+  test('a terminate listener and a terminate subscriber that both do light work', async () => {
+    const app = appWith('kernel-terminate-light', {
+      'src/EventListener/LightTerminateListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+#[AsEventListener(event: KernelEvents::TERMINATE, method: 'onTerminate')]
+class LightTerminateListener
+{
+    public function onTerminate($event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/TerminateSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class TerminateSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            KernelEvents::TERMINATE => 'onTerminate',
+        ];
+    }
+
+    public function onTerminate($event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-kernel-events.js', app)).toContain('kernel.terminate');
+  });
+
+  test('a dead-letter transport that names its own failure transport, beside a transport with no body', async () => {
+    const app = appWith('messenger-dead-letter', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            bare_one:
+            dead_mail:
+                dsn: 'doctrine://default?queue_name=dead_mail'
+                failure_transport: other_box
+            retry_box:
+                dsn: 'amqp://localhost:5672/messages'
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 2
+                    max_delay: 60000
+`,
+    });
+
+    expect(await runModule('symfony-messenger-failures.js', app)).toContain('dead_mail');
+  });
+
+  test('a production transport with no body at all', async () => {
+    const app = appWith('messenger-in-memory-bare', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            bare_one:
+`,
+      'config/packages/test/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async: 'in-memory://'
+`,
+    });
+
+    expect(await runModule('symfony-messenger-in-memory.js', app)).toContain('Test usages');
+  });
+
+  test('a worker that pauses on a lock with generous limits, and a copy of the component itself', async () => {
+    const app = appWith('messenger-pause-lock', {
+      'src/Messenger/WorkerPauser.php': `<?php
+
+namespace App\\Messenger;
+
+use Symfony\\Component\\Lock\\LockInterface;
+use Symfony\\Component\\Messenger\\EventListener\\StopWorkerOnMessageLimitMiddleware;
+use Symfony\\Component\\Messenger\\EventListener\\StopWorkerOnTimeLimitMiddleware;
+
+class WorkerPauser
+{
+    public function __construct(private LockInterface $lock)
+    {
+    }
+
+    public function middlewares(): array
+    {
+        return [
+            new StopWorkerOnMessageLimitMiddleware(50),
+            new StopWorkerOnTimeLimitMiddleware(120),
+        ];
+    }
+}
+`,
+      'src/Messenger/VendorStop.php': `<?php
+
+namespace Symfony\\Component\\Messenger;
+
+class VendorStop
+{
+    public function onWorkerStopped(WorkerStoppedEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-messenger-pause-resume.js', app)).toContain('WorkerPauser');
+  });
+
+  test('an amqp transport with a heartbeat and a redis transport whose user carries no password', async () => {
+    const app = appWith('messenger-dsn-shapes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            bare_one:
+            events:
+                dsn: 'amqp://localhost:5672/events'
+                options:
+                    heartbeat: 30
+            redis_open:
+                dsn: 'redis://cachebox@localhost:6379/messages'
+`,
+    });
+
+    expect(await runModule('symfony-messenger-transport-dsn.js', app)).toContain('redis_open');
+  });
+
+  test('a beanstalkd transport whose retry strategy sets only the delay', async () => {
+    const app = appWith('messenger-beanstalkd', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            bare_one:
+            jobs:
+                dsn: 'beanstalkd://localhost:11300'
+                retry_strategy:
+                    delay: 2000
+`,
+    });
+
+    expect(await runModule('symfony-messenger-transport-options.js', app)).toContain('beanstalkd');
+  });
+
+  test('two log handlers that write to the same temporary path', async () => {
+    const app = appWith('monolog-same-path', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: /tmp/app.log
+            level: error
+        second:
+            type: stream
+            path: /tmp/app.log
+            level: error
+`,
+    });
+
+    expect(await runModule('symfony-monolog-rotation.js', app)).toContain('interleave');
+  });
+});
+
+describe('batch 205: notifier channels, passwords, loaders and tagged services', () => {
+  test('a notifier with an empty sms transport list, recipients named but not addressed, and a notification on a configured channel', async () => {
+    const app = appWith('notifier-empty-sms', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: '%env(SLACK_DSN)%'
+        texter_transports: []
+        admin_recipients:
+            - { name: 'Ops team' }
+            - { phone: '+34000000000' }
+`,
+      'src/Notification/DeployNotification.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+
+class DeployNotification extends Notification
+{
+    public function getChannels($recipient): array
+    {
+        return ['chat'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-notifier-channels.js', app)).toContain('chat');
+  });
+
+  test('a user entity with a password column and no constraint on it', async () => {
+    const app = appWith('password-no-constraint', {
+      'src/Entity/Account.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Account
+{
+    #[ORM\\Column(name: 'password', length: 255)]
+    private string $password;
+
+    public function getPassword(): string
+    {
+        return $this->password;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-password-strength.js', app)).toContain('PasswordStrength');
+  });
+
+  test('a RoadRunner server that disables opcache validation, names no user and asks for too many workers', async () => {
+    const app = appWith('roadrunner-tuned', {
+      '.rr.yaml': `server:
+  command: "php -d opcache.validate_timestamps=0 public/index.php"
+  user:
+http:
+  pool:
+    num_workers: 512
+`,
+    });
+
+    expect(await runModule('symfony-roadrunner-config.js', app)).toContain('num_workers');
+  });
+
+  test('a routing loader that catches its own read errors, beside a service tagged for something else', async () => {
+    const app = appWith('routing-loader-guarded', {
+      'config/services.yaml': `services:
+    App\\Routing\\RouteLoader:
+        tags: ['twig.extension']
+`,
+      'src/Routing/RouteLoader.php': `<?php
+
+namespace App\\Routing;
+
+use Symfony\\Component\\Config\\Loader\\Loader;
+use Symfony\\Component\\Routing\\RouteCollection;
+use Symfony\\Component\\Yaml\\Yaml;
+
+class RouteLoader extends Loader
+{
+  public function load($resource, $type = null): RouteCollection
+  {
+    try {
+      $data = Yaml::parseFile($resource);
+    } catch (\\Throwable $e) {
+      $data = [];
+    }
+
+    return new RouteCollection();
+  }
+
+  public function supports($resource, $type = null): bool
+  {
+    return $type === 'custom';
+  }
+}
+`,
+    });
+
+    expect(await runModule('symfony-routing-loader.js', app)).toContain('RouteLoader');
+  });
+
+  test('two authenticators of which one declares a priority, and a legacy listener that is also a subscriber', async () => {
+    const app = appWith('firewall-listener-shapes', {
+      'src/Security/ApiAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\Autoconfigure;
+use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractAuthenticator;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Badge\\UserBadge;
+
+#[Autoconfigure(priority: 10)]
+class ApiAuthenticator extends AbstractAuthenticator
+{
+    public function authenticate($request)
+    {
+        return $this->createPassport($request);
+    }
+
+    public function createPassport($request)
+    {
+        return new UserBadge('api');
+    }
+
+    public function createToken($passport, $firewallName)
+    {
+        return null;
+    }
+}
+`,
+      'src/Security/TokenAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Http\\Authenticator\\AuthenticatorInterface;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Badge\\UserBadge;
+
+class TokenAuthenticator implements AuthenticatorInterface
+{
+    public function authenticate($request)
+    {
+        return $this->createPassport($request);
+    }
+
+    public function createPassport($request)
+    {
+        return new UserBadge('token');
+    }
+
+    public function createToken($passport, $firewallName)
+    {
+        return null;
+    }
+}
+`,
+      'src/Security/LegacyFirewallListener.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class LegacyFirewallListener implements EventSubscriberInterface
+{
+    public const TAG = 'security.event_listener';
+
+    public static function getSubscribedEvents(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-security-firewall-listeners.js', app)).toContain('priority: 10');
+  });
+
+  test('two-factor providers declared twice, and a trait that carries the interface without a class', async () => {
+    const twoFactorYaml = `scheb_two_factor:
+    totp:
+        enabled: true
+    email:
+        enabled: true
+    google:
+        enabled: true
+`;
+    const app = appWith('two-factor-twice', {
+      'config/packages/scheb_two_factor.yaml': twoFactorYaml,
+      'config/packages/security.yaml': twoFactorYaml,
+      'src/Security/TwoFactorTrait.php': `<?php
+
+namespace App\\Security;
+
+use Scheb\\TwoFactorBundle\\Model\\Totp\\TwoFactorInterface;
+
+trait TwoFactorTrait
+{
+    public function isTotpAuthenticationEnabled(): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-security-two-factor.js', app)).toContain('totp');
+  });
+
+  test('a tagged iterator with no type hint, one typed iterable, and a locator for a tag nobody registers', async () => {
+    const app = appWith('tagged-iterator-shapes', {
+      'src/Registry/HandlerRegistry.php': `<?php
+
+namespace App\\Registry;
+
+use Psr\\Container\\ContainerInterface;
+use Symfony\\Component\\DependencyInjection\\Attribute\\TaggedIterator;
+use Symfony\\Component\\DependencyInjection\\Attribute\\TaggedLocator;
+
+class HandlerRegistry
+{
+    public function __construct(
+        #[TaggedIterator('app.plain')] $plain,
+        #[TaggedIterator('app.handler')] iterable $handlers,
+        #[TaggedLocator('app.locator')] ContainerInterface $locator,
+    ) {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-tagged-iterator.js', app)).toContain('app.handler');
+  });
+});
