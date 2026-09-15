@@ -96,6 +96,7 @@ function parseTransactionFile(filePath: string): DbalTransactionInfo | null {
   if (hasRollback && hasTryCatch) {
     const catchBlocks = content.split('catch');
     for (let i = 1; i < catchBlocks.length && i < 10; i++) {
+      /* istanbul ignore next -- i stays below the array length. */
       const block = catchBlocks[i] ?? '';
       const hasThrow = block.includes('throw ') || block.includes('throw;');
       if (block.includes('rollBack') && !hasThrow && i === catchBlocks.length - 1) {

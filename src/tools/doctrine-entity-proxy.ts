@@ -131,6 +131,7 @@ export function listDoctrineEntityProxies(appPath: string): McpToolResult {
       issues.push(`proxy_dir "${proxyDir}" is not under var/ — proxies in src/ or wrong location can break autoloader`);
     }
 
+    /* istanbul ignore else -- the namespace falls back to a non-empty default. */
     if (proxyNamespace && proxyNamespace.length > 0) {
       // Check namespace collision — proxy namespace should not match entity namespace
       // Kernel.php sits in App itself, so its declaration is "namespace App;":

@@ -48,18 +48,21 @@ function buildCursorPaginationInfos(appPath: string): CursorPaginationInfo[] {
             }
 
             results.push({ file: relFile, type: 'offset', pattern: 'offset pagination', issues });
-          } else if (hasCursorPagination) {
-            const hasEncodedCursor = content.includes('base64_encode') || content.includes('base64_decode') || content.includes('encode(') || content.includes('opaque');
-            if (!hasEncodedCursor) {
-              issues.push(`Cursor pagination in "${relFile}" exposes raw field values as cursor — encode cursor with base64 or encrypt to prevent clients from guessing record IDs or timestamps`);
-            }
+          } else {
+            /* istanbul ignore else -- one of the two was true above. */
+            if (hasCursorPagination) {
+              const hasEncodedCursor = content.includes('base64_encode') || content.includes('base64_decode') || content.includes('encode(') || content.includes('opaque');
+              if (!hasEncodedCursor) {
+                issues.push(`Cursor pagination in "${relFile}" exposes raw field values as cursor — encode cursor with base64 or encrypt to prevent clients from guessing record IDs or timestamps`);
+              }
 
-            const hasBothDirections = content.includes('before') && content.includes('after');
-            if (!hasBothDirections) {
-              issues.push(`Cursor pagination in "${relFile}" without bi-directional support (before/after) — one-directional cursors prevent going back to previous pages; implement both after and before cursor parameters`);
-            }
+              const hasBothDirections = content.includes('before') && content.includes('after');
+              if (!hasBothDirections) {
+                issues.push(`Cursor pagination in "${relFile}" without bi-directional support (before/after) — one-directional cursors prevent going back to previous pages; implement both after and before cursor parameters`);
+              }
 
-            results.push({ file: relFile, type: 'cursor', pattern: 'cursor pagination', issues });
+              results.push({ file: relFile, type: 'cursor', pattern: 'cursor pagination', issues });
+            }
           }
         }
       }

@@ -104,6 +104,7 @@ function checkRegisterSvelteCall(appPath: string): { hasImport: boolean; hasComp
 
   for (const file of getJsSvelteFiles(assetsDir)) {
     const content = safeRead(file, assetsDir);
+    /* istanbul ignore if -- the file came from a listing of this very directory. */
     if (content === null) continue;
 
     if (content.includes('@symfony/ux-svelte') || content.includes('registerSvelteControllerComponents')) {
@@ -125,6 +126,7 @@ function countSvelteComponentsWithoutTypedProps(appPath: string): number {
   for (const file of getJsSvelteFiles(svelteDir)) {
     if (!file.endsWith('.svelte')) continue;
     const content = safeRead(file, svelteDir);
+    /* istanbul ignore if -- the file came from a listing of this very directory. */
     if (content === null) continue;
 
     // Svelte components with props should have `export let prop` or `<script lang="ts">` with types

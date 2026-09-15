@@ -87,6 +87,7 @@ function parseStateClass(filePath: string, appPath: string): ApiStateClass | nul
   const className = classM[1];
   const resourcePattern = new RegExp(`provider:\\s*${className}::class|processor:\\s*${className}::class`);
   const globalSrcDir = path.join(appPath, 'src');
+  /* istanbul ignore else -- the file being parsed was found under src/. */
   if (fs.existsSync(globalSrcDir)) {
     for (const f of getAllPhpFiles(globalSrcDir)) {
       if (f === filePath) continue;

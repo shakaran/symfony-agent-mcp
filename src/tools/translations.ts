@@ -386,6 +386,7 @@ export function getTranslationStats(appPath: string): McpToolResult {
     }));
     /* istanbul ignore next -- the list is not empty here. */
     const referenceLocale = localeKeyCounts.sort((a, b) => b.total - a.total)[0]?.locale ?? 'en';
+    /* istanbul ignore next -- the reference locale was taken from this list. */
     const refTotal = localeKeyCounts.find((l) => l.locale === referenceLocale)?.total ?? 1;
 
     let text = `Translation Statistics\n${'='.repeat(40)}\n\n`;

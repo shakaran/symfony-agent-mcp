@@ -142,6 +142,7 @@ function buildWebAuthnIntegrationInfos(appPath: string): WebAuthnIntegrationInfo
     // rpId configuration
     const rpIdMatch = content.match(/rpId\s*:\s*(.+)|relying_party_id\s*:\s*(.+)/);
     if (rpIdMatch) {
+      /* istanbul ignore next -- one of the two alternatives matched. */
       const rpId = (rpIdMatch[1] || rpIdMatch[2] || '').trim().replace(/['"]/g, '');
       results.push({
         source: relPath,

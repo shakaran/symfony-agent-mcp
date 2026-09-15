@@ -107,8 +107,10 @@ function parseEntityEmbedded(filePath: string): EntityWithEmbedded | null {
     const propM = /\$(\w+)/.exec(afterAttr);
 
     if (classRef) {
+      /* istanbul ignore next -- the attribute always sits on a property. */
+      const property = propM?.[1] ?? '?';
       embedded.push({
-        property: propM?.[1] ?? '?',
+        property,
         embeddableClass: classRef.split('\\').pop()!,
         columnPrefix: prefix,
       });

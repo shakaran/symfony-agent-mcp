@@ -60770,3 +60770,940 @@ class BannerType
     expect(await runModule('symfony-ux-cropperjs.js', app)).toContain('AvatarType');
   });
 });
+
+describe('batch 231: Svelte, workflows, translations and integrations', () => {
+  test('a helper script sitting next to the Svelte controllers', async () => {
+    const app = appWith('ux-svelte-helper-script', {
+      'package.json': JSON.stringify({ dependencies: { 'svelte': '^4.0.0', '@symfony/ux-svelte': '^2.0.0' } }, null, 2),
+      'assets/app.js': `import { registerSvelteControllerComponents } from '@symfony/ux-svelte';
+
+registerSvelteControllerComponents(require.context('./svelte/controllers', true, /\\.svelte$/));
+`,
+      'assets/svelte/controllers/format.js': `export function format(value) {
+    return value.toUpperCase();
+}
+`,
+      'assets/svelte/controllers/Counter.svelte': `<script>
+    export let count = 0;
+</script>
+
+<button>{count}</button>
+`,
+    });
+
+    expect(await runModule('symfony-ux-svelte.js', app)).toContain('Svelte');
+  });
+
+  test('a workflow subscriber that reads the subject and the marking without touching either', async () => {
+    const app = appWith('workflow-subject-read-only', {
+      'src/EventSubscriber/OrderWorkflowSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class OrderWorkflowSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return ['workflow.order.guard' => 'onGuard'];
+    }
+
+    public function onGuard($event): void
+    {
+        $order = $event->getSubject();
+        $places = $event->getMarking()->getPlaces();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-workflow-events.js', app)).toContain('workflow.order.guard');
+  });
+
+  test('an application where every class in src has a test', async () => {
+    const app = appWith('tests-inspector-fully-tested', {
+      'phpunit.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="tests/bootstrap.php" colors="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+      'src/Service/InvoiceNumberGenerator.php': `<?php
+
+namespace App\\Service;
+
+class InvoiceNumberGenerator
+{
+    public function next(): string
+    {
+        return 'INV-1';
+    }
+}
+`,
+      'tests/Service/InvoiceNumberGeneratorTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\TestCase;
+
+class InvoiceNumberGeneratorTest extends TestCase
+{
+    public function testNext(): void
+    {
+        $this->assertSame('INV-1', (new \\App\\Service\\InvoiceNumberGenerator())->next());
+    }
+}
+`,
+    });
+
+    expect(await runModule('tests-inspector.js', app)).toContain('InvoiceNumberGenerator');
+  });
+
+  test('a trans block with nothing between the tags', async () => {
+    const app = appWith('translations-empty-trans-block', {
+      'translations/messages.en.yaml': `greeting: 'Hello'
+`,
+      'templates/empty.html.twig': `{% trans %}{% endtrans %}
+{% trans %}Hello{% endtrans %}
+`,
+    });
+
+    expect(await runModule('translations.js', app)).toContain('messages');
+
+    const bare = appWith('translations-none', {});
+    expect(await runModule('translations.js', bare)).toContain('No translation files found');
+  });
+
+  test('a Twilio token read from the shell and a webhook handler that catches a plain exception', async () => {
+    const app = appWith('twilio-env-token-webhook', {
+      '.env': `TWILIO_ACCOUNT_SID=\${TWILIO_ACCOUNT_SID}
+TWILIO_AUTH_TOKEN=\${TWILIO_AUTH_TOKEN}
+`,
+      'src/Controller/TwilioWebhookController.php': `<?php
+
+namespace App\\Controller;
+
+class TwilioWebhookController
+{
+    public function webhook($request, $client): void
+    {
+        try {
+            $client->messages->create('+100', ['body' => 'ok']);
+        } catch (\\RuntimeException $e) {
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('twilio-integration.js', app)).toContain('Twilio');
+  });
+
+  test('a Vault token read from the shell and a client built with a literal address', async () => {
+    const app = appWith('vault-literal-address', {
+      '.env': `VAULT_TOKEN=\${VAULT_TOKEN}
+`,
+      'src/Service/VaultReader.php': `<?php
+
+namespace App\\Service;
+
+class VaultReader
+{
+    public function client(): VaultClient
+    {
+        return new VaultClient('https://vault.internal:8200');
+    }
+}
+`,
+      'src/Service/VaultFactory.php': `<?php
+
+namespace App\\Service;
+
+class VaultFactory
+{
+    public function client(): VaultClient
+    {
+        return new VaultClient(getenv('VAULT_ADDR'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('vault-dynamic-secrets.js', app)).toContain('Vault');
+  });
+
+  test('a relying party covering every subdomain, with the allowed origins listed', async () => {
+    const app = appWith('webauthn-wildcard-rp', {
+      'config/packages/webauthn.yaml': `webauthn:
+    rpId: '*.example.com'
+    allowed_origins:
+        - 'https://app.example.com'
+`,
+    });
+
+    expect(await runModule('webauthn-integration.js', app)).toContain('rpId');
+  });
+
+  test('a repository that computes its offset from the page number', async () => {
+    const app = appWith('api-cursor-computed-offset', {
+      'src/Repository/ArticleRepository.php': `<?php
+
+namespace App\\Repository;
+
+class ArticleRepository
+{
+    public function findPage(int $page, int $limit): array
+    {
+        return $this->createQueryBuilder('a')
+            ->setFirstResult($page * $limit)
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+}
+`,
+      'src/Repository/FeedRepository.php': `<?php
+
+namespace App\\Repository;
+
+class FeedRepository
+{
+    public function findAfter(string $cursor): array
+    {
+        return $this->createQueryBuilder('f')
+            ->andWhere('f.id > :cursor')
+            ->setParameter('cursor', base64_decode($cursor))
+            ->getQuery()
+            ->getResult();
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-cursor-pagination.js', app)).toContain('ArticleRepository');
+  });
+});
+
+describe('batch 232: JSON-LD, Mercure, Behat and pipelines', () => {
+  test('a JSON-LD context that declares its vocabulary, and a published context file', async () => {
+    const app = appWith('json-ld-vocab-declared', {
+      'src/Serializer/ContextBuilder.php': `<?php
+
+namespace App\\Serializer;
+
+class ContextBuilder
+{
+    public function build(): array
+    {
+        return [
+            '@context' => [
+                '@vocab' => 'https://schema.org/',
+                'name' => 'https://schema.org/name',
+            ],
+        ];
+    }
+}
+`,
+      'public/contexts/product.jsonld': `{"@context": {"@vocab": "https://schema.org/"}}
+`,
+      'public/contexts/legacy.json': `{"terms": {"name": "https://schema.org/name"}}
+`,
+    });
+
+    expect(await runModule('api-json-ld-context.js', app)).toContain('@context');
+  });
+
+  test('a hub declared at the top level and two resources with the same issues', async () => {
+    const app = appWith('mercure-top-level-hub', {
+      'config/packages/mercure.yaml': `mercure:
+    hubs:
+        default:
+            url: 'https://mercure.example.com/.well-known/mercure'
+    default_hub: 'default'
+`,
+      'src/Entity/Product.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(mercure: true)]
+class Product
+{
+}
+`,
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(mercure: true)]
+class Order
+{
+}
+`,
+    });
+
+    expect(await runModule('api-platform-mercure-push.js', app)).toContain('Product');
+  });
+
+  test('a provider bound from a resource interface', async () => {
+    const app = appWith('api-state-provider-on-interface', {
+      'src/State/OrderProvider.php': `<?php
+
+namespace App\\State;
+
+use ApiPlatform\\State\\ProviderInterface;
+
+class OrderProvider implements ProviderInterface
+{
+    public function provide($operation, array $uriVariables = [], array $context = []): iterable
+    {
+        return [];
+    }
+}
+`,
+      'src/ApiResource/OrderResource.php': `<?php
+
+namespace App\\ApiResource;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use App\\State\\OrderProvider;
+
+#[ApiResource(provider: OrderProvider::class)]
+interface OrderResource
+{
+}
+`,
+    });
+
+    expect(await runModule('api-platform-state.js', app)).toContain('OrderProvider');
+  });
+
+  test('a rate limit attribute sitting on a named action', async () => {
+    const app = appWith('api-rate-limit-named-action', {
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ApiController extends AbstractController
+{
+    #[RateLimit(limit: 10, period: 60)]
+    #[Route('/api/search', name: 'api_search')]
+    public function search(): Response
+    {
+        return $this->json([]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-rate-limits.js', app)).toContain('search');
+
+    const bare = appWith('api-rate-limit-no-src', {});
+    expect(await runModule('api-rate-limits.js', bare)).toContain('rate');
+  });
+
+  test('an SES DSN using the API transport, with bounce handling configured', async () => {
+    const app = appWith('aws-ses-api-transport', {
+      '.env': `MAILER_DSN=ses+api://AKIAEXAMPLE:secret@default?region=eu-west-1
+`,
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '%env(MAILER_DSN)%'
+        sns_topic: 'arn:aws:sns:eu-west-1:1234:ses-bounces'
+`,
+    });
+
+    expect(await runModule('aws-ses-integration.js', app)).toContain('ses');
+  });
+
+  test('a Behat suite whose contexts carry constructor arguments', async () => {
+    const app = appWith('behat-contexts-with-arguments', {
+      'behat.yml': `default:
+    suites:
+        default:
+            contexts:
+                - App\\Tests\\Behat\\DefaultContext
+                - App\\Tests\\Behat\\ApiContext:
+                    baseUrl: 'http://localhost'
+            paths: [features]
+`,
+      'tests/Behat/DefaultContext.php': `<?php
+
+namespace App\\Tests\\Behat;
+
+use Behat\\Behat\\Context\\Context;
+
+class DefaultContext implements Context
+{
+    /**
+     * @Given I am on the home page
+     */
+    public function iAmOnTheHomePage(): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('behat-config.js', app)).toContain('DefaultContext');
+  });
+
+  test('a cache configuration that names a system adapter and no application one', async () => {
+    const app = appWith('cache-pools-system-only', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        system: cache.adapter.system
+        prefix_seed: 'app/prod'
+`,
+    });
+
+    expect(await runModule('cache-pools.js', app)).toContain('System adapter');
+  });
+
+  test('a deployment workflow that names the same environment twice', async () => {
+    const app = appWith('cicd-repeated-environment', {
+      '.github/workflows/deploy.yml': `name: Deploy
+on:
+    push:
+        branches: [main]
+jobs:
+    staging:
+        runs-on: ubuntu-latest
+        environment: 'production'
+        steps:
+            - run: ./deploy.sh
+    production:
+        runs-on: ubuntu-latest
+        environment: 'production'
+        steps:
+            - run: ./deploy.sh
+`,
+    });
+
+    expect(await runModule('cicd-config.js', app)).toContain('production');
+  });
+});
+
+describe('batch 233: compiler passes, commands, Docker and DBAL', () => {
+  test('a compiler pass registered with an explicit priority', async () => {
+    const app = appWith('compiler-pass-with-priority', {
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use App\\DependencyInjection\\Compiler\\TaggedHandlerPass;
+use Symfony\\Component\\DependencyInjection\\Compiler\\PassConfig;
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+
+class Kernel
+{
+    protected function build(ContainerBuilder $container): void
+    {
+        $container->addCompilerPass(new TaggedHandlerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 10);
+    }
+}
+`,
+      'src/DependencyInjection/Compiler/TaggedHandlerPass.php': `<?php
+
+namespace App\\DependencyInjection\\Compiler;
+
+use Symfony\\Component\\DependencyInjection\\Compiler\\CompilerPassInterface;
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+
+class TaggedHandlerPass implements CompilerPassInterface
+{
+    public function process(ContainerBuilder $container): void
+    {
+        $container->findTaggedServiceIds('app.handler');
+    }
+}
+`,
+    });
+
+    expect(await runModule('compiler-passes.js', app)).toContain('priority: 10');
+  });
+
+  test('a command named positionally and another whose options are built in a loop', async () => {
+    const app = appWith('console-options-positional-name', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+#[AsCommand('app:import')]
+class ImportCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->addOption('dry-run', null, InputOption::VALUE_NONE, 'Do not write anything');
+    }
+}
+`,
+      'src/Command/DynamicCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Input\\InputOption;
+
+class DynamicCommand extends Command
+{
+    private const FLAGS = ['force', 'quiet'];
+
+    protected function configure(): void
+    {
+        foreach (self::FLAGS as $flag) {
+            $this->addOption($flag, null, InputOption::VALUE_NONE);
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('console-command-options.js', app)).toContain('app:import');
+  });
+
+  test('a compose file with a duplicated port and no service that needs a healthcheck', async () => {
+    const app = appWith('docker-duplicate-port', {
+      'docker-compose.yml': `services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+      - "8080:80"
+    volumes:
+      - ./public:/var/www/public
+`,
+    });
+
+    expect(await runModule('docker-inspector.js', app)).toContain('nginx');
+  });
+
+  test('a Dockerfile whose user only looks like root, next to an override with the long extension', async () => {
+    const app = appWith('docker-rootless-user', {
+      'Dockerfile': `FROM php:8.3-fpm-alpine
+
+RUN adduser -D -u 1001 rootless
+
+USER rootless
+`,
+      'docker-compose.override.yaml': `services:
+    php:
+        privileged: true
+`,
+    });
+
+    expect(await runModule('docker-security-config.js', app)).toContain('Docker');
+  });
+
+  test('an entity contract and a change tracking policy written as a constant', async () => {
+    const app = appWith('change-tracking-annotation-constant', {
+      'src/Entity/AuditableEntity.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * Contract shared by every #[ORM\\Entity] in this namespace.
+ */
+interface AuditableEntity
+{
+    public function getId(): ?int;
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\ChangeTrackingPolicy(ClassMetadata::CHANGETRACKING_NOTIFY)
+ */
+class Invoice
+{
+    private ?int $id = null;
+}
+`,
+      'src/Entity/Payment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\ChangeTrackingPolicy('DEFERRED_EXPLICIT')
+ */
+class Payment
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-change-tracking.js', app)).toContain('DEFERRED_EXPLICIT');
+  });
+
+  test('a wrapper class that the custom connection factory never mentions', async () => {
+    const app = appWith('dbal-wrapper-not-referenced', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+        wrapper_class: App\\Doctrine\\LoggingConnection
+`,
+      'src/Doctrine/AppConnectionFactory.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\Bundle\\DoctrineBundle\\ConnectionFactory;
+
+class AppConnectionFactory extends ConnectionFactory
+{
+    public function createConnection(array $params, $config = null, $eventManager = null, array $mappingTypes = [])
+    {
+        return parent::createConnection($params, $config, $eventManager, $mappingTypes);
+    }
+}
+`,
+      'src/Doctrine/LoggingConnectionFactory.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\Bundle\\DoctrineBundle\\ConnectionFactory;
+
+class LoggingConnectionFactory extends ConnectionFactory
+{
+    public function createConnection(array $params, $config = null, $eventManager = null, array $mappingTypes = [])
+    {
+        $params['wrapperClass'] = LoggingConnection::class;
+
+        return parent::createConnection($params, $config, $eventManager, $mappingTypes);
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-connection-factory.js', app)).toContain('wrapper_class');
+  });
+
+  test('PDO attributes written as ones instead of booleans', async () => {
+    const app = appWith('dbal-driver-options-numeric', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+        driverOptions:
+            PDO::ATTR_EMULATE_PREPARES: 1
+            PDO::ATTR_STRINGIFY_FETCHES: 1
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-driveroptions.js', app)).toContain('EMULATE_PREPARES');
+  });
+
+  test('DBAL middlewares listed as a map of service ids', async () => {
+    const app = appWith('dbal-middleware-map', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+        middleware:
+            App\\Doctrine\\Middleware\\LoggingMiddleware: ~
+            App\\Doctrine\\Middleware\\TimingMiddleware: ~
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-middleware.js', app)).toContain('Middleware');
+
+    const plain = appWith('dbal-middleware-none', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+`,
+    });
+    expect(await runModule('doctrine-dbal-middleware.js', plain)).toContain('middleware');
+  });
+});
+
+describe('batch 234: transactions, embeddables, proxies and ODM', () => {
+  test('a rollback that re-throws, in the last catch of the method', async () => {
+    const app = appWith('dbal-transaction-rethrows', {
+      'src/Service/OrderWriter.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class OrderWriter
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function save(array $row): void
+    {
+        $this->connection->beginTransaction();
+        try {
+            $this->connection->insert('orders', $row);
+            $this->connection->commit();
+        } catch (\\Throwable $e) {
+            $this->connection->rollBack();
+            throw $e;
+        }
+    }
+}
+`,
+      'src/Service/AuditWriter.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\DBAL\\Connection;
+
+class AuditWriter
+{
+    public function __construct(private Connection $connection, private $logger)
+    {
+    }
+
+    public function save(array $row): void
+    {
+        $this->connection->beginTransaction();
+        try {
+            $this->connection->insert('audit', $row);
+            $this->connection->commit();
+        } catch (\\Throwable $e) {
+            $this->connection->rollBack();
+            $this->logger->error($e->getMessage());
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-transactions.js', app)).toContain('OrderWriter');
+  });
+
+  test('a DQL function whose class is present, in an application with no src directory', async () => {
+    const app = appWith('dql-functions-class-present', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        dql:
+            string_functions:
+                unaccent: App\\Doctrine\\UnaccentFunction
+`,
+      'src/Doctrine/UnaccentFunction.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\ORM\\Query\\AST\\Functions\\FunctionNode;
+
+class UnaccentFunction extends FunctionNode
+{
+    public function getSql($sqlWalker): string
+    {
+        return 'unaccent()';
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dql-functions.js', app)).toContain('unaccent');
+
+    const configOnly = appWith('dql-functions-no-src', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        dql:
+            numeric_functions:
+                rand: App\\Doctrine\\RandFunction
+`,
+    });
+    expect(await runModule('doctrine-dql-functions.js', configOnly)).toContain('rand');
+  });
+
+  test('an entity embedding a value object that lives outside the application', async () => {
+    const app = appWith('embeddable-class-not-in-app', {
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Money\\Money;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\Embedded(class: Money::class, columnPrefix: 'balance_')]
+    private Money $balance;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-embeddable.js', app)).toContain('balance');
+  });
+
+  test('a proxy directory holding a link, with no namespace configured', async () => {
+    const app = appWith('entity-proxy-linked-file', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        auto_generate_proxy_classes: true
+`,
+      'var/cache/prod/doctrine/orm/Proxies/__CG__AppEntityOrder.php': `<?php
+
+class __CG__AppEntityOrder
+{
+}
+`,
+      'var/cache/prod/doctrine/orm/Proxies/Nested/__CG__AppEntityLine.php': `<?php
+
+class __CG__AppEntityLine
+{
+}
+`,
+    });
+    fs.symlinkSync(
+      path.join(app, 'var/cache/prod/doctrine/orm/Proxies/__CG__AppEntityOrder.php'),
+      path.join(app, 'var/cache/prod/doctrine/orm/Proxies/__CG__AppEntityAlias.php')
+    );
+
+    expect(await runModule('doctrine-entity-proxy.js', app)).toContain('Proxies');
+  });
+
+  test('an entity using the Stof bundle traits with no bundle configuration', async () => {
+    const app = appWith('gedmo-stof-without-config', {
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+use Stof\\DoctrineExtensionsBundle\\Uploadable\\UploadableManager;
+
+#[ORM\\Entity]
+#[Gedmo\\Tree(type: 'nested')]
+class Category
+{
+    #[Gedmo\\TreeLeft]
+    #[ORM\\Column]
+    private int $lft;
+
+    #[Gedmo\\TreeRight]
+    #[ORM\\Column]
+    private int $rgt;
+
+    #[Gedmo\\TreeRoot]
+    #[ORM\\Column(nullable: true)]
+    private ?int $root = null;
+
+    #[Gedmo\\TreeLevel]
+    #[ORM\\Column]
+    private int $lvl;
+}
+`,
+      'src/Entity/Menu.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+#[Gedmo\\Tree(type: 'closure')]
+class Menu
+{
+    #[Gedmo\\TreeParent]
+    #[ORM\\ManyToOne(targetEntity: Menu::class)]
+    private ?Menu $parent = null;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-gedmo-tree.js', app)).toContain('Category');
+  });
+
+  test('a named query with its result set mapping, and one with no SQL at all', async () => {
+    const app = appWith('named-queries-with-mapping', {
+      'src/Entity/Report.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\NamedNativeQuery(name: 'report_totals', query: 'SELECT id, total FROM report', resultSetMapping: 'report_totals')]
+#[ORM\\NamedNativeQuery(name: 'report_stub')]
+#[ORM\\NamedNativeQuery(query: 'SELECT 1 FROM report')]
+#[ORM\\SqlResultSetMapping(name: 'report_totals')]
+class Report
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-named-queries.js', app)).toContain('report_totals');
+  });
+
+  test('an ODM configuration that only names the default database', async () => {
+    const app = appWith('odm-default-database-only', {
+      'composer.json': JSON.stringify({
+        require: { 'doctrine/mongodb-odm-bundle': '^4.7' },
+        autoload: { 'psr-4': { 'App\\': 'src/' } },
+      }, null, 2),
+      'config/packages/doctrine_mongodb.yaml': `doctrine_mongodb:
+    default_database: 'app'
+`,
+    });
+
+    expect(await runModule('doctrine-odm-config.js', app)).toContain('Default database: app');
+
+    const perManager = appWith('odm-database-per-manager', {
+      'composer.json': JSON.stringify({
+        require: { 'doctrine/mongodb-odm-bundle': '^4.7' },
+        autoload: { 'psr-4': { 'App\\': 'src/' } },
+      }, null, 2),
+      'config/packages/doctrine_mongodb.yaml': `doctrine_mongodb:
+    document_managers:
+        default:
+            database: 'catalogue'
+            auto_mapping: true
+`,
+    });
+    expect(await runModule('doctrine-odm-config.js', perManager)).toContain('Default database: catalogue');
+  });
+
+  test('an orphan removal that also cascades persist', async () => {
+    const app = appWith('orphan-removal-with-persist', {
+      'src/Entity/Basket.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Basket
+{
+    #[ORM\\OneToMany(mappedBy: 'basket', targetEntity: BasketLine::class, orphanRemoval: true, cascade: ['persist'])]
+    private Collection $lines;
+
+    #[ORM\\OneToMany(mappedBy: 'basket', targetEntity: BasketNote::class, orphanRemoval: true, cascade: ['remove'])]
+    private Collection $notes;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-orphan-removal.js', app)).toContain('persist');
+  });
+});

@@ -338,8 +338,11 @@ export function getTestStats(appPath: string): McpToolResult {
     }
 
     if (Object.keys(phpunitConfig).length > 0) {
-      text += `\nPHPUnit config (${phpunitConfig['file'] ?? 'unknown'}):\n`;
+      /* istanbul ignore next -- the parser always records the file name. */
+      const configName = phpunitConfig['file'] ?? 'unknown';
+      text += `\nPHPUnit config (${configName}):\n`;
       if (phpunitConfig['bootstrap']) text += `  Bootstrap:    ${phpunitConfig['bootstrap']}\n`;
+      /* istanbul ignore else -- the parser always records a suite count, "0" included. */
       if (phpunitConfig['testSuites']) text += `  Test suites:  ${phpunitConfig['testSuites']}\n`;
     }
 

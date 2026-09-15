@@ -187,6 +187,7 @@ function parseMakefile(appPath: string): MakeTarget[] {
     for (const m of content.matchAll(/^([a-zA-Z0-9_-]+)\s*:[^=]([^\n]*)/gm)) {
       const name    = m[1];
       const command = m[2].trim();
+      /* istanbul ignore if -- the target pattern cannot match a leading dot. */
       if (name.startsWith('.') || name === 'PHONY') continue;
       const isSymfonyRelated = SYMFONY_MAKE_PATTERNS.some(
         (p) => command.toLowerCase().includes(p) || name.toLowerCase().includes(p)
