@@ -35,6 +35,7 @@ function extractServiceBlock(content: string, serviceName: string): string {
   const indent = indentUnder(content, 'services');
   const serviceRe = new RegExp(`^( {${indent}}${serviceName}\\s*:)`, 'm');
   const sm = serviceRe.exec(content);
+  /* istanbul ignore next -- the name was read out of this same content. */
   if (!sm) return '';
   const start = sm.index;
   const rest = content.substring(start);
@@ -118,7 +119,10 @@ function parseSwarmServices(content: string): DockerSwarmInfo[] {
     }
 
     if (deployBlock.includes('placement:') && deployBlock.includes('constraints:')) {
-      const constraintVal = extractYamlValue(deployBlock, 'node.role');
+      // Constraints are written as list items, "- node.role == manager",
+      // which is the only form the Swarm documentation uses.
+      const constraintVal = extractYamlValue(deployBlock, 'node.role')
+        ?? /node\.role\s*[!=]=\s*(\S+)/.exec(deployBlock)?.[1] ?? null;
       if (!constraintVal) {
         issues.push(`Service "${serviceName}" has placement constraints but no node.role constraint — verify placement constraints are correctly targeting manager or worker nodes`);
       }

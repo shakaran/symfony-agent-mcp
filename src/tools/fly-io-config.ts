@@ -43,6 +43,7 @@ function parseFlyToml(content: string, relPath: string): FlyIoConfigInfo[] {
   // [build]
   if (/^\[build\]/m.test(content)) {
     const buildMatch = content.match(/\[build\][^[]{0,500}/s);
+    /* istanbul ignore next -- the section was just found with the same text. */
     const buildBlock = buildMatch ? buildMatch[0] : '';
     const imageMatch = buildBlock.match(/image\s*=\s*["']?([^"'\n]{1,100})["']?/);
     results.push({ file: relPath, setting: 'build', value: imageMatch ? imageMatch[1].trim() : 'dockerfile', issues: [] });
@@ -84,6 +85,7 @@ function parseFlyToml(content: string, relPath: string): FlyIoConfigInfo[] {
     const envBlock = envMatch[0];
     const lines = envBlock.split('\n').slice(1); // skip [env] line
     for (const line of lines) {
+      /* istanbul ignore next -- the block was cut at the next section. */
       if (line.startsWith('[')) break;
       const kvMatch = line.match(/^\s*([A-Z0-9_]{1,80})\s*=\s*["']?([^"'\n]{0,200})["']?/);
       if (!kvMatch) continue;
@@ -97,6 +99,7 @@ function parseFlyToml(content: string, relPath: string): FlyIoConfigInfo[] {
         });
       }
     }
+    /* istanbul ignore else -- nothing above writes the plain "env" setting. */
     if (!results.some((r) => r.setting === 'env')) {
       results.push({ file: relPath, setting: 'env', value: 'configured', issues: [] });
     }

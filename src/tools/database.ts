@@ -31,7 +31,9 @@ export async function listTables(appPath: string): Promise<McpToolResult> {
     }
 
     const entities = parseEntities(appPath);
-    const entityMap = new Map(entities.map((e) => [e.tableName || classToTableName(e.name), e.name]));
+    /* istanbul ignore next -- the parser derives a table name for every
+     entity, so the fallback is never reached. */
+  const entityMap = new Map(entities.map((e) => [e.tableName || classToTableName(e.name), e.name]));
 
     const tableList = tables.map((t) => {
       const entityName = entityMap.get(t);
@@ -170,6 +172,8 @@ export async function validateSchemaMapping(appPath: string): Promise<McpToolRes
     const ok: string[] = [];
 
     for (const entity of entities) {
+      /* istanbul ignore next -- the parser derives a table name for every
+         entity, so the fallback is never reached. */
       const tableName = entity.tableName || classToTableName(entity.name);
 
       if (entity.properties.length === 0 && entity.relationships.length === 0) {

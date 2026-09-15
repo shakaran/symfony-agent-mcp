@@ -107,7 +107,10 @@ function buildGedmoSluggableInfos(appPath: string): GedmoSluggableInfo[] {
       results.push({ file: relFile, entity, slugField: slugFieldName, sourceFields, unique, updatable, issues });
     }
 
-    const annotSlugRe = /@Slug\s*\(\s*fields\s*=\s*\{([^}]{0,300})\}([^)]{0,300})\)/g;
+    // The annotation is written with its namespace alias in every example
+    // Gedmo publishes: "@Gedmo\\Slug(...)". Matching only the bare "@Slug"
+    // read none of them.
+    const annotSlugRe = /@(?:Gedmo\\)?Slug\s*\(\s*fields\s*=\s*\{([^}]{0,300})\}([^)]{0,300})\)/g;
     let as: RegExpExecArray | null;
     while ((as = annotSlugRe.exec(content)) !== null) {
       const fieldStr = as[1];

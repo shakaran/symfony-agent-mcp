@@ -47290,3 +47290,468 @@ class Invoice
     expect(text).toContain('Invoice');
   });
 });
+
+describe('batch 183: swarm, gedmo, firebase and memory', () => {
+  test('swarm services with a deploy block that names no replicas and no constraints', async () => {
+    const app = appWith('swarm-deploy-shapes', {
+      'docker-compose.prod.yml': `services:
+  php:
+    image: app:latest
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '0.5'
+      placement:
+        constraints:
+          - node.role == worker
+      healthcheck:
+        test: ["CMD", "true"]
+  worker:
+    image: app:latest
+    deploy:
+      placement:
+        preferences:
+          - spread: node.labels.zone
+  worker:
+    image: app:latest
+    deploy:
+      mode: global
+`,
+    });
+    const noChildren = appWith('swarm-no-children', {
+      'docker-compose.yml': `services:
+x-defaults: &defaults
+  deploy:
+    replicas: 1
+`,
+    });
+    const commented = appWith('swarm-commented-services', {
+      'docker-compose.yml': `services:
+  # the first service is written under a comment
+  php:
+    image: app:latest
+    deploy:
+      replicas: 2
+`,
+    });
+
+    expect(await runModule('docker-swarm-config.js', app)).toContain('worker');
+    expect((await runModule('docker-swarm-config.js', commented)).length).toBeGreaterThan(0);
+    expect((await runModule('docker-swarm-config.js', noChildren)).length).toBeGreaterThan(0);
+  });
+
+  test('a sluggable field that is neither unique nor updatable, and one with a handler', async () => {
+    const app = appWith('gedmo-sluggable-shapes', {
+      'src/Entity/Page.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+class Page
+{
+    #[Gedmo\\Slug(fields: ['title'], unique: false, updatable: false)]
+    #[ORM\\Column(length: 128)]
+    private ?string $slug = null;
+}
+`,
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+class Category
+{
+    #[Gedmo\\Slug(fields: ['name'], unique: true, updatable: true)]
+    #[Gedmo\\SlugHandler(class: TreeSlugHandler::class)]
+    #[ORM\\Column(name: 'slug', length: 128)]
+    private ?string $slug = null;
+}
+`,
+      'src/Entity/Legacy.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+/**
+ * @ORM\\Entity
+ */
+class Legacy
+{
+    /**
+     * @Gedmo\\Slug(fields={"title"}, unique=false, updatable=false)
+     * @ORM\\Column(length=128)
+     */
+    private $slug;
+}
+`,
+      'src/Entity/LegacyUpdatable.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+/**
+ * @ORM\\Entity
+ */
+class LegacyUpdatable
+{
+    /**
+     * @Gedmo\\Slug(fields={"title"}, unique=true, updatable=true)
+     * @ORM\\Column(length=128)
+     */
+    private $slug;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-sluggable.js', app);
+
+    expect(text).toContain('Page');
+  });
+
+  test('event listeners declared by attribute with no method and by tag with no event', async () => {
+    const app = appWith('events-tag-shapes', {
+      'src/EventListener/RequestListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\HttpKernel\\Event\\RequestEvent;
+
+#[AsEventListener(event: 'kernel.request')]
+class RequestListener
+{
+    #[AsEventListener(event: 'kernel.response', priority: 10)]
+    public function onResponse($event): void
+    {
+    }
+
+    #[AsEventListener(priority: -10)]
+    public function onSomethingElse($event): void
+    {
+    }
+
+    public function __invoke(RequestEvent $event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/AttributeSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class AttributeSubscriber implements EventSubscriberInterface
+{
+    #[AsEventListener(event: 'kernel.terminate')]
+    public function onTerminate($event): void
+    {
+    }
+}
+`,
+      'src/EventSubscriber/OrderSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class OrderSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'order.placed' => 'onOrderPlaced',
+        ];
+    }
+
+    public function onOrderPlaced($event): void
+    {
+    }
+}
+`,
+      'config/services.yaml': `services:
+    App\\EventListener\\TaggedListener:
+        tags:
+            - { name: kernel.event_listener }
+    App\\EventListener\\OtherTagged:
+        tags:
+            - { name: kernel.event_subscriber }
+`,
+    });
+
+    const noSubscribers = appWith('events-no-subscribers', {
+      'src/EventListener/OnlyListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+
+#[AsEventListener(event: 'kernel.request')]
+class OnlyListener
+{
+    public function __invoke($event): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('events.js', app, ['order.placed']);
+
+    expect((await runModule('events.js', noSubscribers, ['kernel.request'])).length).toBeGreaterThan(0);
+    expect(text).toContain('Subscriber');
+  });
+
+  test('firebase credentials given as a path that is not there, and one that is', async () => {
+    const app = appWith('firebase-credential-paths', {
+      'composer.json': JSON.stringify({ require: { 'kreait/firebase-php': '^7.0' } }, null, 2),
+      '.env': `FIREBASE_PROJECT_ID=demo-project
+FIREBASE_CREDENTIALS=demo-credentials
+GOOGLE_APPLICATION_CREDENTIALS=config/firebase/service-account.json
+`,
+      '.env.local': `FIREBASE_CREDENTIALS=%env(FIREBASE_CREDS)%
+GOOGLE_APPLICATION_CREDENTIALS=%kernel.project_dir%/config/firebase/present.json
+`,
+      '.env.prod': `GOOGLE_APPLICATION_CREDENTIALS=/etc/firebase/service-account.json
+`,
+      'src/Service/Push.php': `<?php
+
+namespace App\\Service;
+
+use Kreait\\Firebase\\Factory;
+
+class Push
+{
+    private const CREDENTIALS = '{"type": "service_account", "project_id": "demo"}';
+
+    public function send(): void
+    {
+        $this->factory->createMessaging()->getMessaging();
+    }
+}
+`,
+      'config/firebase/present.json': JSON.stringify({ type: 'service_account', project_id: 'demo' }, null, 2),
+    });
+
+    const text = await runModule('firebase-integration.js', app);
+
+    expect(text).toContain('FIREBASE_CREDENTIALS');
+  });
+
+  test('a fly.toml with a build image, no checks, and a vm block', async () => {
+    const app = appWith('fly-io-shapes', {
+      'fly.toml': `app = "demo"
+primary_region = "mad"
+
+[build]
+  image = "registry.fly.io/demo:latest"
+
+[env]
+  APP_ENV = "prod"
+  APP_SECRET = "hardcoded-secret-value"
+
+[[vm]]
+  cpu_kind = "shared"
+  memory = "512mb"
+`,
+    });
+    const plain = appWith('fly-io-plain', {
+      'fly.toml': `app = "demo"
+primary_region = "mad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  APP_ENV = "prod"
+
+[[services.tcp_checks]]
+  interval = "15s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+`,
+    });
+
+    expect(await runModule('fly-io-config.js', app)).toContain('registry.fly.io');
+    expect(await runModule('fly-io-config.js', plain)).toContain('dockerfile');
+  });
+
+  test('weak hashes near a secret, a checksum with no integrity context, and a raised memory limit', async () => {
+    const app = appWith('hash-and-memory-shapes', {
+      'src/Service/Digests.php': `<?php
+
+namespace App\\Service;
+
+class Digests
+{
+    public function nearSecret(): string
+    {
+        $secret = $this->config->get('secret');
+
+        return md5($secret);
+    }
+
+    public function sha1Hash($data): string
+    {
+        $secretKey = 'x';
+
+        return hash('sha1', $data . $secretKey);
+    }
+
+    public function checksum($data): string
+    {
+        return crc32($data);
+    }
+
+    public function hmac($data): string
+    {
+        return hash_hmac('sha1', $data, $this->key);
+    }
+}
+`,
+      'src/Service/ArrayChains.php': `<?php
+
+namespace App\\Service;
+
+class ArrayChains
+{
+    public function fromCollection($collection): array
+    {
+        $rows = $collection->toArray();
+
+        return array_values(array_filter(array_map(fn ($r) => $r, $rows)));
+    }
+}
+`,
+      'src/Service/PlainChains.php': `<?php
+
+namespace App\\Service;
+
+class PlainChains
+{
+    public function fromInput(array $rows): array
+    {
+        return array_values(array_filter(array_map(fn ($r) => $r, $rows)));
+    }
+}
+`,
+      'src/Service/Memory.php': `<?php
+
+namespace App\\Service;
+
+class Memory
+{
+    public function chained($repository): array
+    {
+        $rows = $repository->createQueryBuilder('r')->getQuery()->getResult();
+
+        return array_values(array_filter(array_map(fn ($r) => $r, $rows)));
+    }
+
+    public function plain(array $rows): array
+    {
+        return array_values(array_filter(array_map(fn ($r) => $r, $rows)));
+    }
+
+    public function counted(): int
+    {
+        $total = 0;
+        foreach (range(0, 200000) as $i) {
+            $total += $i;
+        }
+
+        return $total;
+    }
+
+    public function raise(): void
+    {
+        ini_set('memory_limit', '4G');
+    }
+
+    public function normal(): void
+    {
+        ini_set('memory_limit', '256M');
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-hash-algorithm-security.js', app)).toContain('Digests');
+    expect(await runModule('php-memory-management.js', app)).toContain('Memory');
+  });
+
+  test('database tables with an entity, a default column value and indexes', async () => {
+    const app = appWith('database-schema-shapes', {
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Customer
+{
+    #[ORM\\Id]
+    #[ORM\\Column]
+    private ?int $id = null;
+
+    #[ORM\\Column(length: 180, options: ['default' => 'unknown'])]
+    private string $name = 'unknown';
+}
+`,
+      'migrations/Version20260101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE customer (id INT NOT NULL, name VARCHAR(180) DEFAULT \\'unknown\\' NOT NULL)');
+        $this->addSql('CREATE INDEX idx_customer_name ON customer (name)');
+        $this->addSql('CREATE TABLE audit_log (id INT NOT NULL)');
+    }
+}
+`,
+    });
+
+    const migrationsOnly = appWith('database-migrations-only', {
+      'migrations/Version20260202000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260202000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE audit_log (id INT NOT NULL, level VARCHAR(16) DEFAULT \\'info\\' NOT NULL)');
+        $this->addSql('CREATE TABLE plain_table (id INT NOT NULL)');
+        $this->addSql('CREATE INDEX idx_audit_level ON audit_log (level)');
+    }
+}
+`,
+    });
+
+    const text = await runModule('database.js', app, ['customer']);
+
+    expect(await runModule('database.js', migrationsOnly, ['audit_log'])).toContain('audit_log');
+    expect(text).toContain('customer');
+  });
+});
