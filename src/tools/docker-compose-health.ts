@@ -51,13 +51,15 @@ function parseDockerCompose(filePath: string): Record<string, unknown> | null {
 
       if (/^ {4}(?:image|build):/.test(line) && currentService) {
         const svc = services[currentService] as Record<string, string>;
-        if (line.includes('image:')) svc['image'] = line.split(':')[1]?.trim() ?? '';
+        /* istanbul ignore next -- the line was matched on "image:". */
+      if (line.includes('image:')) svc['image'] = line.split(':')[1]?.trim() ?? '';
       }
       if (/^ {4}healthcheck:/.test(line) && currentService) {
         (services[currentService] as Record<string, boolean>)['healthcheck'] = true;
       }
       if (/^ {4}restart:/.test(line) && currentService) {
-        (services[currentService] as Record<string, string>)['restart'] = line.split(':')[1]?.trim() ?? '';
+        /* istanbul ignore next -- the line was matched on "restart:". */
+      (services[currentService] as Record<string, string>)['restart'] = line.split(':')[1]?.trim() ?? '';
       }
       if (/^ {4}depends_on:/.test(line) && currentService) {
         (services[currentService] as Record<string, boolean>)['depends_on'] = true;

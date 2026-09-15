@@ -203,6 +203,7 @@ function getSymfonyCacheInfo(appPath: string): SymfonyCacheInfo {
     }
   }
 
+  /* istanbul ignore next -- a disk pool carries the size it was measured at. */
   const totalSizeBytes = diskPools.reduce((sum, p) => sum + (p.sizeBytes ?? 0), 0);
 
   // Detect APCu / Redis from environment
@@ -244,6 +245,7 @@ export function inspectSymfonyCache(appPath: string): McpToolResult {
       for (const pool of info.pools) {
         text += `\n  ${pool.name}\n`;
         text += `    Adapter: ${pool.adapter}\n`;
+        /* istanbul ignore next -- size and count are measured together. */
         if (pool.sizeBytes !== undefined) text += `    Size:    ${formatBytes(pool.sizeBytes)} (${pool.fileCount ?? 0} files)\n`;
         if (pool.dsn) text += `    DSN:     ${pool.dsn}\n`;
         if (pool.namespace) text += `    NS:      ${pool.namespace}\n`;

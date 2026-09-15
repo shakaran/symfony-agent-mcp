@@ -52424,7 +52424,8 @@ api.example.com {
         lb_policy round_robin
     }
 }
-`,
+
+encode`,
       'caddy.json': JSON.stringify({
         apps: {
           http: {
@@ -52487,6 +52488,39 @@ class Lonely
     }
 }
 `,
+      'src/Service/Aaa.php': `<?php
+
+namespace App\\Service;
+
+class Aaa
+{
+    public function __construct(private Mango $mango)
+    {
+    }
+}
+`,
+      'src/Service/Mango.php': `<?php
+
+namespace App\\Service;
+
+class Mango
+{
+    public function __construct(private Apple $apple)
+    {
+    }
+}
+`,
+      'src/Service/Apple.php': `<?php
+
+namespace App\\Service;
+
+class Apple
+{
+    public function __construct(private Mango $mango)
+    {
+    }
+}
+`,
     });
 
     const text = await runModule('dependency-graph.js', app, ['Alpha']);
@@ -52541,9 +52575,27 @@ static_sites:
 `,
     });
 
+    const noCondition = appWith('compose-health-no-condition', {
+      'docker-compose.yml': `x-defaults:
+  common:
+    restart: unless-stopped
+
+services:
+  php:
+    image: php:8.3-fpm
+    depends_on:
+      - database
+  database:
+    image: postgres:16
+    healthcheck:
+      test: ["CMD", "true"]
+`,
+    });
+
     const text = await runModule('docker-compose-health.js', app);
 
-    expect(text).toContain('php');
+    expect(await runModule('docker-compose-health.js', noCondition)).toContain('php');
+    expect(text).toContain('database');
   });
 
   test('encrypted entity fields with an index on one of them', async () => {
@@ -52564,18 +52616,49 @@ class Patient
     #[Encrypted]
     #[ORM\\Column(length: 64)]
     private string $ssn = '';
+}
+`,
+      'src/Entity/Legacy.php': `<?php
 
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ */
+class Legacy
+{
     /**
      * @Encrypted
+     * @ORM\\Column(length=64)
      */
+    private $phone;
+}
+`,
+    });
+
+    const noRequire = appWith('doctrine-encryption-no-require', {
+      'composer.json': '{}',
+      'src/Entity/Simple.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Simple
+{
+    #[Encrypted]
     #[ORM\\Column(length: 64)]
-    private string $phone = '';
+    private string $token = '';
 }
 `,
     });
 
     const text = await runModule('doctrine-encryption.js', app);
 
+    expect((await runModule('doctrine-encryption.js', noRequire)).length).toBeGreaterThan(0);
     expect(text).toContain('Patient');
   });
 
@@ -52591,6 +52674,21 @@ class Patient
       'var/cache/prod/pools/app/a/file': 'x\n',
       'var/cache/prod/pools/orphan.pool/b/file': 'y\n',
     });
+
+    const saved = process.env['SYMFONY_MCP_CACHE'];
+    process.env['SYMFONY_MCP_CACHE'] = 'false';
+    jest.resetModules();
+    try {
+      const mod = await import(path.resolve(__dirname, '../tools/cache-inspector')) as {
+        inspectMcpCache: () => { content: Array<{ text?: string }> };
+      };
+
+      expect(mod.inspectMcpCache().content.map((c) => c.text ?? '').join('\n')).toContain('disabled');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_CACHE'];
+      else process.env['SYMFONY_MCP_CACHE'] = saved;
+      jest.resetModules();
+    }
 
     const text = await runModule('cache-inspector.js', app);
 
@@ -52645,5 +52743,242 @@ class PairingRepository
     const text = await runModule('doctrine-composite-primary-keys.js', app, ['Pairing']);
 
     expect(text).toContain('Pairing');
+  });
+});
+
+describe('batch 198: mappings, timestamps, types and fixtures', () => {
+  test('ORM mappings given as null, by prefix and with a parameter in the directory', async () => {
+    const app = appWith('doctrine-mapping-format-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        mappings:
+            App:
+                type: attribute
+                dir: '%kernel.project_dir%/src/Entity'
+                prefix: 'App\\Entity'
+            Legacy:
+                type: xml
+                dir: config/doctrine
+            Bare: ~
+            Prefixed:
+                type: attribute
+                prefix: 'App\\Other'
+`,
+      'config/doctrine/Legacy.Thing.orm.xml': `<?xml version="1.0"?>
+<doctrine-mapping />
+`,
+      'src/Entity/Thing.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Thing
+{
+}
+`,
+    });
+
+    expect(await runModule('doctrine-mapping-format.js', app)).toContain('mapping');
+    expect(await runModule('doctrine-multi-connection.js', app)).toContain('default');
+  });
+
+  test('several entity managers whose mappings name no directory', async () => {
+    const app = appWith('doctrine-multi-connection-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                url: '%env(DATABASE_URL)%'
+            legacy:
+                url: '%env(LEGACY_URL)%'
+    orm:
+        entity_managers:
+            default:
+                connection: default
+                mappings:
+                    App:
+                        type: attribute
+                    Bare: ~
+            legacy:
+                connection: legacy
+                mappings:
+                    Legacy:
+                        dir: src/Legacy
+`,
+    });
+
+    const text = await runModule('doctrine-multi-connection.js', app);
+
+    expect(text).toContain('legacy');
+  });
+
+  test('timestamps by trait and by Gedmo, and an entity with only one of the two fields', async () => {
+    const app = appWith('doctrine-timestamps-styles', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Timestampable\\Traits\\TimestampableEntity;
+
+#[ORM\\Entity]
+class Article
+{
+    use TimestampableEntity;
+
+    public function getCreatedAt(): \\DateTimeInterface
+    {
+        return $this->createdAt;
+    }
+
+    public function getUpdatedAt(): \\DateTimeInterface
+    {
+        return $this->updatedAt;
+    }
+}
+`,
+      'src/Entity/Comment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+class Comment
+{
+    #[Gedmo\\Timestampable(on: 'create')]
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private $createdAt;
+
+    #[Gedmo\\Timestampable(on: 'update')]
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private $updatedAt;
+}
+`,
+    });
+    const manual = appWith('doctrine-timestamps-manual', {
+      'src/Entity/Note.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Note
+{
+    #[ORM\\Column(type: 'datetime')]
+    private $updatedAt;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-timestamps.js', app)).toContain('Timestampable');
+    expect(await runModule('doctrine-timestamps.js', manual)).toContain('updatedAt');
+  });
+
+  test('custom DBAL types given as a string, as a map and with no class', async () => {
+    const app = appWith('doctrine-types-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        types:
+            money: App\\Doctrine\\MoneyType
+            point:
+                class: App\\Doctrine\\PointType
+                commented: false
+            bare:
+                commented: true
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Column(type: 'money')]
+    private $total;
+
+    #[ORM\\Column(type: 'point')]
+`,
+    });
+
+    const text = await runModule('doctrine-types.js', app);
+
+    expect(text).toContain('money');
+  });
+
+  test('a flush inside a loop with nested braces, and a method that does nothing else', async () => {
+    const app = appWith('uow-flush-shapes', {
+      'src/Service/Importer.php': `<?php
+
+namespace App\\Service;
+
+class Importer
+{
+    public function import(array $rows): void
+    {
+        foreach ($rows as $row) {
+            if ($row['valid']) {
+                $entity = new Thing($row);
+                $this->em->persist($entity);
+                $this->em->flush();
+                $this->logger->info('saved', ['id' => $entity->getId()]);
+                $this->bus->dispatch(new ThingImported($entity->getId()));
+            }
+        }
+    }
+
+    public function plain(): void
+    {
+        $this->em->flush();
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-uow-flush.js', app);
+
+    expect(text).toContain('Importer');
+  });
+
+  test('fixtures with references, a file with no class and an application with no fixtures', async () => {
+    const app = appWith('fixtures-shapes', {
+      'src/DataFixtures/AppFixtures.php': `<?php
+
+namespace App\\DataFixtures;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class AppFixtures extends Fixture
+{
+    public function load(ObjectManager $manager): void
+    {
+        $this->addReference('user-admin', $admin);
+        $this->addReference('user-editor', $editor);
+        $this->addReference('category-news', $category);
+        $this->addReference('category-blog', $blog);
+        $manager->flush();
+    }
+}
+`,
+      'src/DataFixtures/helpers.php': `<?php
+
+// Helper functions for the data fixtures, with nothing declared.
+function fixture_password(): string
+{
+    return 'demo';
+}
+`,
+    });
+    const none = appWith('fixtures-none', {});
+
+    expect(await runModule('fixtures.js', app, ['AppFixtures'])).toContain('AppFixtures');
+    expect((await runModule('fixtures.js', none, ['AppFixtures'])).length).toBeGreaterThan(0);
   });
 });

@@ -123,6 +123,7 @@ function detectCircular(nodes: ServiceNode[]): CircularDep[] {
   function dfs(cls: string, stack: string[]): void {
     if (inStack.has(cls)) {
       const cycleStart = stack.indexOf(cls);
+      /* istanbul ignore else -- the class is on the stack, so it is in it. */
       if (cycleStart >= 0) {
         const cycle = stack.slice(cycleStart);
         // Deduplicate: normalize cycle by rotating to smallest element
@@ -142,6 +143,7 @@ function detectCircular(nodes: ServiceNode[]): CircularDep[] {
     inStack.add(cls);
 
     const node = classMap.get(cls);
+    /* istanbul ignore else -- dfs is only called with classes from the map. */
     if (node) {
       for (const dep of node.dependencies) {
         if (classMap.has(dep)) {
