@@ -120,7 +120,9 @@ function getAllPhpFiles(dir: string): string[] {
 
 function countUsages(srcDir: string, pattern: string): number {
   let count = 0;
-  const short = pattern.split('\\').pop()!;
+  // A namespace prefix ends in a backslash, and its last segment was the empty
+  // string, which every file "contains": the PSR was always reported concrete.
+  const short = pattern.split('\\').filter(Boolean).pop()!;
   try {
     for (const file of getAllPhpFiles(srcDir)) {
       const content = safeRead(file, srcDir);
