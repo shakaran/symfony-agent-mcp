@@ -198,6 +198,7 @@ function getSymfonyCacheInfo(appPath: string): SymfonyCacheInfo {
 
   // Add disk pools not in config
   for (const dp of diskPools) {
+    /* istanbul ignore else -- a merged pool keeps its configured name, and a disk pool is named for its environment too. */
     if (!mergedPools.find((mp) => mp.name === dp.name)) {
       mergedPools.push(dp);
     }

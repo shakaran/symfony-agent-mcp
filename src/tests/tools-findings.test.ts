@@ -57582,3 +57582,210 @@ class TokenReader
     expect(await runModule('aws-cognito-integration.js', app)).toContain('JWKS');
   });
 });
+
+describe('batch 218: Lambda, Azure, Behat and CDNs', () => {
+  test('a Lambda with enough memory, the production environment set, and a write outside /tmp', async () => {
+    const app = appWith('lambda-bref-sized', {
+      'serverless.yml': `service: shop
+provider:
+  name: aws
+  runtime: provided.al2
+  timeout: 28
+  memorySize: 512
+  environment:
+    APP_ENV: prod
+functions:
+  web:
+    handler: public/index.php
+`,
+      'src/Report/Writer.php': `<?php
+
+namespace App\\Report;
+
+class Writer
+{
+    public function write(string $data): void
+    {
+        file_put_contents('/var/data/report.csv', $data);
+    }
+}
+`,
+      'src/Report/TmpWriter.php': `<?php
+
+namespace App\\Report;
+
+class TmpWriter
+{
+    public function write(string $data): void
+    {
+        file_put_contents('/tmp/report.csv', $data);
+    }
+}
+`,
+    });
+
+    expect(await runModule('aws-lambda-bref.js', app)).toContain('memorySize');
+  });
+
+  test('an Azure connection string under another key, a storage key from the environment and one written in code', async () => {
+    const app = appWith('azure-blob-connection', {
+      '.env': `STORAGE_DSN=DefaultEndpointsProtocol=https;AccountName=shop;AccountKey=abcdef0123456789
+AZURE_STORAGE_KEY=%env(AZURE_STORAGE_KEY)%
+`,
+      'src/Storage/BlobClient.php': `<?php
+
+namespace App\\Storage;
+
+use MicrosoftAzure\\Storage\\Blob\\BlobRestProxy;
+
+class BlobClient
+{
+    public function build(): BlobRestProxy
+    {
+        return BlobRestProxy::createBlobService('DefaultEndpointsProtocol=https;AccountName=shop;AccountKey=abcdef0123456789');
+    }
+}
+`,
+    });
+
+    expect(await runModule('azure-blob-storage.js', app)).toContain('connection string');
+  });
+
+  test('a pool with no image, a named variable and a steps-only pipeline with a timeout', async () => {
+    const app = appWith('azure-pipeline-named-pool', {
+      'azure-pipelines.yml': `trigger:
+  - main
+
+pool:
+  name: Default
+  demands:
+    - agent.os -equals Linux
+
+variables:
+  - name: BUILD_CONFIGURATION
+    value: Release
+
+steps:
+  - script: composer install
+    displayName: Install
+timeoutInMinutes: 30
+`,
+    });
+
+    expect(await runModule('azure-pipelines-config.js', app)).toContain('agent-pool');
+  });
+
+  test('a scenario with a very long title, tags that no scenario consumes, and a skip that says why', async () => {
+    const longTitle = 'x'.repeat(230);
+    const app = appWith('behat-long-titles', {
+      'features/checkout.feature': `Feature: Checkout
+
+  @wip
+  Given a cart that nobody claims
+
+  Scenario: ${longTitle}
+    Given I have a cart
+    Then I see it
+
+  @skip
+  Scenario: A skipped one
+    # TODO: waiting on the payment sandbox
+    Given I have a cart
+`,
+    });
+
+    expect(await runModule('behat-tags.js', app)).toContain('Feature files: 1');
+  });
+
+  test('a Braintree merchant id in double quotes that comes from the environment', async () => {
+    const app = appWith('braintree-env-merchant', {
+      'composer.json': JSON.stringify({ require: { 'braintree/braintree_php': '^6.0' } }, null, 2),
+      'src/Payment/BraintreeGateway.php': `<?php
+
+namespace App\\Payment;
+
+use Braintree\\Gateway;
+
+class BraintreeGateway
+{
+    public function build(): Gateway
+    {
+        return new Braintree\\Gateway([
+            "environment" => "production",
+            "merchantId" => getenv('BRAINTREE_MERCHANT_ID'),
+        ]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('braintree-integration.js', app)).toContain('Braintree');
+  });
+
+  test('a cache pool whose name matches a directory on disk', async () => {
+    const app = appWith('cache-pool-on-disk', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app:
+                adapter: cache.adapter.filesystem
+`,
+      'var/cache/dev/pools/app/entry.php': `<?php return [];
+`,
+    });
+
+    expect(await runModule('cache-inspector.js', app)).toContain('app');
+  });
+
+  test('a Caddyfile that only names encode, a JSON config with no servers, and a Caddyfile directory under docker/', async () => {
+    const app = appWith('caddy-bare-encode', {
+      'Caddyfile': `shop.example.com {
+    root * /srv/public
+    encode
+    php_fastcgi php:9000
+}
+`,
+      'caddy.json': JSON.stringify({ apps: { http: { http_port: 80 } } }, null, 2),
+      'docker/Caddyfile.d/extra.conf': `# extra directives
+`,
+      'docker/Caddyfile': `:80
+root * /srv/public
+encode
+`,
+    });
+
+    expect(await runModule('caddy-server-config.js', app)).toContain('encode');
+  });
+
+  test('assets served from CloudFront, from Fastly and from a plain host', async () => {
+    const withCloudfront = appWith('cdn-cloudfront', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        base_urls:
+            - 'https://d111111abcdef8.cloudfront.net'
+`,
+    });
+
+    expect(await runModule('cdn-config.js', withCloudfront)).toContain('integrity');
+
+    const withFastly = appWith('cdn-fastly', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        base_urls:
+            - 'https://shop.global.ssl.fastly.net'
+`,
+    });
+
+    expect(await runModule('cdn-config.js', withFastly)).toContain('fastly');
+
+    const plainHost = appWith('cdn-plain-host', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        base_urls:
+            - 'https://static.example.com'
+`,
+    });
+
+    expect(await runModule('cdn-config.js', plainHost)).toContain('static.example.com');
+  });
+});

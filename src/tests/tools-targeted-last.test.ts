@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { clearMcpCache, inspectMcpCache } from '../tools/cache-inspector.js';
+import { cacheManager } from '../utils/cache-manager.js';
 
 let root: string;
 
@@ -73,6 +74,24 @@ describe('the remaining corners', () => {
 
     const after = inspectMcpCache();
     expect(after.content[0]?.text).toContain('Status:');
+  });
+
+  test('a cache that fails with something that is not an Error', () => {
+    const stats = jest.spyOn(cacheManager, 'getStats').mockImplementation(() => {
+      throw 'the cache is gone';
+    });
+
+    try {
+      const inspected = inspectMcpCache();
+      expect(inspected.isError).toBe(true);
+      expect(inspected.content[0]?.text).toContain('the cache is gone');
+
+      const cleared = clearMcpCache();
+      expect(cleared.isError).toBe(true);
+      expect(cleared.content[0]?.text).toContain('the cache is gone');
+    } finally {
+      stats.mockRestore();
+    }
   });
 
   test('bundles written with single quotes, as the recipe writes them', async () => {
