@@ -61,7 +61,9 @@ function analyseFile(filePath: string, base: string): BackedEnumFinding[] {
       findings.push({ file: filePath, line: i + 1, enumName: backedMatch[1], pattern: `enum ${backedMatch[1]}: ${backedMatch[2]}`, issue: null });
       continue;
     }
-    const unitMatch = /^\s*enum\s+([A-Za-z_][A-Za-z0-9_]{0,80})\s*(?:implements\s+[^{]{0,200})?\{/.exec(line);
+    // The brace goes on the next line under PSR-12, and demanding it here meant
+    // no unit enum written that way was ever recorded.
+    const unitMatch = /^\s*enum\s+([A-Za-z_][A-Za-z0-9_]{0,80})\s*(?:implements\s+[^{]{0,200})?(?:\{|\s*$)/.exec(line);
     if (unitMatch && !backedMatch) {
       enumMap.set(unitMatch[1], 'unit');
     }
