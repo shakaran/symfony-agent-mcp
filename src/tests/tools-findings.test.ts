@@ -60551,3 +60551,222 @@ class SwitchUserSubscriber
     expect(await runModule('symfony-security-impersonation.js', app)).toContain('switch');
   });
 });
+
+describe('batch 230: hashers, semaphores, serializers and Twig', () => {
+  test('a hasher entry with no body and another that asks for rehash on login', async () => {
+    const app = appWith('password-upgrade-auto-rehash', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        bare:
+        App\\Entity\\User:
+            algorithm: auto
+            auto_rehash_on_login: true
+            migrate_from: ['sha256']
+`,
+    });
+
+    expect(await runModule('symfony-security-password-upgrade.js', app)).toContain('rehash');
+  });
+
+  test('a semaphore configured with a store and no max count', async () => {
+    const app = appWith('semaphore-store-only', {
+      'config/packages/framework.yaml': `framework:
+    semaphore:
+        reports:
+            store: '%env(SEMAPHORE_DSN)%'
+`,
+      'src/Service/ReportLock.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Semaphore\\SemaphoreFactory;
+
+class ReportLock
+{
+    public function __construct(private SemaphoreFactory $factory)
+    {
+    }
+
+    public function run(callable $work): void
+    {
+        $semaphore = $this->factory->createSemaphore('reports');
+        $semaphore->acquire();
+        try {
+            $work();
+        } finally {
+            $semaphore->release();
+        }
+    }
+}
+`,
+      'src/Service/Cleanup.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Semaphore\\SemaphoreInterface;
+
+class Cleanup
+{
+    public function __construct(private SemaphoreInterface $semaphore)
+    {
+    }
+
+    public function run(callable $work): void
+    {
+        $this->semaphore->acquire();
+        try {
+            $work();
+        } finally {
+            $this->semaphore->release();
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-semaphore.js', app)).toContain('reports');
+  });
+
+  test('a context builder with no context methods, and attributes used inline', async () => {
+    const app = appWith('serializer-context-bare-builder', {
+      'src/Service/Exporter.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Serializer\\Context\\Normalizer\\ObjectNormalizerContextBuilder;
+
+class Exporter
+{
+    public function export(): array
+    {
+        $context = new ObjectNormalizerContextBuilder();
+
+        return [];
+    }
+}
+`,
+      'src/Service/Inline.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Serializer\\Normalizer\\AbstractNormalizer;
+
+class Inline
+{
+    public function payload(): array
+    {
+        return [AbstractNormalizer::ATTRIBUTES => ['id', 'name']];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-context-builder.js', app)).toContain('Exporter');
+  });
+
+  test('the kernel injected in a plain service, and a render(controller()) in a Twig loop', async () => {
+    const app = appWith('subrequest-service-and-loop', {
+      'src/Service/Renderer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HttpKernel\\HttpKernelInterface;
+
+class Renderer
+{
+    public function __construct(private HttpKernelInterface $kernel)
+    {
+    }
+}
+`,
+      'templates/list.html.twig': `{% for item in items %}
+    {{ render(controller('App\\\\Controller\\\\ItemController::row', { id: item.id })) }}
+{% endfor %}
+`,
+    });
+
+    expect(await runModule('symfony-subrequest.js', app)).toContain('Renderer');
+  });
+
+  test('Twig cache disabled in dev and auto_reload set in the test environment', async () => {
+    const app = appWith('twig-cache-dev-and-test', {
+      'config/packages/dev/twig.yaml': `twig:
+    cache: false
+`,
+      'config/packages/test/twig.yaml': `twig:
+    auto_reload: true
+`,
+    });
+
+    expect(await runModule('symfony-twig-cache-config.js', app)).toContain('dev');
+  });
+
+  test('an isolated embed, a stray endembed and a block name only used inside the embed', async () => {
+    const app = appWith('twig-embed-isolated', {
+      'templates/page.html.twig': `{% block page_body %}
+    {% embed 'card.html.twig' with {} only %}
+        {% block card_title %}Reports{% endblock %}
+    {% endembed %}
+{% endblock %}
+{% endembed %}
+`,
+    });
+
+    expect(await runModule('symfony-twig-embed.js', app)).toContain('No Twig embed issues');
+  });
+
+  test('the same role checked twice and a loop with no authorization check', async () => {
+    const app = appWith('twig-security-repeated-role', {
+      'templates/dashboard.html.twig': `{% if is_granted('ROLE_ADMIN') %}
+    <p>admin</p>
+{% endif %}
+{% for item in items %}
+    <li>{{ item.name }}</li>
+{% endfor %}
+{% if is_granted('ROLE_ADMIN') %}
+    <p>admin again</p>
+{% endif %}
+`,
+    });
+
+    expect(await runModule('symfony-twig-security.js', app)).toContain('ROLE_ADMIN');
+  });
+
+  test('a cropper form type that names its format and another that stores the crop as a string', async () => {
+    const app = appWith('cropper-format-and-string', {
+      'src/Form/AvatarType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\UX\\Cropperjs\\Form\\CropperType as CropperField;
+
+class AvatarType
+{
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('avatar', CropperField::class, [
+            'format' => 'jpeg',
+            'maxSize' => 2097152,
+        ]);
+    }
+}
+`,
+      'src/Form/BannerType.php': `<?php
+
+namespace App\\Form;
+
+class BannerType
+{
+    private string $croppedImage = '';
+
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('banner', CropperField::class, []);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-ux-cropperjs.js', app)).toContain('AvatarType');
+  });
+});

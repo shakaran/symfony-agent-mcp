@@ -151,6 +151,7 @@ function buildTwigCacheInfos(appPath: string): TwigCacheInfo[] {
 export function listSymfonyTwigCacheConfig(appPath: string): McpToolResult {
   try {
     const infos = buildTwigCacheInfos(appPath);
+    /* istanbul ignore if -- the missing prod warning above always adds an entry. */
     if (infos.length === 0) {
       return { content: [{ type: 'text', text: 'No Twig configuration files found (config/packages/twig.yaml).' }] };
     }

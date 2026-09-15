@@ -192,6 +192,7 @@ export function listSymfonyTwigSecurity(appPath: string): McpToolResult {
         info.hasUserNullCheck ? 'user-null-checked' : 'NO-null-check',
         info.inLoop ? 'is_granted-in-loop' : '',
       ].filter(Boolean).join(', ');
+      /* istanbul ignore else -- the null-check flag is always one of the two. */
       if (flags) text += `    flags: [${flags}]\n`;
       for (const issue of info.issues) text += `    WARN: ${issue}\n`;
     }
