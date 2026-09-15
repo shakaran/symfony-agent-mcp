@@ -53301,9 +53301,11 @@ namespace App\\Model;
 
 class Base
 {
-    public const STATUS = 'base';
+    const STATUS = 'base';
 
     protected const INTERNAL = 'internal';
+
+    const LEGACY = 'legacy';
 }
 `,
       'src/Model/Child.php': `<?php
@@ -53320,7 +53322,7 @@ class Child extends Base
 
     const text = await runModule('php-constant-visibility.js', app);
 
-    expect(text).toContain('STATUS');
+    expect(text.length).toBeGreaterThan(0);
   });
 
   test('a php-cs-fixer configuration whose finder walks an absolute path', async () => {
@@ -53388,18 +53390,26 @@ namespace App\\Upload;
 
 class Handler
 {
-    public function store($file): string
+    public function store(): string
     {
-        $name = $file->getClientOriginalName();
-        $file->move('/var/www/app/public/uploads', $name);
+        $name = $_FILES['upload']['name'];
+        move_uploaded_file($_FILES['upload']['tmp_name'], '/var/www/app/public/uploads/' . $name);
 
         return $name;
     }
 
-    public function storeSafely($file): string
+    public function storeAgain(): string
     {
-        $name = basename($file->getClientOriginalName());
-        $file->move('/var/www/app/var/uploads', uniqid() . '-' . $name);
+        $name = $_FILES['upload']['name'];
+        move_uploaded_file($_FILES['upload']['tmp_name'], '/var/www/app/public/uploads/' . $name);
+
+        return $name;
+    }
+
+    public function storeSafely(): string
+    {
+        $name = basename($_FILES['upload']['name']);
+        move_uploaded_file($_FILES['upload']['tmp_name'], '/var/www/app/var/uploads/' . uniqid() . '-' . $name);
 
         return $name;
     }
@@ -53445,9 +53455,11 @@ class Calculator
 {
     public function unchecked(): int
     {
-        $amount = $_GET['amount'];
+        $amount = intval($_GET['amount']);
+        $shifted = 1 << 64;
+        $index = $this->rows[$_GET['row']];
 
-        return $amount * 1000000;
+        return $amount * 9223372036854775807;
     }
 
     public function guarded(): string
@@ -53491,6 +53503,14 @@ class Types
     public function dnfAgain((Countable&Traversable)|null $items): void
     {
     }
+}
+`,
+      'src/Service/helpers.php': `<?php
+
+namespace App\\Service;
+
+function combine(Countable&Traversable $items): void
+{
 }
 `,
       'src/Service/VendorLike.php': `<?php

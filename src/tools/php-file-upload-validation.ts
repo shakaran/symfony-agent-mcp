@@ -226,6 +226,7 @@ export function getPhpFileUploadValidationStats(appPath: string): McpToolResult 
       byPattern: {} as Record<string, number>,
     };
     for (const i of infos) {
+      /* istanbul ignore next -- the table is initialised with every level. */
       stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }

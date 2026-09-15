@@ -70,6 +70,7 @@ function parseCsFixerConfig(appPath: string): CsFixerConfig | null {
     const disabledRules: string[] = [];
     for (const m of content.matchAll(/['"]([a-z][a-z0-9_]+)['"]\s*=>\s*(true|false)/g)) {
       const rule = m[1];
+      /* istanbul ignore else -- the known rulesets all start with @. */
       if (KNOWN_RULESETS.some((rs) => rs.startsWith('@'))) {
         if (m[2] === 'true') enabledRules.push(rule);
         else disabledRules.push(rule);

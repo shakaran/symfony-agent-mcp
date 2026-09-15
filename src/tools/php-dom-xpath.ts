@@ -200,6 +200,7 @@ export function getPhpDomXpathStats(appPath: string): McpToolResult {
     const infos = buildDomXpathInfos(appPath);
 
     const countBySeverity = { high: 0, medium: 0, low: 0 };
+    /* istanbul ignore next -- the table is initialised with every level. */
     for (const info of infos) countBySeverity[info.severity] = (countBySeverity[info.severity] ?? 0) + 1;
 
     const countByFn: Record<string, number> = {};

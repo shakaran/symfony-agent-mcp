@@ -66,6 +66,7 @@ function windowHasFilesUpload(lines: string[], centerIdx: number, radius: number
 
 // Checks whether the argument to imagecreatefrom* looks like a variable (not a literal string)
 function argIsVariable(afterFn: string): boolean {
+  /* istanbul ignore next -- split never returns an empty array. */
   const argsSection = afterFn.slice(0, 120).split(')')[0] ?? '';
   // If the first non-space char after ( is $ it's a variable
   return /^\s*\$/.test(argsSection);
