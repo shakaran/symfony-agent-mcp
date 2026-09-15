@@ -51,7 +51,9 @@ function extractEntityFqcn(content: string): string {
   const classM = /(\w+)::class/.exec(ret);
   if (classM) return classM[1];
   // Extract from quoted string
-  const strM = /['"]([\\A-Za-z\d_]+)['"]\s*;/.exec(ret);
+  // The return expression is captured without its semicolon, so demanding one
+  // here meant a quoted FQCN was never read.
+  const strM = /['"]([\\A-Za-z\d_]+)['"]\s*$/.exec(ret);
   if (strM) {
     const parts = strM[1].split('\\');
     return parts[parts.length - 1];
