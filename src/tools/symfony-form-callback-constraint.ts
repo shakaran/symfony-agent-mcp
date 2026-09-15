@@ -174,6 +174,7 @@ export function listFormCallbackConstraints(appPath: string): McpToolResult {
         info.isStaticMethod ? 'static-method' : '',
         info.hasViolationCall ? 'has-addViolation' : 'no-addViolation',
       ].filter(Boolean).join(', ');
+      /* istanbul ignore else -- the violation flag is always one of its two spellings, so the list is never empty. */
       if (flags) text += `    flags: [${flags}]\n`;
       for (const issue of info.issues) text += `    WARN: ${issue}\n`;
     }

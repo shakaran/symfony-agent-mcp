@@ -59719,3 +59719,381 @@ class NotFoundException extends HttpException
     expect(await runModule('symfony-error-controller.js', app)).toContain('Error');
   });
 });
+
+describe('batch 227: ESI, event sourcing and forms', () => {
+  test('an ESI proxy configured, a templates path that is a file and more entries than the report lists', async () => {
+    const tags = Array.from({ length: 45 }, (_, i) => `    {{ render_esi(controller('App\\\\Controller\\\\FragmentController::block', { id: ${i} })) }}`).join('\n');
+    const app = appWith('esi-many-fragments', {
+      'config/packages/framework.yaml': `framework:
+    esi:
+        enabled: true
+    fragments:
+        path: /_fragment
+    trusted_proxies: '127.0.0.1,REMOTE_ADDR'
+`,
+      'templates/home.html.twig': `<div>
+${tags}
+</div>
+`,
+    });
+
+    expect(await runModule('symfony-esi-config.js', app)).toContain('ESI');
+
+    const templatesIsAFile = appWith('esi-templates-file', {
+      'templates': `# not a directory
+`,
+    });
+
+    expect(await runModule('symfony-esi-config.js', templatesIsAFile)).toBeDefined();
+  });
+
+  test('a mutable event, a projector that replays and a store that tracks its position', async () => {
+    const app = appWith('event-sourcing-shapes', {
+      'src/Domain/Event/OrderPlaced.php': `<?php
+
+namespace App\\Domain\\Event;
+
+class OrderPlaced implements DomainEventInterface
+{
+    public string $orderId = '';
+}
+`,
+      'src/Domain/Projector/OrderProjector.php': `<?php
+
+namespace App\\Domain\\Projector;
+
+class OrderProjector implements Projector
+{
+    public function replay(iterable $events): void
+    {
+    }
+
+    public function project($event): void
+    {
+    }
+}
+`,
+      'src/Domain/Store/EventStore.php': `<?php
+
+namespace App\\Domain\\Store;
+
+class EventStore implements EventStoreInterface
+{
+    public function append(string $streamId, array $events, int $position): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-event-sourcing.js', app)).toContain('event');
+  });
+
+  test('a callback constraint on a public property', async () => {
+    const app = appWith('form-callback-public-property', {
+      'src/Form/OrderType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Validator\\Constraints\\Callback;
+use Symfony\\Component\\Validator\\Constraints\\Expression;
+
+class OrderType extends AbstractType
+{
+    public string $reference = '';
+
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('reference', null, [
+            'constraints' => [
+                new Callback([$this, 'validateReference']),
+                new Expression('this.reference != ""'),
+            ],
+        ]);
+    }
+
+    public function validateReference($value, $context): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-callback-constraint.js', app)).toContain('Callback');
+  });
+
+  test('form listeners that all declare a priority, and a form type with none', async () => {
+    const app = appWith('form-events-priorities', {
+      'src/Form/PriorityType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormEvents;
+
+class PriorityType extends AbstractType
+{
+    public function buildForm($builder, array $options): void
+    {
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, [$this, 'onPreSetData'], 10);
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, [$this, 'onPostSubmit'], -10);
+    }
+
+    public function onPreSetData($event): void
+    {
+    }
+
+    public function onPostSubmit($event): void
+    {
+    }
+}
+`,
+      'src/Form/PlainType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class PlainType extends AbstractType
+{
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('name');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-events.js', app)).toContain('PriorityType');
+
+    const subscriberOnly = appWith('form-events-subscriber-only', {
+      'src/Form/SubscribedType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class SubscribedType extends AbstractType
+{
+    public function buildForm($builder, array $options): void
+    {
+        $builder->addEventSubscriber(new OrderFormSubscriber());
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-events.js', subscriberOnly)).toBeDefined();
+  });
+
+  test('a PRE_SET_DATA listener that adds no field conditionally, twice in the same file', async () => {
+    const app = appWith('form-pre-set-data-plain', {
+      'src/Form/PairOfTypes.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class FirstDynamicType extends AbstractType
+{
+    public function refresh($event): void
+    {
+        $data = $event->getData();
+    }
+
+    public function buildForm($builder, array $options): void
+    {
+        if ($options['admin']) {
+            $builder->add('secret');
+        }
+    }
+}
+
+class SecondDynamicType extends AbstractType
+{
+    public function buildForm($builder, array $options): void
+    {
+        if ($options['admin']) {
+            $builder->add('other');
+        }
+    }
+}
+`,
+      'src/Form/AnotherConditionalType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class AnotherConditionalType extends AbstractType
+{
+    public function refresh($event): void
+    {
+        $data = $event->getData();
+    }
+
+    public function buildForm($builder, array $options): void
+    {
+        if ($options['admin']) {
+            $builder->add('secret');
+        }
+    }
+}
+`,
+      'src/Form/ConditionalType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class ConditionalType extends AbstractType
+{
+    public function refresh($event): void
+    {
+        $data = $event->getData();
+    }
+
+    public function buildForm($builder, array $options): void
+    {
+        if ($options['admin']) {
+            $builder->remove('secret');
+        }
+    }
+}
+`,
+      'src/Form/ProfileType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class ProfileType extends AbstractType
+{
+    public function refresh($event): void
+    {
+        $data = $event->getData();
+    }
+
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('name');
+        $builder->add('email');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-pre-set-data.js', app)).toBeDefined();
+  });
+
+  test('a type extension that defines its options and builds both views', async () => {
+    const app = appWith('form-type-extension-views', {
+      'src/Form/Extension/HelpExtension.php': `<?php
+
+namespace App\\Form\\Extension;
+
+use Symfony\\Component\\Form\\AbstractTypeExtension;
+use Symfony\\Component\\Form\\FormInterface;
+use Symfony\\Component\\Form\\FormView;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class HelpExtension extends AbstractTypeExtension
+{
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefined(['help_html']);
+    }
+
+    public function buildView(FormView $view, FormInterface $form, array $options): void
+    {
+    }
+
+    public function finishView(FormView $view, FormInterface $form, array $options): void
+    {
+    }
+
+    public static function getExtendedTypes(): iterable
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-type-extension.js', app)).toContain('buildView');
+  });
+
+  test('a scoped client with no body, a header with no value and no base URI', async () => {
+    const app = appWith('http-client-auth-shapes', {
+      'config/packages/http_client.yaml': `framework:
+    http_client:
+        scoped_clients:
+            bare.client:
+            github.client:
+                headers:
+                    X-Trace:
+                auth_bearer: '%env(GITHUB_TOKEN)%'
+`,
+    });
+
+    expect(await runModule('symfony-http-client-auth.js', app)).toContain('github.client');
+  });
+
+  test('two subscribers listening to the same event at the same priority', async () => {
+    const app = appWith('http-middleware-same-priority', {
+      'src/EventSubscriber/FirstSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class FirstSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::REQUEST => ['onRequest', 100]];
+    }
+
+    public function onRequest($event) /* the request has just arrived and nothing has touched it */
+    {
+        $event->getRequest();
+    }
+}
+`,
+      'src/EventSubscriber/SecondSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class SecondSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            KernelEvents::REQUEST => [
+                ['onRequest', 100],
+                ['onLateRequest', 100],
+            ],
+        ];
+    }
+
+    public function onRequest($event) /* the request has just arrived and nothing has touched it */
+    {
+        $event->getRequest();
+    }
+
+    public function onLateRequest($event): void
+    {
+        $event->getRequest();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-http-middleware.js', app)).toContain('priority');
+  });
+});

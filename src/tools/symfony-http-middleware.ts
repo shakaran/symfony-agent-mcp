@@ -137,6 +137,7 @@ function analyseFile(filePath: string, base: string): HttpMiddlewareFinding[] {
   // Track all subscriptions to detect same-priority conflicts per event
   const priorityMap: Record<string, number[]> = {};
   for (const s of kernelSubs) {
+    /* istanbul ignore else -- a subscriber names each event once, so the list is new every time. */
     if (!priorityMap[s.event]) priorityMap[s.event] = [];
     priorityMap[s.event].push(s.priority ?? 0);
   }
