@@ -16,6 +16,7 @@ interface PhpunitTestNamingInfo {
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];
+  /* istanbul ignore if -- the caller checks tests/, and sub-directories come from a listing. */
   if (!fs.existsSync(dir)) return files;
   try {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -167,8 +168,10 @@ function buildPhpunitTestNamingInfos(appPath: string): PhpunitTestNamingInfo[] {
 
       // Coverage annotation check
       if ((isAnnotation || isPrefix) && method.visibility === 'public' && !hasCoversAnnotation) {
-        // Only flag once per class
-        if (results.filter((r) => r.class === className && r.issue?.includes('@CoversClass')).length === 0) {
+        // Only flag once per class. The message spells the annotation
+        // "@coversClass / #[CoversClass]", so looking for "@CoversClass" never
+        // matched and the class was flagged once per test method.
+        if (results.filter((r) => r.class === className && r.issue?.includes('CoversClass')).length === 0) {
           results.push({
             file: relFile,
             class: className,
