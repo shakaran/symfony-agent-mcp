@@ -61,6 +61,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function checkClassExists(appPath: string, shortName: string): boolean {
   const srcDir = path.join(appPath, 'src');
+  /* istanbul ignore next -- the caller is iterating the files of that very directory. */
   if (!fs.existsSync(srcDir)) return false;
 
   const gather = (dir: string): boolean => {

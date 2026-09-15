@@ -28,6 +28,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function isMysqlDriver(appPath: string): boolean {
   const dbalYaml = path.join(appPath, 'config', 'packages', 'doctrine.yaml');
+  /* istanbul ignore next -- the only caller has already found the file. */
   if (!fs.existsSync(dbalYaml)) return false;
   const cfg = parseYamlFile(dbalYaml) as Record<string, unknown> | null;
   if (!cfg) return false;

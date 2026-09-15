@@ -72,6 +72,7 @@ export function listDoctrineMigrationGraph(appPath: string): McpToolResult {
       text += `\nVersion gaps (>1 year):\n`;
       for (const g of gaps) text += `  ⚠ ${g}\n`;
     }
+    /* istanbul ignore next -- an empty list of migrations returned above. */
     text += `\nFirst: ${versions[0] ?? 'none'}  Last: ${versions[versions.length - 1] ?? 'none'}\n`;
     if (nonTransactional.length > 0) {
       text += `\nNon-transactional migrations:\n`;

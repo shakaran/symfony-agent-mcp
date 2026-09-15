@@ -55457,3 +55457,202 @@ class EmptyHydrator extends AbstractHydrator
     expect(await runModule('doctrine-custom-hydrators.js', app)).toContain('Missing hydrateAll');
   });
 });
+
+describe('batch 209: migrations, MySQL features, projections and caches', () => {
+  test('two migrations a month apart', async () => {
+    const migration = (version: string): string => `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version${version} extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('ALTER TABLE invoice ADD paid_at DATETIME DEFAULT NULL');
+    }
+}
+`;
+    const app = appWith('migration-close-versions', {
+      'migrations/Version20240101120000.php': migration('20240101120000'),
+      'migrations/Version20240201120000.php': migration('20240201120000'),
+    });
+
+    expect(await runModule('doctrine-migration-graph.js', app)).toContain('20240101120000');
+  });
+
+  test('an application with no Doctrine configuration at all, and one storing JSON as a string in utf8', async () => {
+    const noConfig = appWith('mysql-no-config', {
+      'src/Entity/Plain.php': `<?php
+
+namespace App\\Entity;
+
+class Plain
+{
+}
+`,
+    });
+
+    expect(await runModule('doctrine-mysql-specific.js', noConfig)).toContain('MySQL');
+
+    const mysql = appWith('mysql-json-as-string', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        driver: pdo_mysql
+`,
+      'src/Entity/Payload.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Payload
+{
+    // stored as "json" but declared "string"; the column should move to utf8mb4
+    #[ORM\\Column(type: "string", length: 4000)]
+    private $body;
+
+    #[ORM\\Column(type: "json")]
+    private $meta;
+
+    public const OPTIONS = ['charset' => 'utf8'];
+}
+`,
+    });
+
+    expect(await runModule('doctrine-mysql-specific.js', mysql)).toContain('JSON');
+  });
+
+  test('a projection with nine constructor arguments and a partial select', async () => {
+    const app = appWith('projection-wide-dto', {
+      'src/Repository/RowRepository.php': `<?php
+
+namespace App\\Repository;
+
+class RowRepository
+{
+    public function rows($qb): array
+    {
+        $qb->select('NEW App\\\\Dto\\\\Row(r.a, r.b, r.c, r.d, r.e, r.f, r.g, r.h, r.i)');
+        $qb->select('partial r.{id, a}');
+
+        return $qb->getQuery()->getResult();
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-projections.js', app)).toContain('constructor arguments');
+  });
+
+  test('cache drivers given as a number, as a pool and as a bare namespace', async () => {
+    const app = appWith('query-cache-driver-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        query_cache_driver: 3
+        result_cache_driver:
+            pool: cache.result
+        metadata_cache_driver:
+            namespace: app
+`,
+    });
+
+    expect(await runModule('doctrine-query-cache.js', app)).toContain('pool:cache.result');
+  });
+
+  test('a sequence generator that states its initial value', async () => {
+    const app = appWith('sequence-initial-value', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        driver: pdo_pgsql
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice
+{
+    #[ORM\\Id]
+    #[ORM\\GeneratedValue(strategy: 'SEQUENCE')]
+    #[ORM\\SequenceGenerator(sequenceName: 'invoice_seq', initialValue: 5, allocationSize: 1)]
+    private $id;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-sequence-generator.js', app)).toContain('invoice_seq');
+  });
+
+  test('a second-level cache region with no lifetime and a resolver for the default one', async () => {
+    const app = appWith('slc-region-no-ttl', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        second_level_cache:
+            enabled: true
+            region_lifetime_resolver: 'App\\Cache\\Resolver'
+            regions:
+                catalogue:
+                    max_entries: 100
+`,
+    });
+
+    expect(await runModule('doctrine-slc.js', app)).toContain('catalogue');
+  });
+
+  test('the two other spreadsheet libraries, and a download filename taken from the request', async () => {
+    const fastExcel = appWith('excel-fast', {
+      'composer.json': JSON.stringify({ require: { 'rap2hpoutre/fast-excel': '^5.0' } }, null, 2),
+    });
+
+    expect(await runModule('excel-generation.js', fastExcel)).toContain('fast-excel');
+
+    const maatwebsite = appWith('excel-maatwebsite', {
+      'composer.json': JSON.stringify({ require: { 'maatwebsite/excel': '^3.1' } }, null, 2),
+      'src/Export/ReportExport.php': `<?php
+
+namespace App\\Export;
+
+class ReportExport
+{
+    public function export($request, $spreadsheet): string
+    {
+        $filename = $request->get('name') . '.xlsx';
+        $spreadsheet->setCellValue('A1', 'Total');
+
+        return $filename;
+    }
+}
+`,
+    });
+
+    expect(await runModule('excel-generation.js', maatwebsite)).toContain('maatwebsite/excel');
+  });
+
+  test('a form type outside any namespace, and a note that only mentions one', async () => {
+    const app = appWith('forms-no-namespace', {
+      'src/Form/PlainType.php': `<?php
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class PlainType extends AbstractType
+{
+    public function buildForm($builder, array $options): void
+    {
+        $builder->add('name');
+    }
+}
+`,
+      'src/Form/notes.php': `<?php
+
+// A form type extends AbstractType and declares its fields in buildForm().
+`,
+    });
+
+    expect(await runModule('forms.js', app)).toContain('PlainType');
+  });
+});

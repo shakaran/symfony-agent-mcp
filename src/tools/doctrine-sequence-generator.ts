@@ -74,6 +74,7 @@ function detectDatabasePlatform(appPath: string): string {
     if (platform.includes('sqlite')) return 'sqlite';
 
     // Check DATABASE_URL env reference
+    /* istanbul ignore next -- the same test on the same string already returned above. */
     if (driver.includes('postgres') || driver.includes('pgsql')) return 'postgresql';
   }
 
