@@ -56873,7 +56873,7 @@ WantedBy=multi-user.target
   });
 
   test('a handler with no type that writes to stdout outside production, and a group with no repeated member', async () => {
-    const app = appWith('monolog-handler-shapes', {
+    const app = appWith('monolog-handler-types', {
       'src/Logger/QueueHandler.php': `<?php
 
 namespace App\\Logger;
@@ -56991,14 +56991,14 @@ class SmsSender
                 client_id: shop
 `;
 
-    const hwi = appWith('oidc-hwi', {
+    const hwi = appWith('oidc-hwi-bundle', {
       'composer.json': JSON.stringify({ require: { 'hwi/oauth-bundle': '^2.0' } }, null, 2),
       'config/packages/security.yaml': oidcYaml,
     });
 
     expect(await runModule('symfony-security-oidc.js', hwi)).toContain('hwi/oauth-bundle');
 
-    const league = appWith('oidc-league', {
+    const league = appWith('oidc-league-client', {
       'composer.json': JSON.stringify({ require: { 'league/oauth2-client': '^2.7' } }, null, 2),
       'config/packages/security.yaml': oidcYaml,
     });
@@ -57284,7 +57284,7 @@ class Installer
 
 describe('batch 217: resets, workflows, API Platform and AWS', () => {
   test('a reset() with a comment before its body, one that clears everything, and a service with no state at all', async () => {
-    const app = appWith('service-reset-shapes', {
+    const app = appWith('service-reset-comment', {
       'composer.json': JSON.stringify({ name: 'shop/app' }, null, 2),
       'src/Service/Cart.php': `<?php
 
@@ -58555,7 +58555,7 @@ class Timer
   });
 
   test('a translation provider with no DSN, a read-only one, and a section with no providers at all', async () => {
-    const app = appWith('translation-providers-shapes', {
+    const app = appWith('translation-providers-readonly', {
       'config/packages/translation.yaml': `framework:
     default_locale: en
     translator:
@@ -58711,7 +58711,7 @@ final class Version20260201000000 extends AbstractMigration
   });
 
   test('a constructor whose default is an array, and an abstract constructor that promotes a property', async () => {
-    const app = appWith('constructor-promotion-shapes', {
+    const app = appWith('constructor-promotion-defaults', {
       'src/Service/Report.php': `<?php
 
 namespace App\\Service;
@@ -60095,5 +60095,257 @@ class SecondSubscriber implements EventSubscriberInterface
     });
 
     expect(await runModule('symfony-http-middleware.js', app)).toContain('priority');
+  });
+});
+
+describe('batch 228: intl, Kubernetes, LDAP and consumers', () => {
+  test('Twig intl filters with no intl package installed', async () => {
+    const app = appWith('intl-filters-without-package', {
+      'config/packages/translation.yaml': `framework:
+    default_locale: es
+`,
+      'templates/order.html.twig': `<p>{{ order.total|format_currency('EUR') }}</p>
+<p>{{ order.placedAt|format_datetime(locale='es') }}</p>
+`,
+    });
+
+    expect(await runModule('symfony-intl-config.js', app)).toContain('intl');
+
+    const withPackage = appWith('intl-filters-with-package', {
+      'composer.json': JSON.stringify({ require: { 'twig/intl-extra': '^3.0' } }, null, 2),
+      'config/packages/translation.yaml': '',
+      'templates/order.html.twig': `<p>{{ order.total|format_currency('EUR') }}</p>
+`,
+    });
+
+    expect(await runModule('symfony-intl-config.js', withPackage)).toBeDefined();
+  });
+
+  test('a Kubernetes secret with an empty value, a variable reference and an env entry with no name', async () => {
+    const app = appWith('kubernetes-env-orphan', {
+      'k8s/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: php
+          image: shop:latest
+          env:
+            - value: orphan
+            - name: APP_SECRET
+              value: $(APP_SECRET)
+          resources:
+            limits:
+              memory: 512Mi
+`,
+      'k8s/configmap.yaml': `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+data:
+  password:
+  token: $(TOKEN)
+`,
+    });
+
+    expect(await runModule('symfony-kubernetes.js', app)).toContain('shop');
+  });
+
+  test('an LDAP provider with no ldap block, a firewall with no ldap login and a config that does not parse', async () => {
+    const app = appWith('ldap-partial-config', {
+      'config/packages/security.yaml': `security:
+    providers:
+        app_users:
+            entity:
+                class: App\\Entity\\User
+    firewalls:
+        main:
+            form_login: ~
+`,
+      'config/packages/ldap.yaml': `# only a comment
+`,
+    });
+
+    expect(await runModule('symfony-ldap-auth.js', app)).toContain('LDAP');
+
+    const noLdapFile = appWith('ldap-no-config-file', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            form_login: ~
+`,
+    });
+
+    expect(await runModule('symfony-ldap-auth.js', noLdapFile)).toBeDefined();
+  });
+
+  test('a catalogue with no locale in its name and no fallbacks configured', async () => {
+    const app = appWith('locale-plain-catalogue', {
+      'translations/messages.yaml': `hello: Hola
+`,
+      'translations/messages.es.yaml.php': `<?php return ['hello' => 'Hola'];
+`,
+      'translations/messages.es.yaml': `hello: Hola
+`,
+      'translations/messages.es_MX.yaml': `hello: Hola
+`,
+      'config/packages/translation.yaml': `framework:
+    default_locale: es
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+`,
+    });
+
+    expect(await runModule('symfony-locale-config.js', app)).toContain('es');
+
+    const clean = appWith('locale-clean', {
+      'translations/messages.es.yaml': `hello: Hola
+`,
+      'config/packages/framework.yaml': `framework:
+    default_locale: es
+    enabled_locales: ['es']
+`,
+      'config/packages/translation.yaml': `framework:
+    translator:
+        default_path: '%kernel.project_dir%/translations'
+        fallbacks: ['es']
+`,
+    });
+
+    expect(await runModule('symfony-locale-config.js', clean)).toBeDefined();
+  });
+
+  test('a handler with no type that does not bubble, and a file that logs nothing', async () => {
+    const app = appWith('log-levels-shapes', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            path: '%kernel.logs_dir%/app.log'
+            level: error
+            bubble: false
+            channels: ['app', 'request']
+`,
+      'src/Service/Quiet.php': `<?php
+
+namespace App\\Service;
+
+use Psr\\Log\\LoggerInterface;
+
+class Quiet
+{
+    public function __construct(private LoggerInterface $logger)
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-log-levels.js', app)).toContain('no-bubble');
+  });
+
+  test('an attachment that declares its content type, and a mailer file with none', async () => {
+    const app = appWith('mailer-attachment-types', {
+      'src/Mail/Invoice.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Email;
+
+class Invoice
+{
+    public function build(string $pdf): Email
+    {
+        $email = new Email();
+        $email->attachFromPath($pdf, 'invoice.pdf', 'application/pdf');
+        $email->addPart(Part::fromPath($pdf, 'invoice.pdf', 'application/pdf'));
+
+        return $email;
+    }
+}
+`,
+      'src/Mail/Notes.php': `<?php
+
+namespace App\\Mail;
+
+/**
+ * Attachments are built with Part::fromPath elsewhere in this bundle.
+ */
+class Notes
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-mailer-attachments.js', app)).toContain('Invoice');
+  });
+
+  test('supervisor processes and compose replicas that both scale the same transport', async () => {
+    const app = appWith('competing-consumers-scaled', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            # the queue every asynchronous message goes to
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: async
+`,
+      'docker/supervisord.conf': `[program:messenger-consume]
+command=php /srv/app/bin/console messenger:consume async --time-limit=3600
+numprocs=4
+autostart=true
+
+[program:messenger-failed]
+command=php /srv/app/bin/console messenger:consume failed --time-limit=3600
+autostart=true
+`,
+      'docker-compose.yml': `services:
+  worker:
+    image: shop
+    command: php bin/console messenger:consume async
+`,
+    });
+
+    expect(await runModule('symfony-messenger-competing-consumers.js', app)).toContain('async');
+  });
+
+  test('a worker command in a nested directory and an application with no monitoring at all', async () => {
+    const app = appWith('messenger-monitoring-nested', {
+      'docker/supervisor/worker.conf': `[program:worker]
+command=php bin/console messenger:consume async
+`,
+      'src/Command/Worker/ConsumeCommand.php': `<?php
+
+namespace App\\Command\\Worker;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class ConsumeCommand extends Command
+{
+    public function run(): int
+    {
+        return $this->runProcess('messenger:consume async');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-messenger-monitoring.js', app)).toBeDefined();
+
+    const withFile = appWith('messenger-monitoring-supervisord', {
+      'supervisord.conf': `[program:messenger]
+command=php bin/console messenger:consume async
+`,
+    });
+
+    expect(await runModule('symfony-messenger-monitoring.js', withFile)).toBeDefined();
+
+    const bare = appWith('messenger-monitoring-bare', {});
+
+    expect(await runModule('symfony-messenger-monitoring.js', bare)).toBeDefined();
   });
 });

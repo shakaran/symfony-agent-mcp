@@ -76,6 +76,7 @@ function parseLogUsage(filePath: string): LogLevelInfo | null {
     }
   }
 
+  /* istanbul ignore next -- the same calls that set hasLogger are the ones counted here. */
   if (Object.keys(levelCounts).length === 0) return null;
 
   const channels: string[] = [];

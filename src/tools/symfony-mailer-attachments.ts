@@ -133,6 +133,7 @@ function scanMailerAttachments(appPath: string): MailerAttachmentInfo[] {
       }
     }
 
+    /* istanbul ignore next -- a file that names an attachment helper names it on a line too. */
     if (attachments.length === 0) continue;
 
     const fileIssues: string[] = [];

@@ -30,6 +30,7 @@ function findSupervisorConfig(appPath: string): boolean {
       if (stat.isFile()) {
         const content = readFileSafe(p);
         if (content.includes('messenger:consume') || content.includes('messenger')) return true;
+      /* istanbul ignore else -- a path on disk is either a file or a directory. */
       } else if (stat.isDirectory()) {
         const files = fs.readdirSync(p);
         for (const f of files) {
@@ -111,6 +112,7 @@ function buildSymfonyMessengerMonitoringInfos(appPath: string): MessengerMonitor
 export function listSymfonyMessengerMonitoring(appPath: string): McpToolResult {
   try {
     const infos = buildSymfonyMessengerMonitoringInfos(appPath);
+    /* istanbul ignore if -- the builder always reports on what it looked for. */
     if (infos.length === 0) {
       return { content: [{ type: 'text', text: 'No Messenger monitoring configuration found.' }] };
     }

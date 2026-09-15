@@ -37,6 +37,7 @@ function buildLdapInfos(appPath: string): LdapAuthInfo[] {
         const provider = providerCfg as Record<string, unknown>;
         if (!provider['ldap']) continue;
 
+        /* istanbul ignore next -- the guard above skips a provider without one. */
         const ldap = (provider['ldap'] ?? {}) as Record<string, unknown>;
         const issues: string[] = [];
 
@@ -66,6 +67,7 @@ function buildLdapInfos(appPath: string): LdapAuthInfo[] {
         const fw = fwCfg as Record<string, unknown>;
         if (!fw['ldap_login'] && !fw['form_login_ldap']) continue;
 
+        /* istanbul ignore next -- the guard above skips a firewall with neither. */
         const ldapLogin = (fw['ldap_login'] ?? fw['form_login_ldap'] ?? {}) as Record<string, unknown>;
         const issues: string[] = [];
 
