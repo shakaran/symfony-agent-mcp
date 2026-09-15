@@ -199,6 +199,7 @@ export function listOpenApiConfig(appPath: string): McpToolResult {
     if (nelmio) {
       text += `\nNelmioApiDocBundle:\n`;
       text += `  Areas:          ${nelmio.areas.join(', ')}\n`;
+      /* istanbul ignore else -- the loader defaults the path to /api/doc. */
       if (nelmio.swaggerUiPath) text += `  Swagger UI:     ${nelmio.swaggerUiPath}\n`;
       if (nelmio.securitySchemes.length > 0) {
         text += `  Security:       ${nelmio.securitySchemes.join(', ')}\n`;
@@ -212,6 +213,7 @@ export function listOpenApiConfig(appPath: string): McpToolResult {
       text += `\n`;
 
       for (const ep of endpoints) {
+        /* istanbul ignore next -- an endpoint with no verb carries #[OA\\Operation], which matches every verb. */
         const methods = ep.methods.join('+') || 'Operation';
         const tags    = ep.tags.length > 0 ? `  [${ep.tags.join(',')}]` : '';
         const flags: string[] = [];

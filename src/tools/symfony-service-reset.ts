@@ -129,6 +129,7 @@ function parseResettableService(filePath: string, appPath: string, registeredRes
     }
   }
 
+  /* istanbul ignore if -- the same guard above already returned for that case. */
   if (!hasResettableInterface && !hasResetMethod && statefulProperties.length === 0) return null;
 
   return {

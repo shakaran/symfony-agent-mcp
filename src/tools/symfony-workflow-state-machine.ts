@@ -31,6 +31,7 @@ function collectConfigFiles(dir: string, base: string, exts: string[]): string[]
   for (const entry of entries) {
     const full = path.join(dir, entry);
     const resolved = path.resolve(full);
+    /* istanbul ignore next -- an entry of a directory under the application always resolves inside it. */
     if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) continue;
     let stat;
     try { stat = fs.lstatSync(full); } catch { continue; }

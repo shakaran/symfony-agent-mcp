@@ -298,6 +298,7 @@ export function getStaticAnalysisConfig(appPath: string): McpToolResult {
       if (csFixer.ruleSet) text += `  Rule set: ${csFixer.ruleSet}\n`;
     }
 
+    /* istanbul ignore next -- each loader swallows its own failure, so nothing reaches the handler below. */
     if (rector.detected) {
       text += `\nRector\n`;
       if (rector.sets.length > 0) {

@@ -69,6 +69,7 @@ function parseInterfaces(srcDir: string): InterfaceInfo[] {
     const name = ifaceM[1];
     const methodMatches = content.match(/\bpublic\s+function\s+(\w{1,80})\s*\(/gm) ?? [];
     const methods = methodMatches.map((m) => {
+      /* istanbul ignore next -- the enclosing match already found the name. */
       const nm = /\bfunction\s+(\w{1,80})/.exec(m);
       return nm ? nm[1] : '';
     }).filter(Boolean);
@@ -136,6 +137,7 @@ function parseContractTests(testDirs: string[], appPath: string): ContractTestIn
 
     const testedMethodMatches = content.match(/\bfunction\s+(test\w{1,80})\s*\(/gm) ?? [];
     const testedMethods = testedMethodMatches.map((m) => {
+      /* istanbul ignore next -- as above. */
       const nm = /\bfunction\s+(test\w{1,80})/.exec(m);
       return nm ? nm[1] : '';
     }).filter(Boolean);

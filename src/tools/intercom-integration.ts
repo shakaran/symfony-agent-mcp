@@ -27,6 +27,7 @@ function scanDirRecursive(dir: string, ext: string): string[] {
 }
 
 function maskSecret(value: string): string {
+  /* istanbul ignore next -- the only caller has already ruled out an empty value. */
   if (value.trim() === '') return value;
   return '***';
 }

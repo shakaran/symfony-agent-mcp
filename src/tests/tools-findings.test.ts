@@ -57018,3 +57018,567 @@ class SmsSender
     expect(await runModule('symfony-security-oidc.js', plain)).toContain('OIDC');
   });
 });
+
+describe('batch 216: charts, help desks, OpenAPI and crypto', () => {
+  test('a chart at the root with no name and no values file, a k8s path that is a file, and a chart under helm/', async () => {
+    const app = appWith('helm-unnamed-charts', {
+      'Chart.yaml': `apiVersion: v2
+version: 0.1.0
+`,
+      'k8s': `#!/bin/sh
+kubectl apply -f helm/
+`,
+      'helm/shop/Chart.yaml': `apiVersion: v2
+version: 1.2.3
+`,
+      'helm/shop/values.yaml': `replicaCount: 2
+image:
+    repository: shop
+    tag: latest
+`,
+    });
+
+    expect(await runModule('helm-charts-config.js', app)).toContain('unknown');
+  });
+
+  test('an Intercom token from the environment and a config file that names the token key', async () => {
+    const app = appWith('intercom-env-token', {
+      '.env': `INTERCOM_ACCESS_TOKEN=%env(INTERCOM_ACCESS_TOKEN)%
+`,
+      'config/packages/intercom.yaml': `parameters:
+    INTERCOM_TOKEN: '%env(INTERCOM_TOKEN)%'
+`,
+    });
+
+    expect(await runModule('intercom-integration.js', app)).toContain('Intercom');
+  });
+
+  test('an operation with no HTTP verb, a schema with no properties, an attribute outside any class and a bundle without a UI path', async () => {
+    const app = appWith('openapi-loose-shapes', {
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    areas:
+        default:
+            path_patterns: ['^/api']
+`,
+      'src/Controller/OperationController.php': `<?php
+
+namespace App\\Controller;
+
+use OpenApi\\Attributes as OA;
+
+class OperationController
+{
+    #[OA\\Operation(summary: 'Anything at all')]
+    public function anything(): array
+    {
+        return [];
+    }
+}
+`,
+      'src/Schema/EmptySchema.php': `<?php
+
+namespace App\\Schema;
+
+use OpenApi\\Attributes as OA;
+
+#[OA\\Schema]
+class EmptySchema
+{
+}
+`,
+      'src/Schema/helpers.php': `<?php
+
+#[OA\\Get(path: '/api/health')]
+function health(): array
+{
+    return [];
+}
+`,
+    });
+
+    expect(await runModule('openapi.js', app)).toContain('Operation');
+  });
+
+  test('two interfaces whose contract tests cover every method', async () => {
+    const app = appWith('contract-tests-complete', {
+      'src/Contract/PayerInterface.php': `<?php
+
+namespace App\\Contract;
+
+interface PayerInterface
+{
+    public function pay(int $amount): void;
+}
+`,
+      'src/Contract/RefunderInterface.php': `<?php
+
+namespace App\\Contract;
+
+interface RefunderInterface
+{
+    public function refund(int $amount): void;
+}
+`,
+      'src/Payment/CardPayer.php': `<?php
+
+namespace App\\Payment;
+
+use App\\Contract\\PayerInterface;
+
+class CardPayer implements PayerInterface
+{
+    public function pay(int $amount): void
+    {
+    }
+}
+`,
+      'src/Payment/CardRefunder.php': `<?php
+
+namespace App\\Payment;
+
+use App\\Contract\\RefunderInterface;
+
+class CardRefunder implements RefunderInterface
+{
+    public function refund(int $amount): void
+    {
+    }
+}
+`,
+      'tests/Contract/PayerInterfaceTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use App\\Contract\\PayerInterface;
+use PHPUnit\\Framework\\TestCase;
+
+class PayerInterfaceTest extends TestCase
+{
+    public function testPay(): void
+    {
+    }
+}
+`,
+      'tests/Contract/RefunderInterfaceTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use App\\Contract\\RefunderInterface;
+use PHPUnit\\Framework\\TestCase;
+
+class RefunderInterfaceTest extends TestCase
+{
+    public function testRefund(): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-contract-tests.js', app)).toContain('PayerInterface');
+  });
+
+  test('a nonce of the right size, and a checksum that is not cryptography', async () => {
+    const app = appWith('sodium-and-checksums', {
+      'src/Crypto/Box.php': `<?php
+
+namespace App\\Crypto;
+
+class Box
+{
+    public function seal(string $message, string $key): string
+    {
+        $nonce = sodium_randombytes_buf(24);
+
+        return sodium_crypto_secretbox($message, $nonce, $key);
+    }
+}
+`,
+      'src/Support/Checksum.php': `<?php
+
+namespace App\\Support;
+
+class Checksum
+{
+    public function of(string $value): string
+    {
+        return md5($value);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-sodium-crypto.js', app)).toContain('sodium');
+  });
+
+  test('a RabbitMQ password from the environment, and management calls over plain HTTP for bindings and for policies', async () => {
+    const app = appWith('rabbitmq-management-calls', {
+      '.env': `RABBITMQ_DEFAULT_USER=%env(RABBITMQ_USER)%
+RABBITMQ_DEFAULT_PASS=%env(RABBITMQ_PASS)%
+`,
+      'src/Rabbit/Bindings.php': `<?php
+
+namespace App\\Rabbit;
+
+class Bindings
+{
+    public function list($client): array
+    {
+        return $client->get('http://rabbitmq.example.com/api/bindings/%2f')->toArray();
+    }
+}
+`,
+      'src/Rabbit/Policies.php': `<?php
+
+namespace App\\Rabbit;
+
+class Policies
+{
+    public function list($client): array
+    {
+        return $client->get('http://rabbitmq.example.com/api/policies/%2f')->toArray();
+    }
+}
+`,
+    });
+
+    expect(await runModule('rabbitmq-management-api.js', app)).toContain('management API');
+  });
+
+  test('Shopify credentials with no shop domain beside them, and an OAuth flow', async () => {
+    const app = appWith('shopify-oauth-only', {
+      'src/Shop/Storefront.php': `<?php
+
+namespace App\\Shop;
+
+use Shopify\\Clients\\StorefrontClient;
+
+class Storefront
+{
+    public function products(StorefrontClient $client): array
+    {
+        return $client->query('{ products { id } }');
+    }
+}
+`,
+      '.env': `SHOPIFY_API_KEY=%env(SHOPIFY_API_KEY)%
+SHOPIFY_API_SECRET=%env(SHOPIFY_API_SECRET)%
+`,
+      'src/Shop/Installer.php': `<?php
+
+namespace App\\Shop;
+
+class Installer
+{
+    public function authorizeUrl(string $shop): string
+    {
+        return 'https://' . $shop . '/admin/oauth/authorize?client_id=key&scope=read_products';
+    }
+}
+`,
+    });
+
+    expect(await runModule('shopify-integration.js', app)).toContain('oauth');
+  });
+});
+
+describe('batch 217: resets, workflows, API Platform and AWS', () => {
+  test('a reset() with a comment before its body, one that clears everything, and a service with no state at all', async () => {
+    const app = appWith('service-reset-shapes', {
+      'composer.json': JSON.stringify({ name: 'shop/app' }, null, 2),
+      'src/Service/Cart.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Service\\ResetInterface as ResettableInterface;
+
+class Cart implements ResettableInterface
+{
+    private array $lines = [];
+
+    public function reset(): void // clears every line held from the last request
+    {
+        $this->lines = [];
+    }
+}
+`,
+      'src/Service/Session.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Service\\ResetInterface as ResettableInterface;
+
+class Session implements ResettableInterface
+{
+    private array $values = [];
+
+    public function reset(): void
+    {
+        $this->values = [];
+    }
+}
+`,
+      'src/Service/Formatter.php': `<?php
+
+namespace App\\Service;
+
+class Formatter
+{
+    public function format(string $value): string
+    {
+        return trim($value);
+    }
+}
+`,
+      'src/Service/Counter.php': `<?php
+
+namespace App\\Service;
+
+class Counter
+{
+    private array $seen = [];
+
+    public function add(string $key): void
+    {
+        $this->seen[] = $key;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-service-reset.js', app)).toContain('reset');
+  });
+
+  test('a symlinked workflow file and a symlinked workflows directory', async () => {
+    const withLinkedFile = appWith('workflow-symlinked-file', {
+      'config/workflows/order.yaml': `framework:
+    workflows:
+        order:
+            type: state_machine
+            places: [draft, sent]
+            transitions:
+                send:
+                    from: draft
+                    to: sent
+`,
+    });
+    fs.symlinkSync(
+      path.join(withLinkedFile, 'config', 'workflows', 'order.yaml'),
+      path.join(withLinkedFile, 'config', 'workflows', 'alias.yaml'),
+    );
+
+    expect(await runModule('symfony-workflow-state-machine.js', withLinkedFile)).toContain('order');
+
+    const linkedDir = appWith('workflow-symlinked-dir', {
+      'config/real-workflows/order.yaml': `framework:
+    workflows:
+        order:
+            type: state_machine
+            places: [draft, sent]
+`,
+    });
+    fs.symlinkSync(
+      path.join(linkedDir, 'config', 'real-workflows'),
+      path.join(linkedDir, 'config', 'workflows'),
+    );
+
+    expect(await runModule('symfony-workflow-state-machine.js', linkedDir)).toBeDefined();
+  });
+
+  test('error formats listed twice, a normalizer with no instanceof check and an exception thrown with a status code', async () => {
+    const app = appWith('api-platform-errors', {
+      'config/packages/api_platform.yaml': `api_platform:
+    error_formats:
+        jsonproblem: ['application/problem+json']
+        jsonld: ['application/ld+json']
+        jsonproblem: ['application/problem+json']
+`,
+      'src/Serializer/ErrorNormalizer.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Normalizer\\NormalizerInterface;
+
+class ErrorNormalizer implements NormalizerInterface
+{
+    public function supportsNormalization($data, $format = null): bool
+    {
+        return $data instanceOf_check ?? is_a($data, 'Throwable');
+    }
+}
+`,
+      'src/Exception/ApiException.php': `<?php
+
+namespace App\\Exception;
+
+class Thrower
+{
+    public function fail(): void
+    {
+        throw new ApiException('gone', 410);
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-platform-error-handling.js', app)).toContain('instanceof');
+  });
+
+  test('an order filter on a body field and a custom filter that is not one of the built-ins', async () => {
+    const app = appWith('api-platform-order-filter', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiFilter;
+use ApiPlatform\\Doctrine\\Orm\\Filter\\OrderFilter;
+
+#[ApiFilter(OrderFilter::class, properties: ['body', 'title'])]
+#[ApiFilter(SearchFilter::class, properties: ['title' => 'partial'])]
+class Article
+{
+    public string $body = '';
+}
+`,
+      'src/Filter/SearchFilter.php': `<?php
+
+namespace App\\Filter;
+
+use ApiPlatform\\Doctrine\\Orm\\Filter\\AbstractFilter;
+
+class SearchFilter extends AbstractFilter
+{
+    protected function filterProperty(string $property, $value, $queryBuilder, $queryNameGenerator, string $resourceClass, $operation = null, array $context = []): void
+    {
+    }
+}
+`,
+      'src/Filter/SlugFilter.php': `<?php
+
+namespace App\\Filter;
+
+use ApiPlatform\\Doctrine\\Orm\\Filter\\AbstractFilter;
+
+class SlugFilter extends AbstractFilter
+{
+    protected function filterProperty(string $property, $value, $queryBuilder, $queryNameGenerator, string $resourceClass, $operation = null, array $context = []): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-platform-filters.js', app)).toContain('SlugFilter');
+  });
+
+  test('a security expression that names the user, the object and the previous object', async () => {
+    const app = appWith('api-platform-security-full', {
+      'src/Entity/Document.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Put;
+
+#[ApiResource(
+    security: "is_granted('ROLE_USER') and object.owner == user and previous_object.owner == user",
+    operations: [new Put(security: "object.owner == user")]
+)]
+class Document
+{
+    public $owner;
+}
+`,
+    });
+
+    expect(await runModule('api-platform-security-expressions.js', app)).toContain('previous_object');
+  });
+
+  test('a problem response in double quotes, with matching status codes and a lock file that requires nothing', async () => {
+    const app = appWith('api-problem-consistent', {
+      'composer.json': JSON.stringify({ name: 'shop/app' }, null, 2),
+      'src/Controller/ErrorController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+
+class ErrorController
+{
+    public function notFound(): JsonResponse
+    {
+        $payload = [
+            'type' => 'about:blank',
+            'title' => 'Not found',
+            'status' => 404,
+        ];
+        $headers = ['Content-Type' => "application/json"];
+
+        return new JsonResponse($payload, 404, $headers);
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-problem-details.js', app)).toContain('problem');
+  });
+
+  test('a CloudFront key under /run/secrets, a key path written in code and a CDN config file with nothing in it', async () => {
+    const app = appWith('cloudfront-key-paths', {
+      '.env': `CLOUDFRONT_PRIVATE_KEY_PATH=/run/secrets/cloudfront.pem
+`,
+      'config/packages/cdn.yaml': '',
+      'src/Cdn/SignedUrls.php': `<?php
+
+namespace App\\Cdn;
+
+class SignedUrls
+{
+    public const KEY_PATH = '/etc/app/cloudfront.pem';
+
+    public function key($signer, string $url): string
+    {
+        $privateKey = '/etc/app/cloudfront.pem';
+
+        return $signer->sign($url) . $privateKey;
+    }
+
+    public function sign(string $url): string
+    {
+        return $url;
+    }
+}
+`,
+    });
+
+    expect(await runModule('aws-cloudfront-config.js', app)).toContain('CloudFront');
+  });
+
+  test('a Cognito client secret from the environment and a JWT decoded with no signing key', async () => {
+    const app = appWith('cognito-unverified-jwt', {
+      '.env': `AWS_COGNITO_CLIENT_SECRET=%env(AWS_COGNITO_CLIENT_SECRET)%
+AWS_COGNITO_REGION=eu-west-1
+`,
+      '.env.local': `AWS_COGNITO_CLIENT_SECRET=short
+`,
+      'src/Auth/TokenReader.php': `<?php
+
+namespace App\\Auth;
+
+use Firebase\\JWT\\JWT;
+
+class TokenReader
+{
+    public function read(string $token, string $key, $client): object
+    {
+        $client->initiateAuth(['AuthFlow' => 'USER_SRP_AUTH']);
+
+        return JWT::decode($token, $key);
+    }
+}
+`,
+    });
+
+    expect(await runModule('aws-cognito-integration.js', app)).toContain('JWKS');
+  });
+});

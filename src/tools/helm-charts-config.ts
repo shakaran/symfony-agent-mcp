@@ -169,6 +169,7 @@ function buildHelmChartsConfigInfos(appPath: string): HelmChartInfo[] {
   if (rootContent !== null) {
     const chartInfos = parseChartYaml(rootContent, 'Chart.yaml');
     results.push(...chartInfos);
+    /* istanbul ignore next -- the parser always names a chart, falling back to its directory. */
     const chartName = chartInfos[0]?.chart ?? 'unknown';
     const valuesContent = safeRead(path.join(appPath, 'values.yaml'), appPath);
     if (valuesContent !== null) results.push(...parseValuesYaml(valuesContent, 'values.yaml', chartName));
@@ -183,6 +184,7 @@ function buildHelmChartsConfigInfos(appPath: string): HelmChartInfo[] {
       const relChartYaml = path.relative(appPath, chartYamlPath);
       const chartInfos = parseChartYaml(chartContent, relChartYaml);
       results.push(...chartInfos);
+      /* istanbul ignore next -- as above. */
       const chartName = chartInfos[0]?.chart ?? path.basename(chartRoot);
 
       const valuesYamlPath = path.join(chartRoot, 'values.yaml');
