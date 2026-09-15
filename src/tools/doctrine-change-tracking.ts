@@ -77,7 +77,8 @@ function parseChangeTrackingFile(filePath: string): DoctrineChangeTrackingInfo |
   if (policyM) {
     policy = policyM[1];
   } else if (content.includes('@ORM\\ChangeTrackingPolicy')) {
-    const legacyM = /@ORM\\ChangeTrackingPolicy\("([A-Z_]{1,50})"\)/.exec(content);
+    // The annotation accepts either quote, and only the double one was read.
+    const legacyM = /@ORM\\ChangeTrackingPolicy\(\s*['"]([A-Z_]{1,50})['"]\s*\)/.exec(content);
     if (legacyM) policy = legacyM[1];
   }
 
