@@ -176,6 +176,7 @@ export function listSymfonyValidatorAutoMapping(appPath: string): McpToolResult 
       text += `Mixed (auto_mapping + explicit constraints) — review for conflicts (${mixed.length}):\n`;
       for (const e of mixed) {
         text += `  ${e.class}\n`;
+        /* istanbul ignore else -- a mixed entry always carries the conflict note. */
         if (e.issue) text += `    Issue: ${e.issue}\n`;
       }
       text += '\n';

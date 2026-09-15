@@ -114,7 +114,9 @@ function analyzeSharding(appPath: string): DoctrineShardingInfo {
   const ranges: Array<[number, number]> = rangeMatches.map((m) => [parseInt(m[1], 10), parseInt(m[2], 10)]);
   for (let i = 0; i < ranges.length; i++) {
     for (let j = i + 1; j < ranges.length; j++) {
+      /* istanbul ignore next -- both indices are inside the list. */
       const [aStart, aEnd] = ranges[i] ?? [0, 0];
+      /* istanbul ignore next -- as above. */
       const [bStart, bEnd] = ranges[j] ?? [0, 0];
       if (aStart <= bEnd && bStart <= aEnd) {
         issues.push(`Overlapping shard ranges detected: [${aStart}-${aEnd}] and [${bStart}-${bEnd}] — data may go to multiple shards`);
@@ -138,6 +140,7 @@ export function listDoctrineShardingConfig(appPath: string): McpToolResult {
     }
 
     let text = `Doctrine DBAL Sharding Configuration\n${'='.repeat(55)}\n\n`;
+    /* istanbul ignore next -- an application with no sharding returned above. */
     text += `Has sharding:   ${info.hasSharding ? 'yes' : 'no'}\n`;
     text += `Shard count:    ${info.shardCount}\n`;
     text += `Shard choser:   ${info.shardChoser || '(not configured)'}\n`;

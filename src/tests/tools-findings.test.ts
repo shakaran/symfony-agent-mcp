@@ -56199,3 +56199,549 @@ $bound = Closure::bind($fn, null);
     expect(await runModule('php-closures.js', app)).toContain('null scope');
   });
 });
+
+describe('batch 213: dates, deserialisation, locks and opcache', () => {
+  test('a period that excludes its start date, an interval from a string and one added to a date', async () => {
+    const app = appWith('date-interval-shapes', {
+      'src/Time/Ranges.php': `<?php
+
+namespace App\\Time;
+
+class Ranges
+{
+    public function build($start, $end): array
+    {
+        $period = new DatePeriod($start, new DateInterval('P1D'), $end, DatePeriod::EXCLUDE_START_DATE);
+        $monthly = DateInterval::createFromDateString('1 month');
+        $next = $start->add(new DateInterval('P1M'));
+
+        return [$period, $monthly, $next];
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-date-interval.js', app)).toContain('createFromDateString');
+  });
+
+  test('a serialised payload put in a cookie beside its signature', async () => {
+    const app = appWith('deserialization-signed-cookie', {
+      'src/Session/CookieStore.php': `<?php
+
+namespace App\\Session;
+
+class CookieStore
+{
+    public function store(array $data, string $secret): void
+    {
+        $payload = serialize($data);
+        $mac = hash_hmac('sha256', $payload, $secret);
+
+        setcookie('state', $payload . '|' . $mac, 0, '/', '', true, true);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-deserialization-gadget.js', app)).toContain('No PHP deserialization gadget chain risks');
+  });
+
+  test('an include of a plain variable, with nothing taken from the request', async () => {
+    const app = appWith('file-inclusion-variable', {
+      'src/Loader/TemplateLoader.php': `<?php
+
+namespace App\\Loader;
+
+class TemplateLoader
+{
+    public function load(string $file): void
+    {
+        include $file;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-file-inclusion-security.js', app);
+
+    expect(text).toContain('Medium risk');
+    expect(text).not.toContain('HIGH RISK');
+  });
+
+  test('a non-blocking exclusive lock, its release, and a touch that locks nothing', async () => {
+    const app = appWith('file-locking-shapes', {
+      'src/Storage/LockedWriter.php': `<?php
+
+namespace App\\Storage;
+
+class LockedWriter
+{
+    public function write(string $path, string $data): void
+    {
+        $fp = fopen($path, 'c');
+        flock($fp, LOCK_SH);
+        flock($fp, LOCK_EX | LOCK_NB);
+        fwrite($fp, $data);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
+
+    public function stamp(string $path): void
+    {
+        $now = time();
+        $dir = dirname($path);
+        $name = basename($path);
+
+        touch($path);
+
+        $size = filesize($path);
+        $when = $now;
+        $where = $dir . $name;
+        unset($size, $when, $where);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-file-locking.js', app)).toContain('LOCK_UN');
+  });
+
+  test('a copy of a component class that names Generator without yielding, and a constructor that yields', async () => {
+    const app = appWith('generators-edge-shapes', {
+      'src/Vendor/GeneratorHelper.php': `<?php
+
+namespace Symfony\\Component\\Foo;
+
+class GeneratorHelper
+{
+    public function items(): \\Generator
+    {
+        return $this->items;
+    }
+}
+`,
+      'src/Stream/Streamer.php': `<?php
+
+namespace App\\Stream;
+
+class Streamer
+{
+    public function __construct(private array $rows)
+    {
+        yield from $rows;
+    }
+
+    public function read(): iterable
+    {
+        yield 1;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-generators.js', app)).toContain('Streamer');
+  });
+
+  test('a PHP requirement with no version, a lazy proxy that skips initialisation and an explicit initialisation call', async () => {
+    const anyVersion = appWith('lazy-any-php', {
+      'composer.json': JSON.stringify({ require: { php: '*' } }, null, 2),
+      'src/Lazy/Factory.php': `<?php
+
+namespace App\\Lazy;
+
+class Factory
+{
+    public function build(\\ReflectionClass $ref): object
+    {
+        return $ref->newLazyGhost(static fn ($object) => $object);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-lazy-objects.js', anyVersion)).toContain('lazy');
+
+    const php84 = appWith('lazy-php-84', {
+      'composer.json': JSON.stringify({ require: { php: '>=8.4' } }, null, 2),
+      'src/Lazy/ProxyFactory.php': `<?php
+
+namespace App\\Lazy;
+
+class ProxyFactory
+{
+    #[SkipLazyInitialization]
+    private ?object $identity = null;
+
+    public function build(\\ReflectionClass $ref): object
+    {
+        return $ref->newLazyProxy(static fn ($object) => $object);
+    }
+
+    public function warm(object $proxy): void
+    {
+        $proxy->initializeLazyObject();
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-lazy-objects.js', php84)).toContain('initializeLazyObject');
+  });
+
+  test('a memory size that is not a number and an explicit permission validation', async () => {
+    const app = appWith('opcache-odd-values', {
+      'docker/php/php.ini': `[opcache]
+opcache.enable=1
+opcache.memory_consumption=abc
+opcache.validate_permission=1
+`,
+    });
+
+    expect(await runModule('php-opcache-settings.js', app)).toContain('No OPcache settings found');
+  });
+
+  test('a replace and a split whose patterns and subjects both come from the request', async () => {
+    const app = appWith('regex-injection-same-line', {
+      'src/Search/Filter.php': `<?php
+
+namespace App\\Search;
+
+class Filter
+{
+    public function apply(string $text): array
+    {
+        $clean = preg_replace($_GET['pattern'], '', $text);
+        $parts = preg_split($_POST['separator'], $clean);
+
+        return $parts;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-regex-injection.js', app)).toContain('preg_');
+  });
+});
+
+describe('batch 214: search, parameter stores and Doctrine mappings', () => {
+  test('an Algolia key from the environment beside a committed one, an empty config and a faceted one', async () => {
+    const app = appWith('algolia-mixed-keys', {
+      '.env': `ALGOLIA_APP_ID=%env(ALGOLIA_APP_ID)%
+ALGOLIA_API_KEY=%env(ALGOLIA_API_KEY)%
+`,
+      '.env.local': `ALGOLIA_API_KEY=0123456789abcdef0123456789abcdef
+`,
+      'config/packages/algolia.yaml': '',
+      'config/packages/algolia_settings.yaml': `products:
+    attributesForFaceting:
+        - brand
+        - category
+`,
+      'config/packages/algolia_facets.yaml': `products:
+    faceting:
+        maxValuesPerFacet: 100
+`,
+      'src/Search/ProductSearch.php': `<?php
+
+namespace App\\Search;
+
+use Algolia\\AlgoliaSearch\\SearchClient;
+
+class ProductSearch
+{
+    public function client(string $searchKey): SearchClient
+    {
+        return SearchClient::create('APP_ID', $searchKey);
+    }
+}
+`,
+      'src/Search/AdminSearch.php': `<?php
+
+namespace App\\Search;
+
+use Algolia\\AlgoliaSearch\\SearchClient;
+
+class AdminSearch
+{
+    public function client(): SearchClient
+    {
+        return SearchClient::create('APP_ID', getenv('ALGOLIA_SEARCH_KEY'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('algolia-integration.js', app)).toContain('Algolia');
+  });
+
+  test('AWS keys that resolve through the environment and a parameter name read from it', async () => {
+    const app = appWith('aws-parameters-from-env', {
+      '.env': `AWS_ACCESS_KEY_ID=%env(AWS_ACCESS_KEY_ID)%
+AWS_SECRET_ACCESS_KEY=%env(AWS_SECRET_ACCESS_KEY)%
+`,
+      'src/Aws/Parameters.php': `<?php
+
+namespace App\\Aws;
+
+class Parameters
+{
+    public function fetch($ssm): string
+    {
+        $result = $ssm->getParameter(['Name' => '/shop/prod/database-password']);
+        $fallback = getenv('DATABASE_PASSWORD');
+
+        return $result['Parameter']['Value'] ?? $fallback;
+    }
+}
+`,
+    });
+
+    expect(await runModule('aws-parameter-store.js', app)).toContain('AWS');
+  });
+
+  test('a YAML that names a service and a discovery block without mentioning Consul', async () => {
+    const app = appWith('consul-service-name-only', {
+      'config/packages/discovery.yaml': `parameters:
+    service_name: shop-api
+    discovery:
+        enabled: true
+        checks:
+            - http: 'http://localhost/health'
+`,
+    });
+
+    expect(await runModule('consul-service-discovery.js', app)).toContain('service');
+  });
+
+  test('two entities that both call their key $id, and a reference passed an array of them', async () => {
+    const app = appWith('composite-keys-repeated', {
+      'src/Entity/Pair.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ */
+class Pair
+{
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $left;
+
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $right;
+}
+`,
+      'src/Entity/Keys.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ */
+class OrderLine
+{
+    /**
+     * @Id
+     * @Column(type="integer")
+     */
+    private $id;
+
+    /**
+     * @Id
+     * @Column(type="integer")
+     */
+    private $line;
+}
+
+/**
+ * @ORM\\Entity
+ */
+class ShipmentLine
+{
+    /**
+     * @Id
+     * @Column(type="integer")
+     */
+    private $id;
+}
+
+/**
+ * @ORM\\Entity
+ */
+class InvoiceLine
+{
+    #[ORM\\GeneratedValue]
+    private $generated;
+
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $id;
+
+    /**
+     * @ORM\\Id
+     * @ORM\\Column(type="integer")
+     */
+    private $line;
+}
+`,
+      'src/Repository/LineRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Entity\\OrderLine;
+
+class LineRepository
+{
+    public function find($em, array $ids): object
+    {
+        return $em->getReference(OrderLine::class, $ids);
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-composite-primary-keys.js', app)).toContain('OrderLine');
+  });
+
+  test('an entity whose listener class is right there in src/, and a listener file with no class', async () => {
+    const app = appWith('entity-listener-present', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\EntityListeners([InvoiceListener::class])]
+class Invoice
+{
+    private $id;
+}
+`,
+      'src/Entity/InvoiceListener.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Event\\PrePersistEventArgs;
+
+#[AsDoctrineListener]
+class InvoiceListener
+{
+    public function prePersist(PrePersistEventArgs $args): void
+    {
+    }
+}
+`,
+      'src/Listener/functions_Listener.php': `<?php
+
+function prePersist($args): void
+{
+    error_log('persisting');
+}
+`,
+    });
+
+    expect(await runModule('doctrine-entity-listeners.js', app)).toContain('InvoiceListener');
+  });
+
+  test('a result set mapping with no field results and no native query at all', async () => {
+    const app = appWith('rsm-without-native-query', {
+      'src/Repository/ReportRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\ORM\\Query\\ResultSetMapping;
+
+class ReportRepository
+{
+    public function mapping(): ResultSetMapping
+    {
+        $rsm = new ResultSetMapping();
+        $rsm->addEntityResult('App\\\\Entity\\\\Invoice', 'i');
+
+        return $rsm;
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-result-set-mapping.js', app)).toContain('addFieldResult');
+  });
+
+  test('two shard ranges that do not overlap', async () => {
+    const app = appWith('sharding-disjoint-ranges', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        sharding:
+            choser: Doctrine\\DBAL\\Sharding\\ShardChoser\\MultiTenantShardChoser
+            shards:
+                - id: 1
+                  range: 1-1000
+                - id: 2
+                  range: 1001-2000
+`,
+    });
+
+    expect(await runModule('doctrine-sharding.js', app)).toContain('Shard');
+  });
+
+  test('auto-mapped entities beside more than twenty classes that only carry explicit constraints', async () => {
+    const dtos: Record<string, string> = {};
+    for (let i = 0; i < 21; i++) {
+      dtos[`src/Dto/Input${i}.php`] = `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Input${i}
+{
+    #[Assert\\NotBlank]
+    public string $name = '';
+}
+`;
+    }
+
+    const app = appWith('validator-auto-mapping-mixed', {
+      'config/packages/validator.yaml': `framework:
+    validation:
+        auto_mapping:
+            'App\\Entity': []
+`,
+      'src/Entity/Customer.php': `<?php
+
+namespace App\\Entity;
+
+class Customer
+{
+    public string $name = '';
+}
+`,
+      'src/Entity/Address.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Address
+{
+    #[Assert\\NotBlank]
+    public string $street = '';
+}
+`,
+      ...dtos,
+    });
+
+    const text = await runModule('symfony-validator-auto-mapping.js', app);
+
+    expect(text).toContain('and 1 more');
+  });
+});

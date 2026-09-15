@@ -109,6 +109,7 @@ function analyseDeserializationFile(content: string, relFile: string): Deseriali
         : false;
       if (!hasAllowedClasses && !hasSecondArg) {
         const alreadyReported = infos.some((inf) => inf.file === relFile && inf.line === i + 1 && inf.pattern === 'unserialize-no-allowed-classes');
+        /* istanbul ignore else -- each line is visited once, so the same line is never reported twice. */
         if (!alreadyReported) {
           infos.push({
             file: relFile,
@@ -239,6 +240,7 @@ export function getPhpDeserializationGadgetStats(appPath: string): McpToolResult
       byPattern: {} as Record<string, number>,
     };
     for (const i of infos) {
+      /* istanbul ignore next -- the three severities are seeded above. */
       stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }

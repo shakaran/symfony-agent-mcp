@@ -235,6 +235,7 @@ export function getPhpRegexInjectionStats(appPath: string): McpToolResult {
     };
 
     for (const i of infos) {
+      /* istanbul ignore next -- the four severities are seeded above. */
       stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }

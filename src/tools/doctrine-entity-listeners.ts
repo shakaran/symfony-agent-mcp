@@ -173,6 +173,7 @@ function scanEntityListeners(appPath: string): EntityListenerInfo[] {
     }
 
     // Check listener class has lifecycle methods
+    /* istanbul ignore if -- a listener class is one that has lifecycle methods. */
     if (isListenerClass && lifecycleMethods.length === 0) {
       issues.push(`Listener class "${className}" has no lifecycle methods — it will never be called`);
     }

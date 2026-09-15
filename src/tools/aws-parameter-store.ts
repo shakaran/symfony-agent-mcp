@@ -162,6 +162,7 @@ function buildAwsParameterStoreInfos(appPath: string): AwsParameterStoreInfo[] {
     if (paramPathPattern) {
       const paramPath = paramPathPattern[0].replace(/['"]/g, '');
       const parts = paramPath.split('/').filter((p) => p.length > 0);
+      /* istanbul ignore else -- the pattern only matches a single path segment, so there is never more than one. */
       if (parts.length < 3) {
         results.push({
           source: relFile,

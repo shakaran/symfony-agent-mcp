@@ -96,6 +96,7 @@ function parseRsmFile(filePath: string): DoctrineResultSetMappingInfo | null {
     const nativeQueryCalls = content.split('createNativeQuery(');
     if (nativeQueryCalls.length < 2) return false;
     for (let i = 1; i < nativeQueryCalls.length && i < 20; i++) {
+      /* istanbul ignore next -- the loop stops at the end of the list. */
       const slice = nativeQueryCalls[i] ?? '';
       const queryArgEnd = Math.min(slice.length, 300);
       const queryArg = slice.substring(0, queryArgEnd);
