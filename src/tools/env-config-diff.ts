@@ -65,13 +65,9 @@ function computeOverrides(appPath: string): EnvOverride[] {
 
     for (const pkg of envPackages) {
       const envFile = path.join(envDir, `${pkg}.yaml`);
-      const baseFile = path.join(pkgDir, `${pkg}.yaml`);
-
-      const envKeys = loadTopLevelKeys(envFile);
-      const baseKeys = loadTopLevelKeys(baseFile);
 
       // Keys present in env override (whether or not they exist in base)
-      const overriddenKeys = envKeys.filter((k) => !baseKeys.includes(k) || true);
+      const overriddenKeys = loadTopLevelKeys(envFile);
 
       overrides.push({
         package: pkg,
