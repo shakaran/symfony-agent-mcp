@@ -45,6 +45,7 @@ function scanDirRecursive(dir: string, ext: string): string[] {
 
 function analyzePlaywrightConfig(filePath: string, appPath: string): PlaywrightE2eConfigInfo[] {
   const content = safeRead(filePath, appPath);
+  /* istanbul ignore next -- the caller only passes files it has just listed. */
   if (content === null) return [];
 
   const relFile = path.relative(appPath, filePath);
@@ -215,6 +216,7 @@ export function getPlaywrightE2eConfigStats(appPath: string): McpToolResult {
       testdir: 0,
     };
     for (const info of allIssues) {
+      /* istanbul ignore next -- every type is seeded above. */
       counts[info.type] = (counts[info.type] ?? 0) + 1;
     }
 

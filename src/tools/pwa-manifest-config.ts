@@ -111,7 +111,10 @@ export function getPwaManifestStats(appPath: string): McpToolResult {
   try {
     const infos = buildPwaManifestInfos(appPath);
     let text = `PWA Manifest Statistics\n${'='.repeat(40)}\n\n`;
-    text += `Manifest found:  ${infos.some((i) => i.field === 'manifest' && !i.issues.some((iss) => iss.includes('not found'))) ? 'yes' : 'no'}\n`;
+    // The entry for a missing manifest carries the value "not found"; its
+    // issue text reads "No Web App Manifest found", so looking for "not found"
+    // there answered yes for an application that has no manifest at all.
+    text += `Manifest found:  ${infos.some((i) => i.field === 'manifest' && i.value !== 'not found') ? 'yes' : 'no'}\n`;
     text += `Issues:          ${infos.reduce((s, i) => s + i.issues.length, 0)}\n`;
     return { content: [{ type: 'text', text }] };
   } catch (error) {

@@ -59094,3 +59094,186 @@ class Segment
     expect(await runModule('php-shmop-ipc.js', app)).toContain('shmop');
   });
 });
+
+describe('batch 224: Playwright, Psalm, PWA and analytics', () => {
+  test('a Playwright config that ignores certificate errors', async () => {
+    const app = appWith('playwright-ignores-https', {
+      'playwright.config.ts': `import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  use: {
+    baseURL: 'https://localhost:8000',
+    ignoreHTTPSErrors: true,
+  },
+  reporter: 'list',
+});
+`,
+    });
+
+    expect(await runModule('playwright-e2e-config.js', app)).toContain('HTTPS');
+  });
+
+  test('a Psalm configuration that looks for unused code and types everything', async () => {
+    const app = appWith('psalm-strict', {
+      'psalm.xml': `<?xml version="1.0"?>
+<psalm errorLevel="1" findUnusedCode="true" totallyTyped="true">
+    <projectFiles>
+        <directory name="src" />
+    </projectFiles>
+</psalm>
+`,
+    });
+
+    expect(await runModule('psalm-config.js', app)).toContain('Find unused code: yes');
+  });
+
+  test('a service worker with no manifest beside it, and a manifest whose icon has no size', async () => {
+    const noManifest = appWith('pwa-worker-only', {
+      'public/sw.js': `self.addEventListener('install', () => {});
+`,
+    });
+
+    expect(await runModule('pwa-manifest-config.js', noManifest)).toContain('No Web App Manifest');
+
+    const sizelessIcon = appWith('pwa-icon-without-size', {
+      'public/manifest.json': JSON.stringify({
+        name: 'Shop',
+        short_name: 'Shop',
+        display: 'standalone',
+        start_url: '/',
+        icons: [{ src: '/icon.png', type: 'image/png' }],
+      }, null, 2),
+      'public/sw.js': `self.addEventListener('install', () => {});
+`,
+    });
+
+    expect(await runModule('pwa-manifest-config.js', sizelessIcon)).toContain('512x512');
+  });
+
+  test('a pattern subscription with no wildcard and a publish wrapped in try/catch', async () => {
+    const app = appWith('redis-pubsub-guarded', {
+      'src/Messaging/Publisher.php': `<?php
+
+namespace App\\Messaging;
+
+class Publisher
+{
+    public function listen($redis): void
+    {
+        $redis->psubscribe(['orders.created'], [$this, 'onMessage']);
+    }
+
+    public function send($redis, array $payload): void
+    {
+        try {
+            $redis->publish('orders.created', json_encode($payload));
+        } catch (\\RedisException $e) {
+            return;
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('redis-pubsub-patterns.js', app)).toContain('psubscribe');
+  });
+
+  test('a route that carries requirements, defaults and options', async () => {
+    const app = appWith('routes-with-requirements', {
+      'config/routes.yaml': `order_show:
+    path: /orders/{id}
+    controller: App\\Controller\\OrderController::show
+    methods: [GET]
+    requirements:
+        id: '\\d+'
+    defaults:
+        _format: json
+    options:
+        utf8: true
+`,
+    });
+
+    expect(await runModule('routes.js', app, ['order_show'])).toContain('Requirements');
+  });
+
+  test('a session cookie that is neither secure nor http-only', async () => {
+    const app = appWith('security-open-session-cookie', {
+      'config/packages/framework.yaml': `framework:
+    session:
+        handler_id: null
+        cookie_secure: false
+        cookie_httponly: false
+        cookie_samesite: lax
+`,
+    });
+
+    expect(await runModule('security-scanner.js', app)).toContain('cookie');
+  });
+
+  test('a Segment key from the environment, a hardcoded one and an event named in two words', async () => {
+    const app = appWith('segment-keys-and-events', {
+      'src/Analytics/Tracker.php': `<?php
+
+namespace App\\Analytics;
+
+use Segment\\Analytics;
+
+class Tracker
+{
+    public function boot(): void
+    {
+        Analytics::init('0123456789abcdef0123');
+    }
+
+    public function track(string $userId): void
+    {
+        Analytics::track(['userId' => $userId, 'event' => 'order Created']);
+    }
+}
+`,
+      'src/Analytics/EnvTracker.php': `<?php
+
+namespace App\\Analytics;
+
+use Segment\\Analytics;
+
+class EnvTracker
+{
+    public function boot(): void
+    {
+        Analytics::init('%env(SEGMENT_WRITE_KEY)%');
+    }
+}
+`,
+    });
+
+    expect(await runModule('segment-analytics.js', app)).toContain('Segment');
+  });
+
+  test('a SendGrid key from the environment, one written into the client and a suppression call', async () => {
+    const app = appWith('sendgrid-keys', {
+      '.env': `SENDGRID_API_KEY=%env(SENDGRID_API_KEY)%
+`,
+      'src/Mail/Sender.php': `<?php
+
+namespace App\\Mail;
+
+class Sender
+{
+    public function client(): \\SendGrid
+    {
+        return new \\SendGrid('SG.0123456789abcdefghijklmn');
+    }
+
+    public function suppression($client): array
+    {
+        return $client->client->suppression()->bounces()->get();
+    }
+}
+`,
+    });
+
+    expect(await runModule('sendgrid-integration.js', app)).toContain('SendGrid');
+  });
+});

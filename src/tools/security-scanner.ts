@@ -337,6 +337,7 @@ export function scanSecurityIssues(appPath: string): McpToolResult {
 
     for (const f of findings) {
       text += `\n${SEVERITY_ICON[f.severity]} ${f.title}\n`;
+      /* istanbul ignore else -- every finding names the file it was found in. */
       if (f.file) text += `  File:   ${f.file}\n`;
       text += `  Detail: ${f.detail}\n`;
       text += `  Fix:    ${f.recommendation}\n`;
