@@ -80,7 +80,10 @@ function scanControllerRateLimits(appPath: string): RateLimitedEndpoint[] {
     const limitAttrs = ['#[RateLimit', '#[Throttle', '#[IsLimited', '#[ApiRateLimit'];
     for (const attr of limitAttrs) {
       if (content.includes(attr)) {
-        const methodM = new RegExp(`${attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^)]*\\)\\s*(?:public\\s+function\\s+(\\w+))?`, 'g');
+        // The attribute closes with ")]", and other attributes may sit between
+        // it and the action, so a pattern stopping at the first ")" never named
+        // the method it was written on.
+        const methodM = new RegExp(`${attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\]]{0,300}\\](?:\\s*#\\[[^\\]]{0,300}\\])*\\s*(?:public\\s+function\\s+(\\w+))?`, 'g');
         for (const m of content.matchAll(methodM)) {
           results.push({
             controller: classM[1],
