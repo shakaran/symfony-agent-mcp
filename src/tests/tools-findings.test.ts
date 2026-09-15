@@ -51462,6 +51462,7 @@ class Tracker
         Segment::track(['event' => 'Order Completed']);
         Segment::track(['event' => 'orderShipped']);
         Segment::track(['event' => 'order refunded']);
+        Segment::track(['event' => 'order Shipped']);
     }
 }
 `,
@@ -51497,6 +51498,12 @@ class Silent
         decorates: App\\Cache\\LoggingCache
     App\\Cache\\PlainDecorator:
         decorates: App\\Cache\\Cache
+`,
+      'config/services_cycle.yaml': `services:
+    App\\Cycle\\A:
+        decorates: App\\Cycle\\B
+    App\\Cycle\\B:
+        decorates: App\\Cycle\\A
 `,
       'src/Cache/LoggingCache.php': `<?php
 
@@ -51546,6 +51553,18 @@ class OauthClient
     }
 }
 `,
+      'src/Shopify/PlainClient.php': `<?php
+
+namespace App\\Shopify;
+
+class PlainClient
+{
+    public function oauth(): string
+    {
+        return 'OAuth flow without a shop domain in this file';
+    }
+}
+`,
       'src/Shopify/WebhookHandler.php': `<?php
 
 namespace App\\Shopify;
@@ -51592,6 +51611,8 @@ REDIS_PLAIN=redis://sentinel-2:26379?redis_sentinel=mymaster
             app.cache:
                 adapter: cache.adapter.redis
                 default_lifetime: 20
+                early_expiration_message_bus: messenger.default_bus
+                beta: 1.5
             bare.cache: ~
 `,
       'src/Cache/Warmer.php': `<?php
@@ -51642,8 +51663,9 @@ class Warmer
         main:
             type: fingers_crossed
 `,
-      'config/packages/test/framework.yml': `framework:
-    test: true
+      'config/packages/prod/framework.yaml': `framework:
+    router:
+        strict_requirements: null
 `,
     });
 
@@ -51718,5 +51740,203 @@ class LooseValidator extends ConstraintValidator
     const text = await runModule('symfony-custom-constraints.js', app);
 
     expect(text).toContain('IsValidOrder');
+  });
+});
+
+describe('batch 194: error controllers, themes, LDAP and workers', () => {
+  test('a custom error controller and a template that says nothing translatable', async () => {
+    const app = appWith('error-controller-shapes', {
+      'config/packages/framework.yaml': `framework:
+    error_controller: App\\Controller\\ErrorController::show
+`,
+      'src/Controller/ErrorController.php': `<?php
+
+namespace App\\Controller;
+
+class ErrorController
+{
+    public function show($exception): void
+    {
+    }
+}
+`,
+      'templates/bundles/TwigBundle/Exception/error404.html.twig': `<h1>Not found</h1>
+`,
+      'src/Controller/notaclass.php': `<?php
+
+// A file with no declaration next to the error controller.
+return 42;
+`,
+    });
+
+    const text = await runModule('symfony-error-controller.js', app);
+
+    expect(text).toContain('Error');
+  });
+
+  test('a PRE_SET_DATA listener that adds fields conditionally', async () => {
+    const app = appWith('form-pre-set-data-shapes', {
+      'src/Form/ProfileType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\Form\\FormEvent;
+use Symfony\\Component\\Form\\FormEvents;
+
+class ProfileType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, function (FormEvent $event) {
+            $data = $event->getData();
+            if ($data && $data->getId()) {
+                $event->getForm()->add('slug');
+            }
+        });
+
+        $builder->addEventListener(FormEvents::PRE_SUBMIT, function (FormEvent $event) {
+            $event->getForm()->add('captcha');
+        });
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-pre-set-data.js', app);
+
+    expect(text).toContain('ProfileType');
+  });
+
+  test('form themes for tailwind and a custom theme that extends nothing', async () => {
+    const app = appWith('form-theme-shapes', {
+      'config/packages/twig.yaml': `twig:
+    form_themes:
+        - 'tailwind_2_layout.html.twig'
+        - 'form/custom_theme.html.twig'
+        - 'form/unused_theme.html.twig'
+`,
+      'templates/form/custom_theme.html.twig': `{% block form_row %}
+    <div class="row">{{ form_widget(form) }}</div>
+{% endblock %}
+`,
+      'templates/form/unused_theme.html.twig': `{% use 'bootstrap_5_layout.html.twig' %}
+`,
+      'templates/page.html.twig': `{% form_theme form 'form/custom_theme.html.twig' %}
+{{ form(form) }}
+`,
+    });
+
+    const text = await runModule('symfony-form-themes.js', app);
+
+    expect(text).toContain('tailwind');
+  });
+
+  test('two firewalls with a json login on the same check path', async () => {
+    const app = appWith('json-login-shapes', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        api:
+            pattern: ^/api
+            stateless: true
+            json_login:
+                check_path: /api/login
+                username_path: email
+                password_path: password
+        mobile:
+            pattern: ^/mobile
+            stateless: true
+            json_login:
+                check_path: /api/login
+        web:
+            pattern: ^/
+            json_login: ~
+`,
+    });
+
+    const text = await runModule('symfony-json-login.js', app);
+
+    expect(text).toContain('json_login');
+  });
+
+  test('a Kubernetes deployment with a latest image and secrets in plain environment variables', async () => {
+    const app = appWith('kubernetes-env-shapes', {
+      'k8s/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  template:
+    spec:
+      containers:
+        - name: php
+          image: demo/app:latest
+          env:
+            - name: APP_SECRET
+              value: "hardcoded-secret"
+            - name: DATABASE_URL
+              value: "$(DB_URL)"
+            - name: EMPTY_VALUE
+              value: ""
+        - name: sidecar
+          image: demo/sidecar
+`,
+    });
+
+    const text = await runModule('symfony-kubernetes.js', app);
+
+    expect(text).toContain('deployment');
+  });
+
+  test('an LDAP provider with a bind DN and password, and a firewall that logs in against it', async () => {
+    const app = appWith('ldap-auth-shapes', {
+      'config/packages/security.yaml': `security:
+    providers:
+        ldap_users:
+            ldap:
+                service: Symfony\\Component\\Ldap\\Ldap
+                base_dn: 'dc=example,dc=com'
+                search_dn: 'cn=admin,dc=example,dc=com'
+                search_password: 'plaintext'
+                uid_key: uid
+        bare_ldap:
+            ldap: {}
+    firewalls:
+        main:
+            form_login_ldap:
+                service: Symfony\\Component\\Ldap\\Ldap
+                dn_string: 'uid={username},dc=example,dc=com'
+        other:
+            ldap_login:
+                service: Symfony\\Component\\Ldap\\Ldap
+`,
+    });
+
+    const text = await runModule('symfony-ldap-auth.js', app);
+
+    expect(text).toContain('ldap');
+  });
+
+  test('a supervisor worker with a memory limit and one with none', async () => {
+    const app = appWith('messenger-worker-shapes', {
+      'supervisor/messenger.conf': `[program:messenger-consume]
+command=php /app/bin/console messenger:consume async --time-limit=3600 --memory-limit=128M
+numprocs=2
+autostart=true
+autorestart=true
+`,
+      'supervisor/messenger-plain.conf': `[program:messenger-plain]
+command=php /app/bin/console messenger:consume async
+numprocs=1
+`,
+      'docker/worker.conf': `[program:other]
+command=php /app/bin/console app:other
+`,
+    });
+
+    const text = await runModule('symfony-messenger-worker.js', app);
+
+    expect(text).toContain('messenger');
   });
 });

@@ -170,12 +170,15 @@ function buildChains(decorators: ServiceDecorator[]): DecorationChain[] {
   const visited = new Set<string>();
 
   for (const root of [...new Set(roots)]) {
+    /* istanbul ignore next -- a root is not a decorator, and only decorators
+       are marked visited. */
     if (visited.has(root)) continue;
     const chain: string[] = [root];
 
     let current = root;
     while (decoratesMap.has(current)) {
       const next = decoratesMap.get(current)![0];
+      /* istanbul ignore next -- a cycle has no root, so no chain starts. */
       if (chain.includes(next)) break;
       chain.push(next);
       visited.add(next);

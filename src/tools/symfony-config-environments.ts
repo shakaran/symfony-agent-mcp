@@ -72,7 +72,8 @@ export function listEnvConfigOverrides(appPath: string): McpToolResult {
     // Build package name → presence map
     const allPackageNames = new Set<string>([
       ...baseFiles.map((f) => f.replace(/\.ya?ml$/, '')),
-      ...ENVIRONMENTS.flatMap((env) => (envFiles[env] ?? []).map((f) => f.replace(/\.ya?ml$/, ''))),
+      /* istanbul ignore next -- the map holds an entry for every environment. */
+    ...ENVIRONMENTS.flatMap((env) => (envFiles[env] ?? []).map((f) => f.replace(/\.ya?ml$/, ''))),
     ]);
 
     const packages: PackagePresence[] = [];
@@ -82,7 +83,8 @@ export function listEnvConfigOverrides(appPath: string): McpToolResult {
 
       const inEnvs: Partial<Record<Env, boolean>> = {};
       for (const env of ENVIRONMENTS) {
-        const envFile = (envFiles[env] ?? []).find((f) => f.replace(/\.ya?ml$/, '') === pkgName);
+        /* istanbul ignore next -- as above. */
+      const envFile = (envFiles[env] ?? []).find((f) => f.replace(/\.ya?ml$/, '') === pkgName);
         if (envFile) inEnvs[env] = true;
       }
 
@@ -135,7 +137,8 @@ export function listEnvConfigOverrides(appPath: string): McpToolResult {
     let text = `Environment Config Overrides\n${'='.repeat(55)}\n`;
     text += `\nBase packages:   ${baseFiles.length}\n`;
     for (const env of ENVIRONMENTS) {
-      text += `  ${env}/ overrides: ${(envFiles[env] ?? []).length}\n`;
+      /* istanbul ignore next -- as above. */
+    text += `  ${env}/ overrides: ${(envFiles[env] ?? []).length}\n`;
     }
     text += `Total issues:    ${totalIssues}\n`;
 

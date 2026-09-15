@@ -88,8 +88,10 @@ function parseConstraint(filePath: string, appPath: string): ConstraintClass | n
   if (content.includes('CLASS_CONSTRAINT')) targets.push('class');
   if (content.includes('GETTER_CONSTRAINT')) targets.push('getter');
 
-  const validatedByM = /function\s+validatedBy[^{]*\{[^}]*return\s+['"]([^'"]+)['"]/.exec(content);
-  const validatedByClass = validatedByM?.[1];
+  // validatedBy() returns the validator class, and modern code writes it as
+  // Validator::class rather than as a quoted string.
+  const validatedByM = /function\s+validatedBy[^{]*\{[^}]*return\s+(?:['"]([^'"]+)['"]|([\w\\]+)::class)/.exec(content);
+  const validatedByClass = validatedByM?.[1] ?? validatedByM?.[2];
 
   const hasTranslatableMessage = !message || message.includes('.') ||
     /public\s+\w+\s+\$message\s*=\s*TranslatableMessage/.test(content);
