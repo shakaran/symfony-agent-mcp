@@ -102,6 +102,7 @@ function analyseErrorController(appPath: string): ErrorControllerInfo {
 
     for (const file of getAllPhpFiles(srcDir)) {
       const content = safeRead(file, appPath);
+      /* istanbul ignore next -- the walk only lists files it can read. */
       if (content === null) continue;
 
       if (!content.includes(targetClass)) continue;

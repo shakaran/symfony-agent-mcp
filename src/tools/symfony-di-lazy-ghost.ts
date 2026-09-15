@@ -48,6 +48,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function shortClass(fqcn: string): string {
   const parts = fqcn.split('\\');
+  /* istanbul ignore next -- a split always yields a last element. */
   return parts[parts.length - 1] ?? fqcn;
 }
 

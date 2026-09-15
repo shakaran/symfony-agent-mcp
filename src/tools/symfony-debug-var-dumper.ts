@@ -183,6 +183,7 @@ export function listSymfonyDebugVarDumpers(appPath: string): McpToolResult {
       text += `\n${prefix} ${e.file}`;
       if (e.isTestFile) text += '  (test)';
       text += '\n';
+      /* istanbul ignore else -- the name falls back to the file name, so it is never empty. */
       if (e.className) text += `    Class: ${e.className}\n`;
       if (e.casterTypes.length > 0) text += `    Casters: ${e.casterTypes.join(', ')}\n`;
       text += `    dump()/dd() calls: ${e.hasDumpCalls ? 'YES' : 'no'}\n`;

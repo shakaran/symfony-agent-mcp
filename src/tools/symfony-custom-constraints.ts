@@ -176,6 +176,7 @@ export function listCustomConstraints(appPath: string): McpToolResult {
     for (const c of constraints) {
       const expectedValidator = c.class + 'Validator';
       const matched = c.validatedByClass
+        /* istanbul ignore next -- a split always yields a last element. */
         ? validatorsByName.get(c.validatedByClass.split('\\').pop() ?? '')
         : validatorsByName.get(expectedValidator);
       if (!matched) constraintIssues.push(`${c.class}: no matching validator class found (expected ${expectedValidator})`);

@@ -59472,3 +59472,250 @@ class HomeControllerTest extends WebTestCase
     expect(await runModule('symfony-cache-chain.js', app)).toContain('chain');
   });
 });
+
+describe('batch 226: pools, environments, signals and dumpers', () => {
+  test('a pool with no body and one with no adapter', async () => {
+    const app = appWith('cache-pool-prune-shapes', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            bare_pool:
+            no_adapter:
+                default_lifetime: 600
+`,
+    });
+
+    expect(await runModule('symfony-cache-pool-prune.js', app)).toContain('pool');
+  });
+
+  test('a package configured for an environment with the .yml spelling', async () => {
+    const app = appWith('config-environments-yml', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+`,
+      'config/packages/prod/monolog.yml': `monolog:
+    handlers:
+        main:
+            type: rotating_file
+`,
+      'config/packages/twig.yaml': `twig:
+    default_path: '%kernel.project_dir%/templates'
+`,
+      'config/packages/prod/twig.yaml': `twig:
+    strict_variables: false
+`,
+    });
+
+    expect(await runModule('symfony-config-environments.js', app)).toContain('monolog');
+  });
+
+  test('a command that subscribes to SIGHUP', async () => {
+    const app = appWith('console-signal-sighup', {
+      'src/Command/WorkerCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Command\\SignalableCommandInterface;
+
+class WorkerCommand extends Command implements SignalableCommandInterface
+{
+    public function getSubscribedSignals(): array
+    {
+        return [SIGTERM, SIGINT, SIGHUP];
+    }
+
+    public function handleSignal(int $signal): void
+    {
+        $this->shouldStop = true;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-console-signals.js', app)).toContain('signals: 15,2,1');
+  });
+
+  test('a validator that checks the constraint type before using it', async () => {
+    const app = appWith('custom-constraint-checked', {
+      'src/Validator/IbanConstraint.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+#[\\Attribute]
+class IbanConstraint extends Constraint
+{
+    public string $message = 'This is not an IBAN.';
+
+    public function validatedBy(): string
+    {
+        return IbanValidator::class;
+    }
+}
+`,
+      'src/Validator/IbanValidator.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+use Symfony\\Component\\Validator\\ConstraintValidator;
+use Symfony\\Component\\Validator\\Exception\\UnexpectedTypeException;
+
+class IbanValidator extends ConstraintValidator
+{
+    public function validate($value, Constraint $constraint): void
+    {
+        if (!$constraint instanceof IbanConstraint) {
+            throw new UnexpectedTypeException($constraint, IbanConstraint::class);
+        }
+
+        if (null === $value || '' === $value) {
+            return;
+        }
+
+        $this->context->buildViolation($constraint->message)->addViolation();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-custom-constraints.js', app)).toContain('instanceof');
+  });
+
+  test('casters restored after being added, and a dump in a file with no class', async () => {
+    const app = appWith('var-dumper-restored', {
+      'src/Debug/Casters.php': `<?php
+
+namespace App\\Debug;
+
+use Symfony\\Component\\VarDumper\\Cloner\\AbstractCloner;
+
+class Casters
+{
+    public function register(): void
+    {
+        AbstractCloner::addCasters(['App\\\\Money' => 'App\\\\MoneyCaster::cast']);
+        AbstractCloner::setDefaultCasters();
+    }
+}
+`,
+      'src/Debug/helpers.php': `<?php
+
+function debug_order(array $order): void
+{
+    dump($order);
+}
+`,
+    });
+
+    expect(await runModule('symfony-debug-var-dumper.js', app)).toContain('dump');
+
+    const clean = appWith('var-dumper-clean', {
+      'src/Debug/Restored.php': `<?php
+
+namespace App\\Debug;
+
+use Symfony\\Component\\VarDumper\\Cloner\\AbstractCloner;
+
+class Restored
+{
+    public function register(): void
+    {
+        AbstractCloner::addCasters(['App\\\\Money' => 'App\\\\MoneyCaster::cast']);
+        AbstractCloner::setDefaultCasters();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-debug-var-dumper.js', clean)).toContain('correct');
+  });
+
+  test('a lazy service with no namespace and a class with no constructor', async () => {
+    const app = appWith('lazy-ghost-plain-class', {
+      'config/services.yaml': `services:
+    App\\Service\\Heavy:
+        lazy: true
+`,
+      'src/Service/Heavy.php': `<?php
+
+class Heavy
+{
+    public function run(): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-di-lazy-ghost.js', app)).toContain('Heavy');
+  });
+
+  test('a production DBAL with logging off and Monolog in the file', async () => {
+    const app = appWith('sql-logger-monolog', {
+      'config/packages/prod/doctrine.yaml': `doctrine:
+    dbal:
+        logging: false
+        profiling: false
+        profiling_collect_backtrace: false
+        # queries go to monolog when they are slow
+`,
+    });
+
+    expect(await runModule('symfony-doctrine-sql-logger.js', app)).toContain('prod');
+  });
+
+  test('an error controller that translates its message, and a file with no class', async () => {
+    const app = appWith('error-controller-translated', {
+      'config/packages/framework.yaml': `framework:
+    error_controller: 'App\\Controller\\ErrorController::show'
+`,
+      'src/Controller/ErrorController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Translation\\TranslatableMessage;
+
+class ErrorController
+{
+    public function show($exception): Response
+    {
+        return new Response(new TranslatableMessage('error.page.title'));
+    }
+}
+`,
+      'src/Controller/AbstractErrorControllerNotes.php': `<?php
+
+/**
+ * Companion helpers for ErrorController.
+ */
+function error_title(int $status): string
+{
+    return 'Error ' . $status;
+}
+`,
+      'src/Exception/NotFoundException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\HttpKernel\\Exception\\HttpException;
+use Symfony\\Component\\Translation\\TranslatableMessage;
+
+class NotFoundException extends HttpException
+{
+    public function __construct()
+    {
+        parent::__construct(404, new TranslatableMessage('error.not_found'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-error-controller.js', app)).toContain('Error');
+  });
+});

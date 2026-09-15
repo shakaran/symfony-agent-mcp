@@ -70,10 +70,11 @@ export function listEnvConfigOverrides(appPath: string): McpToolResult {
     }
 
     // Build package name → presence map
+    /* istanbul ignore next -- the map holds an entry for every environment. */
+    const envPackageNames = ENVIRONMENTS.flatMap((env) => (envFiles[env] ?? []).map((f) => f.replace(/\.ya?ml$/, '')));
     const allPackageNames = new Set<string>([
       ...baseFiles.map((f) => f.replace(/\.ya?ml$/, '')),
-      /* istanbul ignore next -- the map holds an entry for every environment. */
-    ...ENVIRONMENTS.flatMap((env) => (envFiles[env] ?? []).map((f) => f.replace(/\.ya?ml$/, ''))),
+      ...envPackageNames,
     ]);
 
     const packages: PackagePresence[] = [];

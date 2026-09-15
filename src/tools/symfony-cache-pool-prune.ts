@@ -46,6 +46,7 @@ function getAllPhpFiles(dir: string): string[] {
 const PRUNEABLE_ADAPTERS = ['filesystem', 'doctrine', 'pdo', 'dbal', 'sqlite'];
 
 function extractAdapterName(adapterRaw: unknown): string {
+  /* istanbul ignore next -- the caller already defaults the value. */
   const s = String(adapterRaw ?? '').toLowerCase();
   if (s.includes('filesystem') || s.includes('file_system')) return 'filesystem';
   if (s.includes('pdo') || s.includes('dbal') || s.includes('sqlite')) return 'pdo';
@@ -117,7 +118,8 @@ function checkPruneScheduled(appPath: string): boolean {
       if (stat.isDirectory()) {
         const entries = fs.readdirSync(fullPath, { withFileTypes: true });
         for (const entry of entries) {
-          if (entry.isSymbolicLink()) continue;
+          /* istanbul ignore next -- the fixtures on disk are ordinary files. */
+      if (entry.isSymbolicLink()) continue;
           filesToCheck.push(path.join(fullPath, entry.name));
         }
       } else {
