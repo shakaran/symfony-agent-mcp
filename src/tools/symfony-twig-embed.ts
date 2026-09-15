@@ -64,11 +64,16 @@ function analyzeFile(filePath: string, base: string): TwigEmbedInfo[] {
   const blocksInEmbeds = new Set<string>();
   let insideEmbed = false;
 
-  // First pass: collect block names defined at top level (not inside embed)
+  // First pass: collect block names defined at top level (not inside embed).
+  // Counting the embed blocks too made every block inside an embed collide with
+  // itself, so the collision check below reported every embed override.
+  let embedDepth = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (/\{%[-]?\s*embed\s+/.test(line)) embedDepth++;
+    if (/\{%[-]?\s*endembed\s*[-]?%\}/.test(line)) embedDepth = Math.max(0, embedDepth - 1);
     const blockMatch = /\{%[-]?\s*block\s+([\w]{1,80})\s*[-]?%\}/.exec(line);
-    if (blockMatch) {
+    if (blockMatch && embedDepth === 0) {
       blocksInFile.add(blockMatch[1]);
     }
   }
