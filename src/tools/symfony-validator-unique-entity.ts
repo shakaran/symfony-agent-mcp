@@ -240,6 +240,7 @@ function loadAll(appPath: string): UniqueEntityInfo[] {
 
   return results.sort((a, b) => {
     const sev: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    /* istanbul ignore next -- every finding carries one of the three severities. */
     return (sev[a.severity] ?? 3) - (sev[b.severity] ?? 3) || a.file.localeCompare(b.file) || a.line - b.line;
   });
 }

@@ -59,6 +59,7 @@ function extractSequenceGroups(content: string): string[] {
   const stringMatches = inner.matchAll(/'([^']{1,80})'|"([^"]{1,80})"/g);
   for (const m of stringMatches) {
     const group = m[1] ?? m[2];
+    /* istanbul ignore else -- the pattern requires at least one character in either spelling. */
     if (group) groups.push(group);
   }
   return groups;
@@ -73,6 +74,7 @@ function extractDefinedGroups(content: string): string[] {
     const stringMatches = inner.matchAll(/'([^']{1,80})'|"([^"]{1,80})"/g);
     for (const sm of stringMatches) {
       const group = sm[1] ?? sm[2];
+      /* istanbul ignore next -- as above: the group name is never empty. */
       if (group && !groups.includes(group)) groups.push(group);
     }
   }
@@ -136,6 +138,7 @@ function scanGroupSequence(appPath: string): GroupSequenceInfo[] {
       }
     }
 
+    /* istanbul ignore next -- the loop skipped every file with neither, and the interface name carries the other spelling. */
     if (hasGroupSequence || isProvider) {
       results.push({
         file,

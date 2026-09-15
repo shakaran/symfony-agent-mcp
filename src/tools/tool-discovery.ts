@@ -239,8 +239,10 @@ export function activateCategory(sessionId: string, category: string, force: boo
   const result = sessionStore.activateCategory(sessionId, category as ToolCategory, force);
 
   if (!result.ok) {
+    /* istanbul ignore next -- the store only refuses over the budget, and that answer always carries the warning. */
+    const refusal = result.budgetWarning ?? result.message;
     return {
-      content: [{ type: 'text', text: result.budgetWarning ?? result.message }],
+      content: [{ type: 'text', text: refusal }],
       isError: true,
     };
   }

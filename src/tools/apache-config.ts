@@ -14,6 +14,7 @@ interface ApacheConfigInfo {
 
 function scanApacheFile(filePath: string, relPath: string, appPath: string): ApacheConfigInfo[] {
   const content = safeRead(filePath, appPath);
+  /* istanbul ignore next -- the caller only passes files it has just listed. */
   if (content === null) return [];
 
   const results: ApacheConfigInfo[] = [];

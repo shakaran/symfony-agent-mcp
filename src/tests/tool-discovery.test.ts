@@ -49,11 +49,16 @@ beforeAll(() => {
 
   const filler = Array.from({ length: 220 }, (_, i) => `list_generated_thing_${i}`);
 
-  toolRegistry.init([...names, ...filler].map((name) => ({
-    name,
-    description: `Inspect ${name.replace(/_/g, ' ')} in a Symfony application, reporting what it finds and the problems in it`,
-    inputSchema: appPath,
-  })));
+  toolRegistry.init([
+    ...[...names, ...filler].map((name) => ({
+      name,
+      description: `Inspect ${name.replace(/_/g, ' ')} in a Symfony application, reporting what it finds and the problems in it`,
+      inputSchema: appPath,
+    })),
+    // A description is optional in a tool definition, and search has to print
+    // the block for one that carries none.
+    { name: 'list_undocumented_thing', inputSchema: appPath },
+  ]);
 });
 
 let session = 0;
@@ -97,6 +102,13 @@ describe('searching for a tool', () => {
     expect(text).toMatch(/Found \d+ tools matching "routes"/);
     expect(text).toContain('Input schema:');
     expect(text).toContain('activate_category(');
+  });
+
+  test('a tool registered without a description still gets a block', () => {
+    const text = textOf(searchTools('undocumented', 5));
+
+    expect(text).toContain('### list_undocumented_thing');
+    expect(text).toContain('Input schema:');
   });
 
   test('a query that matches nothing says so and points at the categories', () => {
@@ -227,6 +239,36 @@ describe('activating and deactivating', () => {
     }
 
     expect(typeof refusedOnce).toBe('boolean');
+  });
+
+  test('forcing a category past the budget activates it and warns', () => {
+    const saved = process.env['SYMFONY_MCP_TOKEN_BUDGET'];
+    process.env['SYMFONY_MCP_TOKEN_BUDGET'] = '1';
+
+    try {
+      const id = nextSession();
+      const category = /^ {2}([a-z0-9_-]+)\s+│/m.exec(textOf(listToolCategories()))?.[1];
+      const forced = activateCategory(id, category!, true);
+
+      expect(forced.isError).toBeFalsy();
+      expect(textOf(forced)).toContain('Warning:');
+    } finally {
+      if (saved === undefined) delete process.env['SYMFONY_MCP_TOKEN_BUDGET'];
+      else process.env['SYMFONY_MCP_TOKEN_BUDGET'] = saved;
+    }
+  });
+
+  test('a category of fewer than thirty tools lists every one of them', () => {
+    const rows = [...textOf(listToolCategories()).matchAll(/^ {2}([a-z0-9_-]+)\s+│\s+(\d+) tools/gm)];
+    const small = rows.find((m) => Number(m[2]) > 0 && Number(m[2]) <= 30)?.[1];
+    expect(small).toBeDefined();
+
+    const id = nextSession();
+    activateCategory(id, small!, true);
+    const text = textOf(getActiveTools(id));
+
+    expect(text).toContain('Active tool categories');
+    expect(text).not.toMatch(/and \d+ more/);
   });
 });
 

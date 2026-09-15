@@ -54839,3 +54839,411 @@ class HandlerRegistry
     expect(await runModule('symfony-tagged-iterator.js', app)).toContain('app.handler');
   });
 });
+
+describe('batch 206: translations, UX components and validator sequences', () => {
+  test('translation calls with no domain, an empty trans tag, and every key already translated', async () => {
+    const app = appWith('translation-all-defined', {
+      'src/Service/Greeter.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Translation\\TranslatableMessage;
+
+class Greeter
+{
+    public function greet(): string
+    {
+        return $this->trans('app.hello');
+    }
+
+    public function farewell(): TranslatableMessage
+    {
+        return new TranslatableMessage('app.bye');
+    }
+}
+`,
+      'templates/empty.html.twig': `{% trans %} {% endtrans %}
+`,
+      'translations/messages.en.yaml': `app:
+    hello: 'Hello'
+    bye: 'Goodbye'
+`,
+    });
+
+    const text = await runModule('symfony-translation-extractors.js', app);
+
+    expect(text).toContain('app.hello');
+    expect(text).not.toContain('Untranslated keys');
+  });
+
+  test('catalogues in two locales, neither of them English, with a numeric entry and a unit with no target', async () => {
+    const app = appWith('translation-no-english', {
+      'translations/messages.es.yaml': `app:
+    hello: 'Hola'
+count: 3
+`,
+      'translations/messages.fr.yaml': `app:
+    hello: 'Bonjour'
+    extra: 'Suppl'
+`,
+      'translations/errors.es.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+  <file>
+    <body>
+      <trans-unit id="error.missing">
+        <source>Missing</source>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+`,
+    });
+
+    expect(await runModule('symfony-translation-gaps.js', app)).toContain('orphaned: app.extra');
+  });
+
+  test('a chart holding its data in the file, one template with an aria label and one without', async () => {
+    const rows = Array.from({ length: 24 }, (_, i) => `            'row${i}' => ${i},`).join('\n');
+    const app = appWith('ux-chart-hardcoded', {
+      'src/Chart/SalesChart.php': `<?php
+
+namespace App\\Chart;
+
+use Symfony\\UX\\Chartjs\\Builder\\ChartBuilderInterface;
+
+class SalesChart
+{
+    public function build(ChartBuilderInterface $builder): array
+    {
+        return [
+            'labels' => ['a', 'b'],
+            'data' => [
+${rows}
+            ],
+        ];
+    }
+}
+`,
+      'templates/chart_plain.html.twig': `{{ render_chart(chart) }}
+`,
+      'templates/chart_labelled.html.twig': `<div aria-label="Sales">{{ render_chart(chart) }}</div>
+`,
+    });
+
+    expect(await runModule('symfony-ux-chart.js', app)).toContain('hardcoded');
+  });
+
+  test('a map with an API key in the code and more markers than clustering allows', async () => {
+    const markers = Array.from({ length: 101 }, (_, i) => `        $map->addMarker(new Marker(${i}, ${i}));`).join('\n');
+    const app = appWith('ux-map-many-markers', {
+      'src/Map/CityMap.php': `<?php
+
+namespace App\\Map;
+
+use Symfony\\UX\\Map\\Marker;
+
+class CityMap
+{
+    public function build($map): void
+    {
+        $options = ['apiKey' => 'key-from-config'];
+${markers}
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-ux-map.js', app)).toContain('without clustering');
+  });
+
+  test('a lazy Stimulus controller with defaults and guarded targets, beside a plain helper file', async () => {
+    const app = appWith('stimulus-guarded', {
+      'assets/controllers/hello_controller.js': `import { Controller } from '@hotwired/stimulus';
+
+/* lazy */
+export default class extends Controller {
+  static values = { url: { default: '/' } };
+  static targets = ['output'];
+
+  connect() {
+    if (this.hasOutputTarget) {
+      this.outputTarget.textContent = this.urlValue;
+    }
+  }
+}
+`,
+      'assets/controllers/helpers.js': `export function formatDate(value) {
+  return value.toISOString();
+}
+`,
+    });
+
+    expect(await runModule('symfony-ux-stimulus-controllers.js', app)).toContain('[lazy]');
+  });
+
+  test('a translated JavaScript file that imports trans and passes a locale, and an application with no assets at all', async () => {
+    const composer = JSON.stringify({ require: { 'symfony/ux-translator': '^2.0' } }, null, 2);
+
+    const withAssets = appWith('ux-translator-assets', {
+      'composer.json': composer,
+      'assets/app.js': `import { trans } from '@symfony/ux-translator';
+
+export function hello() {
+  return trans('app.hello', { locale: 'es' });
+}
+`,
+    });
+
+    expect(await runModule('symfony-ux-translator.js', withAssets)).toContain('app.js');
+
+    const withoutAssets = appWith('ux-translator-bare', { 'composer.json': composer });
+
+    expect(await runModule('symfony-ux-translator.js', withoutAssets)).toContain('UX Translator');
+  });
+
+  test('a Twig component with a lock file that lists no packages', async () => {
+    const app = appWith('ux-twig-component', {
+      'composer.lock': `{}
+`,
+      'src/Twig/Components/Alert.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\TwigComponent\\Attribute\\AsTwigComponent;
+
+#[AsTwigComponent('alert')]
+class Alert
+{
+    public string $message = '';
+}
+`,
+      'templates/components/Alert.html.twig': `<div class="alert">{{ message }}</div>
+`,
+    });
+
+    expect(await runModule('symfony-ux.js', app)).toContain('alert');
+  });
+});
+
+describe('batch 207: htaccess, casters, twig extensions and workflows', () => {
+  test('an htaccess that rewrites to the front controller and sets the nosniff header', async () => {
+    const app = appWith('apache-complete', {
+      'public/.htaccess': `RewriteEngine On
+RewriteRule ^ index.php [QSA,L]
+Header set X-Content-Type-Options "nosniff"
+`,
+    });
+
+    expect(await runModule('apache-config.js', app)).toContain('RewriteEngine On');
+  });
+
+  test('a unique constraint that ignores nulls without naming a field, on a nullable column', async () => {
+    const app = appWith('unique-entity-ignore-null', {
+      'src/Entity/Coupon.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Bridge\\Doctrine\\Validator\\Constraints\\UniqueEntity;
+
+#[ORM\\Entity]
+#[UniqueEntity(ignoreNull: true)]
+class Coupon
+{
+    #[ORM\\Column(length: 20, nullable: true)]
+    private ?string $code = null;
+
+    public function getCode(): ?string
+    {
+        return $this->code;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-validator-unique-entity.js', app)).toContain('fields');
+  });
+
+  test('default casters merged rather than replaced, and a virtual value that carries its stub', async () => {
+    const app = appWith('var-dumper-merged', {
+      'src/Debug/CasterConfig.php': `<?php
+
+namespace App\\Debug;
+
+use Symfony\\Component\\VarDumper\\Cloner\\AbstractCloner;
+use Symfony\\Component\\VarDumper\\Caster\\VirtualValue;
+
+class CasterConfig
+{
+    public function register(): void
+    {
+        AbstractCloner::$defaultCasters += ['App\\\\Money' => 'App\\\\MoneyCaster::cast'];
+    }
+
+    public function virtual(): VirtualValue
+    {
+        $value = new VirtualValue('total');
+        $value->withStub('42');
+
+        return $value;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-var-dumper-casters.js', app)).toContain('Caster');
+  });
+
+  test('an extension of functions only with an empty filter list, and one of filters only that needs the context', async () => {
+    const functionsOnly = appWith('twig-functions-only', {
+      'src/Twig/FunctionExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Twig\\Extension\\AbstractExtension;
+use Twig\\TwigFunction;
+
+class FunctionExtension extends AbstractExtension
+{
+    public function getFilters(): array
+    {
+        return [];
+    }
+
+    public function getFunctions(): array
+    {
+        return [
+            new TwigFunction('asset_version', [$this, 'assetVersion']),
+        ];
+    }
+
+    public function assetVersion(string $path): string
+    {
+        return $path;
+    }
+}
+`,
+    });
+
+    const functionsText = await runModule('twig-extensions.js', functionsOnly);
+
+    expect(functionsText).toContain('asset_version');
+    expect(functionsText).not.toContain('Filters:   ');
+
+    const filtersOnly = appWith('twig-filters-only', {
+      'src/Twig/FilterExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Twig\\Extension\\AbstractExtension;
+use Twig\\TwigFilter;
+
+class FilterExtension extends AbstractExtension
+{
+    public function getFilters(): array
+    {
+        return [
+            new TwigFilter('money', [$this, 'money'], ['needs_context' => true, 'is_safe' => ['html']]),
+            new TwigFilter('slug', [$this, 'slug']),
+        ];
+    }
+
+    public function money($context, string $value): string
+    {
+        return $value;
+    }
+
+    public function slug(string $value): string
+    {
+        return $value;
+    }
+}
+`,
+    });
+
+    expect(await runModule('twig-extensions.js', filtersOnly)).toContain('money[safe,ctx]');
+  });
+
+  test('a workflow whose places are a bare string, with a marking store of no type and a transition carrying metadata', async () => {
+    const app = appWith('workflow-loose-shapes', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        article:
+            type: state_machine
+            marking_store:
+                property: currentState
+            places: 'draft'
+            initial_marking: draft
+            transitions:
+                publish:
+                    from: 3
+                    to: published
+                    metadata:
+                        title: 'Publish the article'
+`,
+    });
+
+    expect(await runModule('workflow.js', app)).toContain('article');
+  });
+
+  test('a Zendesk token that resolves through a shell variable and a config file naming the token key', async () => {
+    const app = appWith('zendesk-env-token', {
+      '.env': `ZENDESK_TOKEN=\${ZENDESK_SECRET}
+`,
+      'config/packages/zendesk.yaml': `parameters:
+    ZENDESK_TOKEN: '%env(ZENDESK_TOKEN)%'
+`,
+    });
+
+    expect(await runModule('zendesk-integration.js', app)).toContain('Zendesk');
+  });
+
+  test('a factory with a state method, a story class and a test that loads it', async () => {
+    const app = appWith('foundry-stories', {
+      'src/Factory/UserFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+class UserFactory extends ModelFactory
+{
+    public function admin(): self
+    {
+        return $this->state(['role' => 'admin']);
+    }
+}
+`,
+      'src/Story/DefaultUsersStory.php': `<?php
+
+namespace App\\Story;
+
+use Zenstruck\\Foundry\\Story;
+
+class DefaultUsersStory extends Story
+{
+    public function build(): void
+    {
+    }
+}
+`,
+      'tests/Functional/UserTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use App\\Story\\DefaultUsersStory;
+use PHPUnit\\Framework\\TestCase;
+
+class UserTest extends TestCase
+{
+    public function testUsers(): void
+    {
+        DefaultUsersStory::load();
+    }
+}
+`,
+    });
+
+    expect(await runModule('zenstruck-foundry-config.js', app)).toContain('story');
+  });
+});

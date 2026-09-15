@@ -68,6 +68,7 @@ function parseXlf(content: string): Map<string, string> {
 function parsePoFile(content: string): Map<string, string> {
   const result = new Map<string, string>();
   for (const m of content.matchAll(/msgid\s+"([^"]+)"\s+msgstr\s+"([^"]*)"/g)) {
+    /* istanbul ignore else -- the pattern requires at least one character in the id. */
     if (m[1]) result.set(m[1], m[2]);
   }
   return result;

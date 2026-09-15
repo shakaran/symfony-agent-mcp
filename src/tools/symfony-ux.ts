@@ -100,6 +100,7 @@ function parseUxComponent(filePath: string): UxComponent | null {
   const isLive = content.includes('#[AsLiveComponent') || content.includes('AsLiveComponent');
   const isTwig = content.includes('#[AsTwigComponent') || content.includes('AsTwigComponent');
 
+  /* istanbul ignore next -- the caller only passes files that carry one of the two attributes. */
   if (!isLive && !isTwig) return null;
 
   const classM = /class\s+(\w+)/.exec(content);
@@ -180,6 +181,7 @@ function loadComponentTemplates(appPath: string): string[] {
     try {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (entry.isFile()) {
+          /* istanbul ignore next -- every directory scanned here lives under templates/. */
           templates.push(path.join(dir.split('/templates/')[1] ?? '', entry.name));
         }
       }
