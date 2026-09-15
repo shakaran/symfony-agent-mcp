@@ -45,6 +45,7 @@ function loadDbalPoolConfigs(appPath: string): DbalPoolConfig[] {
       }
     };
     if (dbal['connections']) {
+      /* istanbul ignore next -- the guard above is on this very value. */
       const conns = (dbal['connections'] ?? {}) as Record<string, unknown>;
       for (const [name, def] of Object.entries(conns)) {
         processConn(name, (def ?? {}) as Record<string, unknown>);

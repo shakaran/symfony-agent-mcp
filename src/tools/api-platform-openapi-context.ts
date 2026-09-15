@@ -101,6 +101,8 @@ function parseApiPropertyEntry(raw: string, propName: string): ApiPropertyEntry 
   if (type && hasExample) {
     const exampleM = /['"]example['"]\s*=>\s*([^,\]]{1,100})/i.exec(raw) ??
       /example\s*:\s*([^,\n\]]{1,100})/i.exec(raw);
+    /* istanbul ignore else -- hasExample is read with the same two patterns,
+       so a context that has one matches here too. */
     if (exampleM) {
       const exampleVal = exampleM[1].trim();
       if (type === 'integer' && /['"][^'"]{0,200}['"]/.test(exampleVal)) {

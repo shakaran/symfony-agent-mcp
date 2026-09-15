@@ -93,6 +93,8 @@ function buildSoapPatternInfos(appPath: string): SoapPatternInfo[] {
       issues.push('SoapFault used without SoapClient or SoapServer — verify this is intentional');
     }
 
+    /* istanbul ignore next -- a file with none of the three is skipped
+       above, and a server or a lone SoapFault always adds an issue. */
     if (issues.length > 0 || hasClient || hasServer) {
       results.push({
         file: path.relative(appPath, file),

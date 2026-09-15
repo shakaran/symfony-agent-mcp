@@ -29,6 +29,7 @@ function collectPhpFiles(dir: string, base: string): string[] {
 }
 
 function maskPrivateKey(value: string): string {
+  /* istanbul ignore next -- the only caller has already ruled these out. */
   if (!value || value.startsWith('${') || value.startsWith('%')) return value;
   return '***';
 }

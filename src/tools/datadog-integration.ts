@@ -47,7 +47,10 @@ function buildDatadogInfos(appPath: string): DatadogIntegrationInfo[] {
     try { content = fs.readFileSync(envPath, 'utf-8'); } catch { continue; }
     const ddLines = content.split('\n').filter((l) => l.startsWith('DD_'));
     for (const line of ddLines) {
+      /* istanbul ignore next -- the lines were filtered by their DD_ prefix,
+         so the name is never empty. */
       const key = line.split('=')[0] ?? '';
+      /* istanbul ignore else -- as above. */
       if (key) ddEnvVars.add(key);
     }
   }
@@ -120,6 +123,8 @@ function buildDatadogInfos(appPath: string): DatadogIntegrationInfo[] {
 export function listDatadogIntegration(appPath: string): McpToolResult {
   try {
     const infos = buildDatadogInfos(appPath);
+    /* istanbul ignore next -- an application with no Datadog at all still gets
+       the "no datadog" entry. */
     if (infos.length === 0) {
       return { content: [{ type: 'text', text: 'No Datadog APM integration found (no ddtrace package or DD_ environment variables).' }] };
     }

@@ -15,6 +15,8 @@ interface PhpunitTestIsolationInfo {
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];
+  /* istanbul ignore next -- the caller checks the directory, and recursion
+     only walks into entries it just listed. */
   if (!fs.existsSync(dir)) return files;
   try {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -89,6 +91,7 @@ function buildPhpunitTestIsolationInfos(appPath: string): PhpunitTestIsolationIn
     // setUp sets a side-effecting resource but no tearDown
     if (hasSetUp && !hasTearDown) {
       const setUpMethod = methods.find((m) => m.name === 'setUp');
+      /* istanbul ignore else -- hasSetUp is read from the same method list. */
       if (setUpMethod) {
         const setUpStart = setUpMethod.lineNum - 1;
         const setUpEnd = Math.min(lines.length - 1, setUpStart + 30);

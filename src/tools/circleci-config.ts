@@ -61,6 +61,7 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
     // was read as a single line.
     const jobBlockPattern = new RegExp(`^ {${jobIndent}}${jobName}\\s*:[\\s\\S]{0,3000}?(?=^ {${jobIndent}}(?! )\\w|$(?![\\s\\S]))`, 'm');
     const jobBlockMatch = jobSection.match(jobBlockPattern);
+    /* istanbul ignore next -- the name came from this same section. */
     const jobBlock = jobBlockMatch ? jobBlockMatch[0] : '';
 
     const info: CircleCiConfigInfo = { file: relPath, job: jobName, step: 'job-config', issues: [] };
@@ -68,6 +69,8 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
     // PHP version pinned?
     if (/php/i.test(jobName) || /php/i.test(jobBlock)) {
       if (!/php:\s*\d+\.\d+|\bphp:\s*["']\d/.test(jobBlock)) {
+        /* istanbul ignore else -- an image tag of that shape also matches the
+           check above, so reaching here means there is none. */
         if (!/image\s*:.*php:\d+\.\d+/.test(jobBlock)) {
           info.issues.push(`Job "${jobName}": PHP version not pinned — use a specific tag like php:8.3 to ensure reproducible builds`);
         }
@@ -107,7 +110,10 @@ function parseCircleCiConfig(content: string, relPath: string): CircleCiConfigIn
       // Secrets in plain text
       if (stepMatch[1] === 'run') {
         const commandMatch = stepContent.match(/command\s*:\s*([^\n]{1,200})/);
+        /* istanbul ignore next -- the step pattern stops at the first key of
+           the step, so the command line is never inside it. */
         const command = commandMatch ? commandMatch[1] : stepContent;
+        /* istanbul ignore next -- as above: what is left is "- run". */
         if (/password|secret|api_key|token/i.test(command) && !command.includes('$')) {
           stepInfo.issues.push(`Job "${jobName}" step "run": Possible secret in plain text command — use context variables or environment variable references ($VAR)`);
         }

@@ -116,7 +116,10 @@ function scanFile(filePath: string, appPath: string): {
   }
 
   // Sequentially
-  for (const m of content.matchAll(/(?:Assert\\)?Sequentially\s*\(\s*\[?([\s\S]{0,500}?)\]?\s*\)/g)) {
+  // The list is what the constraint takes, and its members carry their own
+  // parentheses: stopping at the first ")" read only the first of them, so a
+  // Sequentially of two constraints was reported as one.
+  for (const m of content.matchAll(/(?:Assert\\)?Sequentially\s*\(\s*\[([^\]]{0,500})\]/g)) {
     const block = m[1];
     const count = countNewConstraints(block);
     const issues: string[] = [];
@@ -126,7 +129,9 @@ function scanFile(filePath: string, appPath: string): {
   }
 
   // When
-  for (const m of content.matchAll(/(?:Assert\\)?When\s*\([^)]{0,600}\)/g)) {
+  // The attribute ends at ")]", and its arguments hold parentheses of their
+  // own, so reading up to the first ")" lost the constraints list.
+  for (const m of content.matchAll(/(?:Assert\\)?When\s*\(([\s\S]{0,600}?)\)\s*\]/g)) {
     const block = m[0];
     const exprM = /expression\s*:\s*['"]([^'"]{0,200})['"]/.exec(block);
     const expression = exprM?.[1];
@@ -138,7 +143,8 @@ function scanFile(filePath: string, appPath: string): {
   }
 
   // AtLeastOneOf
-  for (const m of content.matchAll(/(?:Assert\\)?AtLeastOneOf\s*\(\s*\[?([\s\S]{0,400}?)\]?\s*\)/g)) {
+  // As above: the members of the list carry parentheses.
+  for (const m of content.matchAll(/(?:Assert\\)?AtLeastOneOf\s*\(\s*\[([^\]]{0,400})\]/g)) {
     const block = m[1];
     const count = countNewConstraints(block);
     const issues: string[] = [];

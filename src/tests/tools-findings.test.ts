@@ -47755,3 +47755,1283 @@ final class Version20260202000000 extends AbstractMigration
     expect(text).toContain('customer');
   });
 });
+
+describe('batch 184: SOAP, data providers, compound constraints and payloads', () => {
+  test('a SOAP client over HTTPS, one with a try and no catch, and one with nothing to say', async () => {
+    const app = appWith('soap-client-shapes', {
+      'src/Service/LegacyClient.php': `<?php
+
+namespace App\\Service;
+
+class LegacyClient
+{
+    public function call(): void
+    {
+        try {
+            $client = new \\SoapClient('https://legacy.example.com/service?wsdl');
+            $client->__soapCall('GetData', []);
+        }
+    }
+}
+`,
+      'src/Service/CleanClient.php': `<?php
+
+namespace App\\Service;
+
+class CleanClient
+{
+    public function call(): void
+    {
+        try {
+            $context = stream_context_create(['ssl' => ['verify_peer' => true]]);
+            $client = new \\SoapClient($this->wsdlUrl, ['stream_context' => $context]);
+            $client->__soapCall('GetData', []);
+        } catch (\\SoapFault $e) {
+            $this->logger->error($e->getMessage());
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-soap-patterns.js', app);
+
+    expect(text).toContain('LegacyClient');
+  });
+
+  test('data providers that are static, that are not, and that yield', async () => {
+    const app = appWith('phpunit-data-provider-shapes', {
+      'tests/Unit/AllStaticTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+use PHPUnit\\Framework\\TestCase;
+
+class AllStaticTest extends TestCase
+{
+    #[DataProvider('cases')]
+    public function testCases($input): void
+    {
+    }
+
+    public static function cases(): array
+    {
+        return [[1]];
+    }
+}
+`,
+      'tests/Unit/providers.php': `<?php
+
+// PHPUnit helpers that live outside any type declaration.
+// @dataProvider shared_cases
+function shared_cases(): array
+{
+    return [[1]];
+}
+`,
+      'tests/Unit/PriceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+use PHPUnit\\Framework\\TestCase;
+
+class PriceTest extends TestCase
+{
+    #[DataProvider('yieldingCases')]
+    public function testYielding($input): void
+    {
+    }
+
+    #[DataProvider('instanceCases')]
+    public function testInstance($input): void
+    {
+    }
+
+    public static function yieldingCases(): iterable
+    {
+        yield 'one' => [1];
+        yield 'two' => [2];
+    }
+
+    public function instanceCases(): array
+    {
+        return [[1], [2]];
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-data-providers.js', app);
+
+    expect(text).toContain('PriceTest');
+  });
+
+  test('a test with setUp and no tearDown, static properties and no class name', async () => {
+    const app = appWith('phpunit-isolation-shapes', {
+      'tests/Unit/ResourceTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ResourceTest extends TestCase
+{
+    private static $cache;
+
+    protected function setUp(): void
+    {
+        $this->handle = fopen('/tmp/test.log', 'w');
+    }
+
+    public function testSomething(): void
+    {
+        $mock = $this->createMock(\\stdClass::class);
+    }
+}
+`,
+      'tests/Unit/NoClassTest.php': `<?php
+
+// A PHPUnit test file that declares no class at all.
+require __DIR__ . '/../bootstrap.php';
+
+$GLOBALS['legacy'] = true;
+`,
+      'tests/bootstrap.php': `<?php
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+`,
+    });
+    const noTests = appWith('phpunit-isolation-no-tests', {});
+
+    const text = await runModule('phpunit-test-isolation.js', app);
+
+    expect(text).toContain('ResourceTest');
+    expect((await runModule('phpunit-test-isolation.js', noTests)).length).toBeGreaterThan(0);
+  });
+
+  test('compound constraints nested, with an expression and with two members', async () => {
+    const app = appWith('compound-constraint-shapes', {
+      'src/Dto/Registration.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Registration
+{
+    #[Assert\\Sequentially([new Assert\\NotBlank(), new Assert\\Length(min: 3)])]
+    public string $name = '';
+
+    #[Assert\\Sequentially([new Assert\\Sequentially([new Assert\\NotBlank()])])]
+    public string $nested = '';
+
+    #[Assert\\When(expression: 'this.isCompany', constraints: [new Assert\\NotNull(), new Assert\\Type()])]
+    public ?string $vat = null;
+
+    #[Assert\\Sequentially([new Assert\\NotBlank()])]
+    public string $single = '';
+
+    #[Assert\\AtLeastOneOf([new Assert\\Email(), new Assert\\Url()])]
+    public string $contact = '';
+
+    #[Assert\\AtLeastOneOf([new Assert\\Email()])]
+    public string $onlyOne = '';
+}
+`,
+    });
+
+    const clean = appWith('compound-constraint-clean', {
+      'src/Dto/Clean.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class Clean
+{
+    #[Assert\\Sequentially([new Assert\\NotBlank(), new Assert\\Length()])]
+    public string $name = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-compound-constraints.js', app);
+
+    expect((await runModule('symfony-compound-constraints.js', clean)).length).toBeGreaterThan(0);
+    expect(text).toContain('Sequentially');
+  });
+
+  test('a mapped payload DTO with no constraints, and one written with a short name', async () => {
+    const app = appWith('map-payload-shapes', {
+      'composer.json': JSON.stringify({ require: { 'symfony/framework-bundle': '^6.4' } }, null, 2),
+      'src/Controller/OrderController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Dto\\AnnotationInput;
+use App\\Dto\\AttributeInput;
+use App\\Dto\\FqInput;
+use App\\Dto\\OrderInput;
+use Symfony\\Component\\HttpKernel\\Attribute\\MapRequestPayload;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class OrderController
+{
+    #[Route('/orders', methods: ['POST'])]
+    public function create(#[MapRequestPayload] OrderInput $input): void
+    {
+    }
+
+    #[Route('/orders/bare', methods: ['POST'])]
+    public function bare(#[MapRequestPayload] BareInput $input): void
+    {
+    }
+
+    #[Route('/orders/attr', methods: ['POST'])]
+    public function attr(#[MapRequestPayload] AttributeInput $input): void
+    {
+    }
+
+    #[Route('/orders/annot', methods: ['POST'])]
+    public function annot(#[MapRequestPayload] AnnotationInput $input): void
+    {
+    }
+
+    #[Route('/orders/fq', methods: ['POST'])]
+    public function fq(#[MapRequestPayload] FqInput $input): void
+    {
+    }
+
+    #[Route('/orders/qualified', methods: ['POST'])]
+    public function qualified(#[MapRequestPayload] App\\Dto\\OrderInput $input): void
+    {
+    }
+
+    #[Route('/orders/search', methods: ['GET'])]
+    public function search(#[MapQueryString] OrderInput $query): void
+    {
+    }
+}
+`,
+      'src/Dto/OrderInput.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class OrderInput
+{
+    #[Assert\\NotBlank]
+    public string $reference = '';
+}
+`,
+      'src/Dto/BareInput.php': `<?php
+
+namespace App\\Dto;
+
+class BareInput
+{
+    public string $reference = '';
+}
+`,
+      'src/Dto/AttributeInput.php': `<?php
+
+namespace App\\Dto;
+
+use App\\Validation as Assert;
+
+class AttributeInput
+{
+    #[Assert\\NotBlank]
+    public string $reference = '';
+}
+`,
+      'src/Dto/AnnotationInput.php': `<?php
+
+namespace App\\Dto;
+
+class AnnotationInput
+{
+    /**
+     * @Assert\\NotBlank
+     */
+    public string $reference = '';
+}
+`,
+      'src/Dto/FqInput.php': `<?php
+
+namespace App\\Dto;
+
+class FqInput
+{
+    #[\\Symfony\\Component\\Validator\\Constraints\\NotBlank]
+    public string $reference = '';
+}
+`,
+    });
+
+    const majorOnly = appWith('map-payload-major-only', {
+      'composer.json': JSON.stringify({ require: { 'symfony/framework-bundle': '^7' } }, null, 2),
+      'src/Controller/PingController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Dto\\PingInput;
+use Symfony\\Component\\HttpKernel\\Attribute\\MapRequestPayload;
+
+class PingController
+{
+    public function ping(#[MapRequestPayload] PingInput $input): void
+    {
+    }
+}
+`,
+      'src/Dto/PingInput.php': `<?php
+
+namespace App\\Dto;
+
+class PingInput
+{
+    public string $token = '';
+}
+`,
+    });
+
+    const text = await runModule('symfony-controller-map-payload.js', app);
+
+    expect((await runModule('symfony-controller-map-payload.js', majorOnly)).length).toBeGreaterThan(0);
+    expect(text).toContain('OrderInput');
+  });
+
+  test('a maker configuration that cannot be parsed, a command with no attribute and a double subscriber', async () => {
+    const app = appWith('maker-config-shapes', {
+      'config/packages/maker.yaml': 'maker: [this is not a mapping\n',
+      'src/Command/LegacyCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class LegacyCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->setName('app:legacy');
+    }
+}
+`,
+      'src/EventSubscriber/DoubleSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+#[AsEventListener(event: 'kernel.request')]
+class DoubleSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return ['kernel.request' => 'onRequest'];
+    }
+
+    public function onRequest($event): void
+    {
+    }
+}
+`,
+      'src/Entity/Thing.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Thing
+{
+}
+`,
+    });
+
+    const text = await runModule('symfony-maker-config.js', app);
+
+    expect(text).toContain('Legacy');
+  });
+
+  test('an OpenAPI context that deprecates a property without saying why, and one with an example', async () => {
+    const app = appWith('openapi-context-shapes', {
+      'src/Entity/Product.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiProperty;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class Product
+{
+    #[ApiProperty(openapiContext: ['deprecated' => true])]
+    public string $oldCode = '';
+
+    #[ApiProperty(openapiContext: ['deprecated' => true, 'description' => 'Use sku instead since 2.0'])]
+    public string $legacyCode = '';
+
+    #[ApiProperty(openapiContext: ['example' => 'ABC-123'])]
+    public string $sku = '';
+
+    #[ApiProperty(openapiContext: ['type' => 'integer'], example: 5)]
+    public int $quantity = 0;
+
+    #[ApiProperty(openapiContext: ['type' => 'string', 'example_field' => true])]
+    public string $label = '';
+}
+`,
+    });
+
+    const clean = appWith('openapi-context-clean', {
+      'src/Entity/Clean.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiProperty;
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource]
+class Clean
+{
+    #[ApiProperty(openapiContext: ['type' => 'string', 'example' => 'ABC-123', 'description' => 'A code'])]
+    public string $code = '';
+}
+`,
+    });
+
+    const text = await runModule('api-platform-openapi-context.js', app);
+
+    expect((await runModule('api-platform-openapi-context.js', clean)).length).toBeGreaterThan(0);
+    expect(text).toContain('Product');
+  });
+
+  test('a Braintree gateway with a merchant id in the code and an environment in the config', async () => {
+    const app = appWith('braintree-shapes', {
+      'composer.json': JSON.stringify({ require: { 'braintree/braintree_php': '^6.0' } }, null, 2),
+      '.env': `BRAINTREE_ENVIRONMENT=sandbox
+BRAINTREE_MERCHANT_ID=abc123merchant
+BRAINTREE_PRIVATE_KEY=%env(BRAINTREE_PRIVATE)%
+`,
+      'src/Payment/DoubleQuoted.php': `<?php
+
+namespace App\\Payment;
+
+use Braintree\\Gateway;
+
+class DoubleQuoted
+{
+    public function create(): Gateway
+    {
+        $gateway = new Gateway([
+            "merchantId" => "hardcoded",
+            "publicKey" => "also-hardcoded",
+        ]);
+
+        return $gateway->transaction()->sale([]);
+    }
+}
+`,
+      'src/Payment/Gateway.php': `<?php
+
+namespace App\\Payment;
+
+use Braintree\\Gateway;
+
+class GatewayFactory
+{
+    public function create(): Gateway
+    {
+        return new Gateway([
+            'environment' => Braintree\\Environment::PRODUCTION,
+            'merchantId' => 'hardcoded-merchant',
+            'publicKey' => getenv('BRAINTREE_PUBLIC_KEY'),
+        ]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('braintree-integration.js', app);
+
+    expect(text).toContain('Braintree');
+  });
+});
+
+describe('batch 185: CI config, composer locks, CSP and criteria', () => {
+  test('a CircleCI job that runs PHP without pinning the image, and a step with a bare secret', async () => {
+    const app = appWith('circleci-php-job', {
+      '.circleci/config.yml': `version: 2.1
+
+jobs:
+  php-tests:
+    docker:
+      - image: cimg/php:latest
+    steps:
+      - checkout
+      - run:
+          name: Install
+          command: composer install --no-interaction
+      - run:
+          name: Deploy
+          command: curl -H "api_key: abc123literal" https://example.com/deploy
+  php-pinned:
+    docker:
+      - image: cimg/php:8.3.2
+    steps:
+      - checkout
+      - run:
+          name: Test
+          command: vendor/bin/phpunit
+  node-build:
+    docker:
+      - image: cimg/node:20.0
+    steps:
+      - checkout
+
+workflows:
+  main:
+    jobs:
+      - php-tests
+      - node-build
+`,
+    });
+
+    const text = await runModule('circleci-config.js', app);
+
+    expect(text).toContain('php-tests');
+  });
+
+  test('a composer.lock with only dev packages, one with only runtime packages, and an app with none', async () => {
+    const app = appWith('composer-lock-shapes', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        extra: { symfony: { require: '7.0.*', 'allow-contrib': true } },
+        'require-dev': { 'phpunit/phpunit': '^10.5' },
+      }, null, 2),
+      'composer.lock': JSON.stringify({
+        'packages-dev': [
+          { name: 'phpunit/phpunit', version: '10.5.0', type: 'library' },
+        ],
+      }, null, 2),
+    });
+    const runtimeOnly = appWith('composer-lock-runtime-only', {
+      'composer.json': JSON.stringify({ require: { 'symfony/console': '^7.0' } }, null, 2),
+      'composer.lock': JSON.stringify({
+        packages: [
+          { name: 'symfony/console', version: 'v7.0.3', type: 'library' },
+        ],
+      }, null, 2),
+    });
+    const noLock = appWith('composer-no-lock', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/console': '^7.0' },
+        extra: { symfony: { 'allow-contrib': true } },
+      }, null, 2),
+    });
+
+    expect(await runModule('composer.js', app, ['dev'])).toContain('Composer');
+    expect(await runModule('composer.js', runtimeOnly, ['dev'])).toContain('Composer');
+    expect((await runModule('composer.js', noLock, ['dev'])).length).toBeGreaterThan(0);
+  });
+
+  test('CSP headers with unsafe-inline, unsafe-eval and strict-dynamic', async () => {
+    const app = appWith('csp-header-shapes', {
+      'src/EventListener/CspListener.php': `<?php
+
+namespace App\\EventListener;
+
+class CspListener
+{
+    public function onResponse($event): void
+    {
+        $event->getResponse()->headers->set(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+        );
+    }
+}
+`,
+      'src/EventListener/StrictCspListener.php': `<?php
+
+namespace App\\EventListener;
+
+class StrictCspListener
+{
+    public function onResponse($event): void
+    {
+        $event->getResponse()->headers->set(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'strict-dynamic' 'nonce-" . $this->nonce() . "'; report-uri /csp-report"
+        );
+    }
+}
+`,
+    });
+
+    const text = await runModule('content-security-policy.js', app);
+
+    expect(text).toContain('CspListener');
+  });
+
+  test('a firewall with a list of custom authenticators, remember_me and no throttling', async () => {
+    const app = appWith('custom-authenticator-shapes', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            custom_authenticator:
+                - App\\Security\\LoginFormAuthenticator
+                - App\\Security\\ApiTokenAuthenticator
+            entry_point: App\\Security\\LoginFormAuthenticator
+            remember_me:
+                secret: '%kernel.secret%'
+                lifetime: 604800
+        api:
+            stateless: true
+            custom_authenticator: App\\Security\\ApiTokenAuthenticator
+            login_throttling:
+                max_attempts: 5
+        plain:
+            custom_authenticator: App\\Security\\PlainAuthenticator
+            remember_me:
+                secret: '%kernel.secret%'
+`,
+      'src/Security/LoginFormAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractLoginFormAuthenticator;
+
+class LoginFormAuthenticator extends AbstractLoginFormAuthenticator
+{
+    public function authenticate($request): Passport
+    {
+        return new Passport();
+    }
+}
+`,
+    });
+
+    const text = await runModule('custom-authenticators.js', app);
+
+    expect(text).toContain('LoginFormAuthenticator');
+  });
+
+  test('Datadog env vars, an API key that is set, and a logger with no trace correlation', async () => {
+    const app = appWith('datadog-shapes', {
+      'composer.json': JSON.stringify({ require: { 'datadog/dd-trace': '^0.99' } }, null, 2),
+      '.env': `DD_AGENT_HOST=localhost
+DD_API_KEY=abc123
+DD_SERVICE=demo
+
+DD_TRACE_ENABLED=true
+`,
+      'src/Service/Tracing.php': `<?php
+
+namespace App\\Service;
+
+use Psr\\Log\\LoggerInterface;
+
+class Tracing
+{
+    public function __construct(private LoggerInterface $logger)
+    {
+    }
+
+    public function work(): void
+    {
+        $this->logger->info('working');
+    }
+}
+`,
+    });
+
+    const noKey = appWith('datadog-no-key', {
+      'composer.json': JSON.stringify({ require: { 'datadog/dd-trace': '^0.99' } }, null, 2),
+      '.env': `DD_AGENT_HOST=localhost
+DD_ENV=prod
+DD_VERSION=1.0.0
+=nokey
+`,
+      'src/Service/Spans.php': `<?php
+
+namespace App\\Service;
+
+use DDTrace\\GlobalTracer;
+
+class Spans
+{
+    public function work(): void
+    {
+        $scope = GlobalTracer::get()->startActiveSpan('work');
+        $scope->close();
+    }
+
+    public function context(): array
+    {
+        return ['dd.trace_id' => $this->span->getTraceId()];
+    }
+}
+`,
+      'src/Service/Correlated.php': `<?php
+
+namespace App\\Service;
+
+class Correlated
+{
+    public function context(): array
+    {
+        $log = $this->createRecord();
+
+        return ['dd.trace_id' => $this->span->getTraceId(), 'record' => $log];
+    }
+}
+`,
+    });
+    const nothing = appWith('datadog-nothing', {});
+
+    const text = await runModule('datadog-integration.js', app);
+
+    expect((await runModule('datadog-integration.js', noKey)).length).toBeGreaterThan(0);
+    expect((await runModule('datadog-integration.js', nothing)).length).toBeGreaterThan(0);
+    expect(text).toContain('DD_');
+  });
+
+  test('a DBAL connection with driver options and one with nothing under it', async () => {
+    const app = appWith('dbal-pool-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                url: '%env(DATABASE_URL)%'
+                options:
+                    connect_timeout: 5
+                    pool_size: 20
+            bare: ~
+`,
+    });
+
+    const noConnections = appWith('dbal-pool-no-connections', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        url: '%env(DATABASE_URL)%'
+`,
+    });
+    const oddPoolSize = appWith('dbal-pool-odd-size', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                url: 'postgresql://user:pass@localhost/app?pool_size=large'
+`,
+    });
+    const manyOptions = appWith('dbal-pool-many-options', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            default:
+                url: '%env(DATABASE_URL)%'
+                options:
+                    connect_timeout: 5
+                    charset: utf8mb4
+                    persistent: true
+                    sslmode: require
+                    application_name: demo
+                    keepalives: 1
+                    keepalives_idle: 30
+`,
+    });
+
+    const text = await runModule('dbal-connection-pool.js', app);
+
+    expect((await runModule('dbal-connection-pool.js', noConnections)).length).toBeGreaterThan(0);
+    expect((await runModule('dbal-connection-pool.js', oddPoolSize)).length).toBeGreaterThan(0);
+    expect(await runModule('dbal-connection-pool.js', manyOptions)).toContain('connect_timeout');
+    expect(text).toContain('default');
+  });
+
+  test('a controller that no route reaches, next to one that is wired', async () => {
+    const app = appWith('dead-code-shapes', {
+      'config/routes.yaml': `home:
+    path: /
+    controller: App\\Controller\\HomeController::index
+
+legacy:
+    path: /legacy
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class HomeController extends AbstractController
+{
+    public function __construct()
+    {
+    }
+
+    public function index(): void
+    {
+    }
+}
+`,
+      'src/Controller/OrphanController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class OrphanController extends AbstractController
+{
+    public function __invoke(): void
+    {
+    }
+
+    public function nobodyCalls(): void
+    {
+    }
+}
+`,
+    });
+
+    const tidy = appWith('dead-code-tidy', {
+      'config/routes.yaml': `home:
+    path: /
+    controller: App\\Controller\\HomeController::index
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class HomeController extends AbstractController
+{
+    public function index(): void
+    {
+    }
+}
+`,
+      'src/Form/ContactType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+
+class ContactType extends AbstractType
+{
+}
+`,
+      'src/Controller/ContactController.php': `<?php
+
+namespace App\\Controller;
+
+use App\\Form\\ContactType;
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class ContactController extends AbstractController
+{
+    public function contact(): void
+    {
+        $form = $this->createForm(ContactType::class);
+    }
+}
+`,
+    });
+
+    const text = await runModule('dead-code.js', app);
+
+    expect((await runModule('dead-code.js', tidy)).length).toBeGreaterThan(0);
+    expect(text).toContain('Orphan');
+  });
+
+  test('Criteria built with ordering and a limit, and one with neither', async () => {
+    const app = appWith('criteria-api-shapes', {
+      'src/Repository/OrderRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Common\\Collections\\Criteria;
+
+class OrderRepository
+{
+    public function recent($collection): iterable
+    {
+        $criteria = Criteria::create()
+            ->where(Criteria::expr()->eq('status', 'open'))
+            ->orderBy(['createdAt' => 'DESC'])
+            ->setMaxResults(10);
+
+        return $collection->matching($criteria);
+    }
+
+}
+`,
+      'src/Entity/Basket.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\ArrayCollection;
+use Doctrine\\Common\\Collections\\Criteria;
+
+class Basket
+{
+    public function sortedItems(): iterable
+    {
+        $criteria = Criteria::create()
+            ->orderBy(['name' => 'ASC'])
+            ->setMaxResults(5);
+
+        return $this->items->matching($criteria);
+    }
+}
+`,
+      'src/Entity/Bundle.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Criteria;
+
+class Bundle
+{
+    public function pick(): iterable
+    {
+        $criteria = Criteria::create()->where(Criteria::expr()->eq('open', true));
+
+        return $this->items->matching($criteria);
+    }
+}
+`,
+      'src/Entity/Cart.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\ArrayCollection;
+use Doctrine\\Common\\Collections\\Criteria;
+
+class Cart
+{
+    public function openItems(): iterable
+    {
+        $criteria = Criteria::create()->where(Criteria::expr()->eq('open', true));
+
+        return $this->items->matching($criteria);
+    }
+}
+`,
+      'src/Repository/PlainRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Common\\Collections\\Criteria;
+
+class PlainRepository
+{
+    public function all($collection): iterable
+    {
+        $criteria = Criteria::create()->where(Criteria::expr()->eq('status', 'open'));
+
+        return $collection->matching($criteria);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-criteria-api.js', app);
+
+    expect(text).toContain('OrderRepository');
+  });
+});
+
+describe('batch 186: platforms, lifecycles, recipes and manifests', () => {
+  test('a symfony.lock with a custom recipe, a version that is missing and files that are not text', async () => {
+    const app = appWith('flex-recipe-shapes', {
+      'symfony.lock': JSON.stringify({
+        'symfony/framework-bundle': {
+          version: '7.0',
+          recipe: { version: '7.0', ref: 'abc123', repo: 'github.com/symfony/recipes' },
+          files: { '.env': 'APP_ENV=dev\nAPP_SECRET=changeme\n' },
+        },
+        'acme/custom-bundle': {
+          recipe: { ref: 'def456', url: 'https://recipes.example.com/acme' },
+          files: { '.env': 42 },
+        },
+        'acme/quiet-bundle': {
+          version: '1.0',
+          recipe: { ref: 'ghi789' },
+          files: { '.env': '# nothing to declare\n' },
+        },
+      }, null, 2),
+    });
+
+    const text = await runModule('flex-recipes.js', app);
+
+    expect(text).toContain('acme/custom-bundle');
+  });
+
+  test('a custom DBAL platform that overrides methods, and one that overrides nothing', async () => {
+    const app = appWith('doctrine-platform-shapes', {
+      'src/Doctrine/MyPlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\PostgreSQLPlatform;
+
+class MyPlatform extends PostgreSQLPlatform
+{
+    public function getName(): string
+    {
+        return 'mine';
+    }
+
+    public function getDateTimeFormatString(): string
+    {
+        return 'Y-m-d H:i:s';
+    }
+}
+`,
+      'src/Doctrine/EmptyPlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\PostgreSQLPlatform;
+
+class EmptyPlatform extends PostgreSQLPlatform
+{
+}
+`,
+      'src/Doctrine/notaclass.php': `<?php
+
+// A file in the same directory with no type declaration in it.
+return 42;
+`,
+    });
+
+    const text = await runModule('doctrine-custom-platform.js', app);
+
+    expect(text).toContain('MyPlatform');
+  });
+
+  test('an entity whose lifecycle callback is declared twice, and one with entity listeners', async () => {
+    const app = appWith('doctrine-lifecycle-shapes', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\HasLifecycleCallbacks]
+#[ORM\\EntityListeners([InvoiceListener::class])]
+class Invoice
+{
+    #[ORM\\PrePersist]
+    #[ORM\\PreUpdate]
+    public function touch(): void
+    {
+    }
+
+    #[ORM\\PrePersist]
+    public function touch(): void
+    {
+    }
+}
+`,
+      'src/Entity/notaclass.php': `<?php
+
+// No type declaration here either.
+return 42;
+`,
+    });
+
+    const text = await runModule('doctrine-lifecycle.js', app);
+
+    expect(text).toContain('Invoice');
+  });
+
+  test('Kubernetes manifests with an ingress, a plain secret and a budget with no minimum', async () => {
+    const app = appWith('kubernetes-manifest-shapes', {
+      'k8s/ingress.yaml': `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+spec:
+  rules:
+    - host: app.example.com
+`,
+      'k8s/secret.yaml': `apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+data:
+  password: cGFzc3dvcmQ=
+`,
+      'k8s/pdb.yaml': `apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app
+spec:
+  selector:
+    matchLabels:
+      app: demo
+`,
+    });
+
+    const text = await runModule('kubernetes-manifests.js', app);
+
+    expect(text).toContain('Ingress');
+  });
+
+  test('a Meilisearch host over plain HTTP with an inline key and attribute lists', async () => {
+    const app = appWith('meilisearch-shapes', {
+      'composer.json': JSON.stringify({ require: { 'meilisearch/meilisearch-php': '^1.6' } }, null, 2),
+      'config/packages/meilisearch.yaml': `meilisearch:
+    url: 'http://search.example.com:7700'
+    api_key: 'masterKey-plaintext'
+    indices:
+        - name: products
+          class: App\\Entity\\Product
+          searchable_attributes:
+              - name
+              - description
+          filterable_attributes:
+              - category
+`,
+    });
+
+    const text = await runModule('meilisearch-integration.js', app);
+
+    expect(text).toContain('meilisearch');
+  });
+
+  test('constructors with promoted properties, an abstract one and readonly with no type', async () => {
+    const app = appWith('constructor-promotion-shapes', {
+      'src/Service/Promoted.php': `<?php
+
+namespace App\\Service;
+
+class Promoted
+{
+    public function __construct(
+        private readonly LoggerInterface $logger,
+        private readonly $untyped,
+        protected string $name = 'demo'
+    ) {
+    }
+}
+`,
+      'src/Service/AbstractBase.php': `<?php
+
+namespace App\\Service;
+
+abstract class AbstractBase
+{
+    public function __construct(
+        protected readonly LoggerInterface $logger
+    ) {
+    }
+}
+`,
+      'src/Service/Plain.php': `<?php
+
+namespace App\\Service;
+
+class Plain
+{
+    private $logger;
+
+    public function __construct($logger)
+    {
+        $this->logger = $logger;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-constructor-promotion.js', app);
+
+    expect(text).toContain('Promoted');
+  });
+
+  test('CSV reading in a loop that collects rows, with no encoding and no comment handling', async () => {
+    const app = appWith('csv-parsing-shapes', {
+      'src/Import/CsvReader.php': `<?php
+
+namespace App\\Import;
+
+class CsvReader
+{
+    public function read(string $path): array
+    {
+        $rows = [];
+        $handle = fopen($path, 'r');
+        while (($row = fgetcsv($handle, 1000, ',')) !== false) {
+            $rows[] = $row;
+        }
+        fclose($handle);
+
+        return $rows;
+    }
+}
+`,
+      'src/Import/CarefulReader.php': `<?php
+
+namespace App\\Import;
+
+class CarefulReader
+{
+    public function read(string $path): iterable
+    {
+        $handle = fopen($path, 'r');
+        stream_filter_append($handle, 'convert.iconv.ISO-8859-1/UTF-8');
+        $row = fgetcsv($handle, 1000, ',', '"', '#');
+        yield $row;
+        fclose($handle);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-csv-parsing.js', app);
+
+    expect(text).toContain('CsvReader');
+  });
+
+  test('an IMAP mailbox opened with request data and one that sanitises it first', async () => {
+    const app = appWith('imap-patterns-shapes', {
+      'src/Mail/Fetcher.php': `<?php
+
+namespace App\\Mail;
+
+class Fetcher
+{
+    public function open(): void
+    {
+        $mailbox = imap_open('{imap.example.com:993/imap/ssl}INBOX', $_GET['user'], $_GET['pass']);
+        $result = imap_search($mailbox, $_GET['criteria']);
+    }
+
+    public function safe(): void
+    {
+        $criteria = filter_var($_GET['criteria'], FILTER_SANITIZE_STRING);
+        $mailbox = imap_open('{imap.example.com:993/imap/ssl}INBOX', 'user', 'pass');
+        $result = imap_search($mailbox, $criteria);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-imap-patterns.js', app);
+
+    expect(text).toContain('Fetcher');
+  });
+});

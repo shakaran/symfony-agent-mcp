@@ -84,7 +84,9 @@ function detectOrphanControllers(appPath: string): OrphanController[] {
       .filter((r) => r.controller)
       .map((r) => {
         // controller can be "App\Controller\FooController::barAction" or "App\Controller\FooController"
-        const parts = (r.controller ?? '').split('::');
+        /* istanbul ignore next -- routes without a controller are dropped when
+       they are read. */
+    const parts = (r.controller ?? '').split('::');
         return parts[0].replace(/\\\\/g, '\\');
       })
   );
