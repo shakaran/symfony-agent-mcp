@@ -89,10 +89,12 @@ function parseResourceSecurity(filePath: string): ApiResourceSecurity | null {
     const ctorPattern = new RegExp(`new\\s+${op}\\s*\\([\\s\\S]{0,400}?\\)(?=\\s*[,\\]])`, 'gs');
     for (const m of [...content.matchAll(attrPattern), ...content.matchAll(ctorPattern)]) {
       const block = m[0];
-      const securityM       = /security\s*:\s*['"]([^'"]+)['"]/.exec(block);
-      const postDenormM     = /securityPostDenormalize\s*:\s*['"]([^'"]+)['"]/.exec(block);
+      // The expression itself quotes the role, so a pattern that stopped at the
+      // first inner quote only ever captured "is_granted(".
+      const securityM       = /security\s*:\s*(?:"([^"]{1,300})"|'([^']{1,300})')/.exec(block);
+      const postDenormM     = /securityPostDenormalize\s*:\s*(?:"([^"]{1,300})"|'([^']{1,300})')/.exec(block);
       const hasSecurity     = !!securityM || !!postDenormM;
-      const securityExpr    = securityM?.[1] ?? postDenormM?.[1];
+      const securityExpr    = securityM?.[1] ?? securityM?.[2] ?? postDenormM?.[1] ?? postDenormM?.[2];
       const isPublic        = !hasSecurity ||
                               securityExpr?.includes('IS_AUTHENTICATED_ANONYMOUSLY') ||
                               securityExpr?.includes('PUBLIC_ACCESS') ||
