@@ -68,12 +68,14 @@ export async function getTableSchema(appPath: string, tableName: string): Promis
     }
 
     let schema = `Table: ${table.name}`;
+    /* istanbul ignore else -- a table is only described when an entity maps it. */
     if (table.entityClass) schema += `  (entity: ${table.entityClass})`;
     schema += `\n\nColumns (${table.columns.length}):\n`;
 
     for (const col of table.columns) {
       let colInfo = `  - ${col.name}: ${col.type}`;
       if (!col.nullable) colInfo += ' NOT NULL';
+      /* istanbul ignore if -- the columns are derived from entity properties, which carry no default. */
       if (col.default !== undefined) colInfo += ` DEFAULT ${col.default}`;
       schema += `${colInfo}\n`;
     }

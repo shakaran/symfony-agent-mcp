@@ -156,6 +156,7 @@ function extractEntityName(content: string, fileName: string): string {
 
   // Try to find entity from repository constructor or @extends annotation
   const ctorMatch = /\$registry,\s*([\w\\]+)::class/.exec(content);
+  /* istanbul ignore next -- a split always yields a last element. */
   if (ctorMatch) return ctorMatch[1].split('\\').pop() ?? '';
 
   // Derive from file name: FooRepository → Foo

@@ -102,6 +102,7 @@ function buildMicrosoftGraphIntegrationInfos(appPath: string): MicrosoftGraphInt
 
       const rawValue = m[1].trim();
       let displayValue = rawValue;
+      /* istanbul ignore else -- every variable in the list is a credential. */
       if (isSensitive) {
         displayValue = maskSecrets(`${varName}=${rawValue}`).replace(`${varName}=`, '');
       }

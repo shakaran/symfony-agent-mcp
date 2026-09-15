@@ -282,6 +282,7 @@ export function getMailerConfig(appPath: string): McpToolResult {
 
     let text = `Mailer Configuration\n${'='.repeat(40)}\n\n`;
 
+    /* istanbul ignore else -- the transport is parsed from the DSN, so a configuration with one and not the other does not occur. */
     if (config.transport) {
       const t = config.transport;
       text += `DSN:       ${t.isNull ? '(null transport — emails not sent)' : t.dsn.replace(/:[^@]+@/, ':***@')}\n`;

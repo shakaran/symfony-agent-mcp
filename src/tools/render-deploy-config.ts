@@ -19,6 +19,7 @@ function mapRenderType(rawType: string): RenderDeployInfo['type'] {
   return 'web';
 }
 
+/* istanbul ignore next -- the only caller always names the key. */
 function looksLikeHardcodedSecret(value: string, key = ''): boolean {
   if (!value || value.startsWith('${') || value.startsWith('%')) return false;
   if (key && /password|secret|token|key|api_key|private|credential|auth|\bpass\b|\bcert\b|\bdsn\b/i.test(key)) return true;

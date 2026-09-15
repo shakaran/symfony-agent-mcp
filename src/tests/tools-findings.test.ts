@@ -58378,3 +58378,229 @@ class Plain
     expect(await runModule('doctrine-indexes.js', app)).toContain('uniq_reference');
   });
 });
+
+describe('batch 221: schema mapping, PHPUnit, Render and stopwatches', () => {
+  test('an entity with no identifier at all', async () => {
+    const app = appWith('database-entity-without-id', {
+      'src/Entity/Widget.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Widget
+{
+    #[ORM\\Column(length: 120)]
+    private string $label = '';
+}
+`,
+    });
+
+    const text = await runModule('database.js', app, ['widget']);
+
+    expect(text).toContain('widget');
+  });
+
+  test('a test suite with no name and a directory given as an attribute', async () => {
+    const app = appWith('phpunit-unnamed-suite', {
+      'phpunit.xml.dist': `<?xml version="1.0"?>
+<phpunit bootstrap="tests/bootstrap.php" colors="true">
+    <testsuites>
+        <testsuite>
+            <directory suffix="Test.php">tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+    });
+
+    expect(await runModule('phpunit-config.js', app)).toContain('default');
+  });
+
+  test('a Render service with no type, a value with no key above it and one that is not base64', async () => {
+    const app = appWith('render-loose-values', {
+      'render.yaml': `services:
+    # the web service and its environment
+  - name: shop
+    env: docker
+    envVars:
+      - value: ABCD_EFGH-
+      - key: API_TOKEN
+        value: sk-live-0123456789
+`,
+    });
+
+    expect(await runModule('render-deploy-config.js', app)).toContain('shop');
+  });
+
+  test('a repository with an empty method, no entity named and a file with no class', async () => {
+    const app = appWith('repository-loose-shapes', {
+      'src/Repository/OrderRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+
+class OrderRepository extends ServiceEntityRepository
+{
+    public function findNothing(): array
+    {
+    }
+
+    public function findRecent(): array
+    {
+        return $this->createQueryBuilder('o')->getQuery()->getResult();
+    }
+}
+`,
+      'src/Repository/RepositoryTrait.php': `<?php
+
+namespace App\\Repository;
+
+/**
+ * Shared helpers for anything which extends ServiceEntityRepository.
+ */
+trait RepositoryTrait
+{
+    public function alias(): string
+    {
+        return 'o';
+    }
+}
+`,
+      'src/Repository/LineRepository.php': `<?php
+
+namespace App\\Repository;
+
+use App\\Contract\\RepositoryInterface;
+
+class LineRepository implements RepositoryInterface
+{
+    public function findByIds(array $ids = [1, 2]): array
+    {
+        return $this->createQueryBuilder('l')
+            ->where('l.id IN (:ids)')
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->getResult();
+    }
+}
+`,
+    });
+
+    expect(await runModule('repository-analyzer.js', app, ['LineRepository'])).toContain('OrderRepository');
+  });
+
+  test('a stopwatch section with no category, a start with no stop, and the profiler switched on and off', async () => {
+    const enabled = appWith('stopwatch-enabled', {
+      'config/packages/framework.yaml': `framework:
+    stopwatch:
+        enabled: true
+`,
+      'src/Timing/Plain.php': `<?php
+
+namespace App\\Timing;
+
+class Plain
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-stopwatch.js', enabled)).toContain('enabled: true');
+
+    const disabled = appWith('stopwatch-disabled', {
+      'config/packages/framework.yaml': `framework:
+    stopwatch:
+        enabled: false
+`,
+      'src/Timing/Reader.php': `<?php
+
+namespace App\\Timing;
+
+use Symfony\\Component\\Stopwatch\\Stopwatch;
+
+class Reader
+{
+    public function read(Stopwatch $stopwatch): array
+    {
+        $stopwatch->lap('import');
+
+        return $stopwatch->getSectionEvents('import');
+    }
+}
+`,
+      'src/Timing/Timer.php': `<?php
+
+namespace App\\Timing;
+
+use Symfony\\Component\\Stopwatch\\Stopwatch;
+
+class Timer
+{
+    public function run(Stopwatch $stopwatch): void
+    {
+        $stopwatch->start('import');
+        $stopwatch->start('export', 'batch');
+        $stopwatch->start("render");
+        $stopwatch->start("render", "twig");
+        $stopwatch->stop('import');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-stopwatch.js', disabled)).toContain('false');
+  });
+
+  test('a translation provider with no DSN, a read-only one, and a section with no providers at all', async () => {
+    const app = appWith('translation-providers-shapes', {
+      'config/packages/translation.yaml': `framework:
+    default_locale: en
+    translator:
+        fallbacks: ['en']
+`,
+      'config/packages/framework.yaml': `framework:
+    translator:
+        providers:
+            crowdin:
+                dsn: '%env(CROWDIN_DSN)%'
+                domains: ['messages']
+                locales: ['en', 'es']
+                read_only: true
+            loco:
+                domains: ['messages']
+`,
+    });
+
+    expect(await runModule('symfony-translation-providers.js', app)).toContain('crowdin');
+  });
+
+  test('a mailer configured only by DSN', async () => {
+    const app = appWith('mailer-dsn-only', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: '%env(MAILER_DSN)%'
+        envelope:
+            sender: 'shop@example.com'
+`,
+    });
+
+    expect(await runModule('mailer.js', app)).toContain('Mailer');
+  });
+
+  test('Microsoft Graph credentials that are all placeholders', async () => {
+    const app = appWith('ms-graph-placeholders', {
+      '.env': `MICROSOFT_CLIENT_ID=xxx
+MICROSOFT_CLIENT_SECRET=your_secret
+AZURE_TENANT_ID=change_me
+`,
+    });
+
+    const text = await runModule('microsoft-graph-integration.js', app);
+
+    expect(text).toContain('Microsoft Graph');
+    expect(text).not.toContain('Issues Summary');
+  });
+});
