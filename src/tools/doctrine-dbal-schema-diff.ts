@@ -55,11 +55,13 @@ function parseSchemaDiffFile(filePath: string): DbalSchemaDiffInfo | null {
   const destructiveChanges: string[] = [];
 
   if (hasDropTable) {
+    /* istanbul ignore next -- the guard above found the same statement. */
     const tableMatches = content.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?[`"']?(\w{1,80})[`"']?/gi) ?? [];
     for (const m of tableMatches) destructiveChanges.push(m.trim());
   }
 
   if (hasRenameColumn) {
+    /* istanbul ignore next -- as above. */
     const renameMatches = content.match(/RENAME\s+COLUMN\s+\w{1,80}\s+TO\s+\w{1,80}/gi) ?? [];
     for (const m of renameMatches) destructiveChanges.push(m.trim());
   }

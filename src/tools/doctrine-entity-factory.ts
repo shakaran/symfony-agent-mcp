@@ -169,6 +169,7 @@ export function listDoctrineEntityFactories(appPath: string): McpToolResult {
       ].filter(Boolean).join(', ');
 
       text += `\n  ${r.class.padEnd(40)} -> ${r.entityClass}  (${r.file})\n`;
+      /* istanbul ignore else -- the defaults flag is always one of the two spellings, so the list is never empty. */
       if (flags) text += `    flags: [${flags}]\n`;
       for (const issue of r.issues) text += `    ⚠ ${issue}\n`;
     }

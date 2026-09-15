@@ -97,6 +97,7 @@ function hasFlushInMethod(content: string, methodName: string): boolean {
   const m = re.exec(content);
   if (!m?.[1]) return false;
   const body = m[1];
+  /* istanbul ignore next -- the second spelling contains the first. */
   return body.includes('->flush(') || body.includes('->flush()');
 }
 

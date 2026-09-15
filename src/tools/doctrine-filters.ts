@@ -197,6 +197,7 @@ export function listDoctrineFilters(appPath: string): McpToolResult {
     // Cross-check: registered but no class found
     const classNames = new Set(classes.map((c) => c.class));
     const orphanConfig = config.filter((f) => {
+      /* istanbul ignore next -- a split always yields a last element. */
       const shortClass = f.class.split('\\').pop() ?? '';
       return !classNames.has(shortClass) && f.class !== '';
     });

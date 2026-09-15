@@ -58090,3 +58090,291 @@ class PointType extends StringType
     expect(await runModule('doctrine-custom-platform.js', app)).toContain('Overridden methods');
   });
 });
+
+describe('batch 220: DBAL statements, migrations, factories and Gedmo', () => {
+  test('a named parameter query and an IN clause with no array binding', async () => {
+    const app = appWith('dbal-named-and-in', {
+      'src/Repository/StatsRepository.php': `<?php
+
+namespace App\\Repository;
+
+class StatsRepository
+{
+    public function byStatus($conn, string $status): array
+    {
+        return $conn->fetchAllAssociative('SELECT id FROM orders WHERE status = :status', ['status' => $status]);
+    }
+
+    public function byIds($conn, array $ids): array
+    {
+        return $conn->fetchAllAssociative('SELECT id FROM orders WHERE id IN (?)', [$ids]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-prepared-statements.js', app)).toContain('array binding');
+  });
+
+  test('a schema-diff migration that can be rolled back', async () => {
+    const app = appWith('schema-diff-reversible', {
+      'migrations/Version20260101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $comparator = $this->connection->createComparator();
+        $this->addSql('ALTER TABLE orders ADD COLUMN paid_at DATETIME DEFAULT NULL');
+        $this->addSql('DROP TABLE legacy_orders');
+    }
+
+    public function down($schema): void
+    {
+        $this->addSql('ALTER TABLE orders DROP COLUMN paid_at');
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-schema-diff.js', app)).toContain('Destructive');
+  });
+
+  test('a factory with states and a getDefaults() the pattern cannot read', async () => {
+    const app = appWith('entity-factory-states', {
+      'src/Factory/OrderFactory.php': `<?php
+
+namespace App\\Factory;
+
+use Zenstruck\\Foundry\\ModelFactory;
+
+class OrderFactory extends ModelFactory
+{
+    public function getDefaults(): array // the values every order starts with in the tests
+    {
+        return ['reference' => self::faker()->uuid(), 'total' => 100];
+    }
+
+    public function paid(): self
+    {
+        return $this->state(['paid' => true]);
+    }
+
+    public function cancelled(): self
+    {
+        return $this->state(['cancelled' => true]);
+    }
+
+    protected static function getClass(): string
+    {
+        return Order::class;
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-entity-factory.js', app)).toContain('states');
+  });
+
+  test('a subscriber whose lifecycle method the pattern cannot read', async () => {
+    const app = appWith('subscriber-long-signature', {
+      'src/EventSubscriber/OrderSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Attribute\\AsDoctrineListener;
+use Doctrine\\ORM\\Events;
+
+class OrderSubscriber
+{
+    public static function getSubscribedEvents(): array
+    {
+        return ['onFlush', 'loadClassMetadata'];
+    }
+
+    public function onFlush($args) /* every managed entity is about to be written in one go */
+    {
+        $args->getObjectManager()->flush();
+    }
+
+    public function loadClassMetadata($args) /* mapping is being assembled for one class */
+    {
+        $args->getClassMetadata();
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-event-subscribers.js', app)).toContain('OrderSubscriber');
+  });
+
+  test('a filter with no body in the configuration and one that checks the metadata class', async () => {
+    const app = appWith('doctrine-filter-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        filters:
+            bare_filter:
+            tenant:
+                class: App\\Filter\\TenantFilter
+                enabled: true
+`,
+      'src/Filter/TenantFilter.php': `<?php
+
+namespace App\\Filter;
+
+use Doctrine\\ORM\\Mapping\\ClassMetadata;
+use Doctrine\\ORM\\Query\\Filter\\SQLFilter;
+
+class TenantFilter extends SQLFilter
+{
+    public function addFilterConstraint(ClassMetadata $targetEntity, $targetTableAlias): string
+    {
+        if (!$targetEntity instanceof ClassMetadata) {
+            return '';
+        }
+
+        return sprintf('%s.tenant_id = %s', $targetTableAlias, $this->getParameter('tenant_id'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-filters.js', app)).toContain('tenant');
+  });
+
+  test('blameable and timestampable changes that name their field, and a loggable entity with its own log class', async () => {
+    const app = appWith('gedmo-fields-named', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+/**
+ * @Gedmo\\Loggable(logEntryClass="App\\Entity\\ArticleHistory")
+ */
+class Article
+{
+    /**
+     * @Blameable(on="change", field="title")
+     */
+    private $editedBy;
+
+    /**
+     * @Timestampable(on="change", field="title")
+     */
+    private $editedAt;
+
+    /**
+     * @Gedmo\\Versioned
+     */
+    private $title;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-gedmo-blameable.js', app)).toContain('Article');
+  });
+
+  test('a translatable field declared twice, once as an attribute and once as an annotation', async () => {
+    const app = appWith('gedmo-translatable-twice', {
+      'src/Entity/Page.php': `<?php
+
+namespace App\\Entity;
+
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+class Page
+{
+    #[Gedmo\\Translatable]
+    #[ORM\\Column(length: 255)]
+    private string $title;
+
+    #[Gedmo\\Translatable]
+    #[ORM\\Column(length: 255)]
+    private string $title2;
+}
+
+class PageAlso
+{
+    #[Gedmo\\Translatable]
+    #[ORM\\Column(length: 255)]
+    private string $title;
+}
+
+class PageLegacy
+{
+    /**
+     * @Translatable
+     * @ORM\\Column(length=255)
+     */
+    private string $title;
+
+    /**
+     * @Translatable
+     * @ORM\\Column(length=255)
+     */
+    private string $title2;
+
+    /**
+     * @Translatable
+     * @ORM\\Column(length=255)
+     */
+    private string $summary;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-gedmo-translatable.js', app)).toContain('Page');
+  });
+
+  test('a unique constraint that names its columns, an annotation index that names none, and an entity with no index at all', async () => {
+    const app = appWith('doctrine-index-shapes', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Table(name: 'invoice', uniqueConstraints: [new ORM\\UniqueConstraint(name: 'uniq_reference', columns: ['reference'])])]
+class Invoice
+{
+    #[ORM\\Id]
+    private $id;
+}
+`,
+      'src/Entity/Legacy.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\Entity
+ * @ORM\\Index(name="idx_legacy")
+ */
+class Legacy
+{
+}
+`,
+      'src/Entity/Plain.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Plain
+{
+    #[ORM\\Id]
+    private $id;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-indexes.js', app)).toContain('uniq_reference');
+  });
+});
