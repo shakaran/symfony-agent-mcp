@@ -131,8 +131,10 @@ function scanCachedEntities(appPath: string): CachedEntity[] {
     const usageM  = /#\[(?:ORM\\)?Cache[^)]*usage\s*:\s*['"]?([A-Z_]+)/.exec(content) ??
                     /#\[(?:ORM\\)?Cache[^)]*CacheUsage::(\w+)/.exec(content);
 
+    // An attribute closes with ")]", and the pattern asked for ")" followed by
+    // the next attribute, so a cached association was never recognised.
     const hasCachedAssociations =
-      /#\[(?:\w{1,40}\\)?Cache[^)]*\)\s*#\[(?:\w{1,40}\\)?(?:ManyToOne|OneToMany|ManyToMany|OneToOne)/.test(content);
+      /#\[(?:\w{1,40}\\)?Cache[^)]*\)\]?\s*#\[(?:\w{1,40}\\)?(?:ManyToOne|OneToMany|ManyToMany|OneToOne)/.test(content);
 
     results.push({
       class: classM[1],

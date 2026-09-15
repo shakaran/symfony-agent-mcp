@@ -55247,3 +55247,213 @@ class UserTest extends TestCase
     expect(await runModule('zenstruck-foundry-config.js', app)).toContain('story');
   });
 });
+
+describe('batch 208: metrics, deployment targets and Doctrine mappings', () => {
+  test('a metric tagged with a user id and a client constructed with an explicit host', async () => {
+    const app = appWith('datadog-tags-and-host', {
+      'composer.json': JSON.stringify({ require: { 'datadog/php-datadogstatsd': '^1.5' } }, null, 2),
+      'src/Metrics/PageMetrics.php': `<?php
+
+namespace App\\Metrics;
+
+use DataDog\\DogStatsd;
+
+class PageMetrics
+{
+    public function track(int $userId): void
+    {
+        $statsd = new DogStatsd(['host' => '127.0.0.1', 'port' => 8125]);
+        $statsd->increment('page.view', 1, 0.5, ['user_id:' . $userId]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('datadog-custom-metrics.js', app)).toContain('PII');
+  });
+
+  test('a chart under chart/ rather than helm/, a Procfile that releases, and an app.yaml whose runtime is empty', async () => {
+    const app = appWith('deployment-chart-dir', {
+      'chart/values.yaml': `replicaCount: 3
+`,
+      'Procfile': `web: heroku-php-apache2 public/
+release: bin/console doctrine:migrations:migrate --no-interaction
+`,
+      'app.yaml': `instance_class: F2
+runtime:
+`,
+    });
+
+    const text = await runModule('deployment-config.js', app);
+
+    expect(text).toContain('Helm chart');
+    expect(text).toContain('Instance: F2');
+  });
+
+  test('an association mapped in XML without fetch, one without a field name, and an annotation with no property after it', async () => {
+    const app = appWith('association-fetch-mappings', {
+      'config/doctrine/Order.orm.xml': `<?xml version="1.0"?>
+<doctrine-mapping>
+  <entity name="App\\Entity\\Order">
+    <one-to-many target-entity="App\\Entity\\Line" mapped-by="order"/>
+    <many-to-one field="customer" target-entity="App\\Entity\\Customer" fetch="EAGER"/>
+    <one-to-one target-entity="App\\Entity\\Invoice" fetch="EAGER"/>
+  </entity>
+</doctrine-mapping>
+`,
+      'src/Entity/Legacy.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * @ORM\\OneToMany(targetEntity="App\\Entity\\Line", fetch="EAGER")
+ */
+class Legacy
+{
+}
+`,
+    });
+
+    expect(await runModule('doctrine-association-fetch.js', app)).toContain('(unknown)');
+  });
+
+  test('a DBAL insert in a loop with no transaction around it', async () => {
+    const app = appWith('bulk-dbal-insert', {
+      'src/Import/InvoiceImporter.php': `<?php
+
+namespace App\\Import;
+
+class InvoiceImporter
+{
+    public function import(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->connection->executeStatement('INSERT INTO invoice (id) VALUES (?)', [$row['id']]);
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-bulk-operations.js', app)).toContain('autocommit');
+  });
+
+  test('cache drivers given as a pool rather than a type, and an entity whose association is cached', async () => {
+    const app = appWith('doctrine-cache-pools', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            pool: cache.metadata
+        second_level_cache:
+            enabled: true
+            region_cache_driver:
+                pool: cache.region
+`,
+      'src/Entity/Product.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Cache(usage: 'READ_ONLY', region: 'catalogue')]
+class Product
+{
+    #[ORM\\Cache(usage: 'READ_ONLY')]
+    #[ORM\\ManyToOne(targetEntity: Category::class)]
+    private $category;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-cache.js', app)).toContain('cached associations');
+  });
+
+  test('a cascade given as a string, one that repeats what all already covers, and one with orphan removal', async () => {
+    const app = appWith('cascade-shapes', {
+      'src/Entity/Basket.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\Common\\Collections\\Collection;
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Basket
+{
+    /** @var Collection<int, Line> $lines */
+    #[ORM\\OneToMany(mappedBy: 'basket', targetEntity: Line::class, cascade: ['all'], orphanRemoval: true)]
+    private Collection $lines;
+
+    #[ORM\\OneToMany(mappedBy: 'basket', targetEntity: Note::class, cascade: ['all', 'persist'])]
+    private Collection $notes;
+
+    #[ORM\\ManyToOne(targetEntity: Owner::class, cascade: 'persist')]
+    private ?Owner $owner = null;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-cascade-config.js', app);
+
+    expect(text).toContain('orphanRemoval');
+    expect(text).toContain('already covers them');
+  });
+
+  test('a column whose options name a collation but no charset', async () => {
+    const app = appWith('column-collation-only', {
+      'src/Entity/Comment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+/**
+ * @ORM\\Entity
+ */
+class Comment
+{
+    /**
+     * @ORM\\Column(type="text", options={"collation":"utf8mb4_bin"})
+     */
+    private $body;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-column-charset.js', app)).toContain('No Doctrine columns with explicit charset');
+  });
+
+  test('a hydrator declared outside any namespace and one that hydrates nothing', async () => {
+    const app = appWith('hydrators-incomplete', {
+      'src/Hydrator/PlainHydrator.php': `<?php
+
+use Doctrine\\ORM\\Internal\\Hydration\\AbstractHydrator;
+
+class PlainHydrator extends AbstractHydrator
+{
+    protected function hydrateRow(): array
+    {
+        return [];
+    }
+}
+`,
+      'src/Hydrator/EmptyHydrator.php': `<?php
+
+namespace App\\Hydrator;
+
+use Doctrine\\ORM\\Internal\\Hydration\\AbstractHydrator;
+
+class EmptyHydrator extends AbstractHydrator
+{
+    public function getHydratorClass(): string
+    {
+        return self::class;
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-custom-hydrators.js', app)).toContain('Missing hydrateAll');
+  });
+});

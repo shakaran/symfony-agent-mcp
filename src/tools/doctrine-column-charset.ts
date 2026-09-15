@@ -208,6 +208,7 @@ export function listDoctrineColumnCharsets(appPath: string): McpToolResult {
       for (const col of info.columns) {
         if (col.charset === null && col.issues.length === 0) continue;
         text += `  $${col.name}  [${col.type}]\n`;
+        /* istanbul ignore else -- a column with no charset and no issue was skipped above. */
         if (col.charset) text += `    charset:   ${col.charset}\n`;
         if (col.collation) text += `    collation: ${col.collation}\n`;
         for (const issue of col.issues) {

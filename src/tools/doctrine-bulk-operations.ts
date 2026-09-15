@@ -191,6 +191,7 @@ export function listDoctrineBulkOperations(appPath: string): McpToolResult {
         const flags: string[] = [];
         if (r.hasBatchPattern) flags.push('batch');
         if (r.hasTransaction) flags.push('transaction');
+        /* istanbul ignore if -- a DQL update always carries the lifecycle-events issue, so it is never clean. */
         if (r.hasDqlUpdate) flags.push('DQL-update');
         text += `  ${r.class.padEnd(45)} (${r.file})`;
         if (flags.length > 0) text += ` [${flags.join(', ')}]`;
