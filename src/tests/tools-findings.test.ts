@@ -66525,3 +66525,109 @@ class Record
     expect(await runModule('php-late-static-binding.js', app)).toContain('static::');
   });
 });
+
+describe('batch 255: complexity, namespaces and property hooks', () => {
+  test('a complex function written outside any class', async () => {
+    const app = appWith('complexity-function-without-class', {
+      'src/price_rules.php': `<?php
+
+function calculate_price(array $row, int $limit, bool $vip): int
+{
+    $total = 0;
+    if ($row['active']) {
+        foreach ($row['lines'] as $line) {
+            if ($line['qty'] > 0) {
+                if ($line['price'] > $limit) {
+                    $total += $line['price'];
+                } elseif ($vip) {
+                    $total += 1;
+                }
+            }
+        }
+    } elseif ($row['archived']) {
+        while ($total > $limit) {
+            $total--;
+            if ($total < 0) {
+                break;
+            }
+        }
+    }
+
+    return $total;
+}
+`,
+    });
+
+    expect(await runModule('php-complexity.js', app)).toContain('(file)');
+  });
+
+  test('a memory limit written in kilobytes', async () => {
+    const app = appWith('memory-limit-in-kilobytes', {
+      'docker/php.ini': `memory_limit = 65536K
+max_execution_time = 30
+`,
+    });
+
+    expect(await runModule('php-memory-profiling.js', app)).toContain('No memory profiling issues found');
+  });
+
+  test('a second namespace prefix that does not cover the scanned file', async () => {
+    const app = appWith('namespace-consistency-two-prefixes', {
+      'composer.json': JSON.stringify({
+        autoload: { 'psr-4': { 'Acme\\\\': 'lib/', 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Service/Reporter.php': `<?php
+
+namespace App\\Wrong;
+
+class Reporter
+{
+}
+`,
+      'lib/Helper.php': `<?php
+
+namespace Acme;
+
+class Helper
+{
+}
+`,
+    });
+
+    expect(await runModule('php-namespace-consistency.js', app)).toContain('Reporter');
+  });
+
+  test('property hooks declared on an interface', async () => {
+    const app = appWith('property-hooks-on-interface', {
+      'src/Contract/HasName.php': `<?php
+
+namespace App\\Contract;
+
+interface HasName
+{
+    public string $name { get; }
+}
+`,
+      'src/Model/Person.php': `<?php
+
+namespace App\\Model;
+
+class Person
+{
+    public string $name {
+        get => $this->first . ' ' . $this->last;
+        set (string $value) {
+            [$this->first, $this->last] = explode(' ', $value, 2);
+        }
+    }
+
+    private string $first = '';
+
+    private string $last = '';
+}
+`,
+    });
+
+    expect(await runModule('php-property-hooks.js', app)).toContain('Person');
+  });
+});

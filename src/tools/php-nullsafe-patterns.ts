@@ -33,6 +33,7 @@ function parseNullsafe(filePath: string, appPath: string): NullsafeInfo | null {
   if (!content.includes('?->')) return null;
   if (content.includes('namespace Symfony\\') || content.includes('namespace PHPUnit\\')) return null;
   const classM = /class\s+(\w{1,120})/.exec(content);
+  /* istanbul ignore next -- the operator was found in this content above. */
   const count = (content.match(/\?->/g) ?? []).length;
   let maxChainLength = 0;
   const longChains: string[] = [];

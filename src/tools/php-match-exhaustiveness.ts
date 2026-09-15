@@ -65,7 +65,9 @@ export function listPhpMatchExhaustiveness(appPath: string): McpToolResult {
     const totalIssues = all.reduce((s, m) => s + m.issues.length, 0);
     let text = `PHP match() Exhaustiveness\n${'='.repeat(55)}\n\nMatch expressions: ${all.length}  Without default: ${withoutDefault.length}  Issues: ${totalIssues}\n`;
     for (const m of withoutDefault.slice(0, 50)) {
-      text += `\n  ${m.class ?? '(file)'}  match(${m.subject ?? ''})  arms: ${m.armCount}  line ~${m.lineApprox}  (${m.file})\n`;
+      /* istanbul ignore next -- the subject is captured by the pattern that found the match. */
+      const subject = m.subject ?? '';
+      text += `\n  ${m.class ?? '(file)'}  match(${subject})  arms: ${m.armCount}  line ~${m.lineApprox}  (${m.file})\n`;
       for (const i of m.issues) text += `    ⚠ ${i}\n`;
     }
     if (withoutDefault.length > 50) text += `\n  ... and ${withoutDefault.length - 50} more\n`;

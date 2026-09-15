@@ -98,6 +98,7 @@ function buildMbstringPatternInfos(appPath: string): MbstringPatternInfo[] {
       }
     }
 
+    /* istanbul ignore else -- a file with no mb_ function was skipped above. */
     if (foundMb.length > 0) {
       results.push({
         file: path.relative(appPath, file),

@@ -54,6 +54,7 @@ function buildObjectSerializationInfos(appPath: string): ObjectSerializationInfo
       const issues: string[] = [];
       // Check for user input near unserialize
       const unIdx = content.indexOf('unserialize(');
+      /* istanbul ignore else -- the call was found in this content above. */
       if (unIdx !== -1) {
         const surroundingSlice = content.slice(Math.max(0, unIdx - 400), Math.min(content.length, unIdx + 200));
         if (surroundingSlice.includes('$_GET') || surroundingSlice.includes('$_POST') ||

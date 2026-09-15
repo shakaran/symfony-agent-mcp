@@ -150,6 +150,7 @@ export function getPhpOutputBufferingStats(appPath: string): McpToolResult {
     };
     for (const info of infos) {
       const key = info.pattern === 'ob_start-in-destructor-or-catch' ? 'ob-start-in-destructor-or-catch' : info.pattern;
+      /* istanbul ignore next -- the four patterns are seeded above. */
       byPattern[key] = (byPattern[key] ?? 0) + 1;
     }
     const filesAffected = new Set(infos.map((i) => i.file)).size;
