@@ -32,6 +32,7 @@ function sanitizeDsn(val: string): string {
 
 function readYamlRaw(filePath: string, appPath: string): string {
   const resolved = path.resolve(filePath);
+  /* istanbul ignore if -- every candidate is built from the application root. */
   if (!resolved.startsWith(path.resolve(appPath) + path.sep)) return '';
   try { return fs.readFileSync(filePath, 'utf-8'); } catch { return ''; }
 }
@@ -136,6 +137,8 @@ function buildMetadataCacheInfos(appPath: string): MetadataCacheInfo[] {
     path.join(appPath, 'config', 'packages', 'prod', 'doctrine.yml'),
     path.join(appPath, 'config', 'packages', 'dev', 'doctrine.yaml'),
     path.join(appPath, 'config', 'packages', 'dev', 'doctrine.yml'),
+    path.join(appPath, 'config', 'packages', 'test', 'doctrine.yaml'),
+    path.join(appPath, 'config', 'packages', 'test', 'doctrine.yml'),
   ];
 
   const results: MetadataCacheInfo[] = [];
