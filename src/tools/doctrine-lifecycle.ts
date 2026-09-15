@@ -119,7 +119,9 @@ function parseEntityLifecycle(filePath: string): EntityLifecycle | null {
   const entityListeners: string[] = [];
   for (const m of content.matchAll(/#\[(?:\w{1,40}\\)?EntityListeners?\s*\(\s*\[([^\]]+)\]/g)) {
     for (const lm of m[1].matchAll(/[\w\\]+::class|['"][\w\\]+'['"]/g)) {
+      /* istanbul ignore next -- split never returns an empty array. */
       const listener = lm[0].replace(/::class|['"]/g, '').split('\\').pop() ?? '';
+      /* istanbul ignore else -- the match always carries a name. */
       if (listener) entityListeners.push(listener);
     }
   }

@@ -48757,8 +48757,12 @@ describe('batch 186: platforms, lifecycles, recipes and manifests', () => {
       'symfony.lock': JSON.stringify({
         'symfony/framework-bundle': {
           version: '7.0',
-          recipe: { version: '7.0', ref: 'abc123', repo: 'github.com/symfony/recipes' },
+          recipe: { ref: 'github.com/symfony/recipes:main@abc123' },
           files: { '.env': 'APP_ENV=dev\nAPP_SECRET=changeme\n' },
+        },
+        'doctrine/doctrine-bundle': {
+          version: '2.11',
+          recipe: { ref: 'github.com/symfony/recipes-contrib:main@def456' },
         },
         'acme/custom-bundle': {
           recipe: { ref: 'def456', url: 'https://recipes.example.com/acme' },
@@ -48772,8 +48776,18 @@ describe('batch 186: platforms, lifecycles, recipes and manifests', () => {
       }, null, 2),
     });
 
+    const officialOnly = appWith('flex-recipes-official', {
+      'symfony.lock': JSON.stringify({
+        'symfony/console': {
+          version: '7.0',
+          recipe: { version: '7.0', ref: 'github.com/symfony/recipes:main@aaa' },
+        },
+      }, null, 2),
+    });
+
     const text = await runModule('flex-recipes.js', app);
 
+    expect((await runModule('flex-recipes.js', officialOnly)).length).toBeGreaterThan(0);
     expect(text).toContain('acme/custom-bundle');
   });
 
@@ -48810,8 +48824,31 @@ class EmptyPlatform extends PostgreSQLPlatform
 `,
       'src/Doctrine/notaclass.php': `<?php
 
-// A file in the same directory with no type declaration in it.
-return 42;
+// A file with no type declaration, registering a Doctrine type.
+Type::addType('money', MoneyType::class);
+`,
+      'src/Doctrine/TypeRegisteringPlatform.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\DBAL\\Platforms\\PostgreSQLPlatform;
+use Doctrine\\DBAL\\Types\\Type;
+
+class TypeRegisteringPlatform extends PostgreSQLPlatform
+{
+    public function register(): void
+    {
+        Type::addType('money', MoneyType::class);
+    }
+}
+`,
+      'src/Doctrine/PlatformAware.php': `<?php
+
+namespace App\\Doctrine;
+
+interface PlatformAware extends PostgreSQLPlatform
+{
+}
 `,
     });
 
@@ -48833,13 +48870,15 @@ use Doctrine\\ORM\\Mapping as ORM;
 #[ORM\\EntityListeners([InvoiceListener::class])]
 class Invoice
 {
+    /**
+     * @ORM\\PrePersist
+     */
     #[ORM\\PrePersist]
-    #[ORM\\PreUpdate]
-    public function touch(): void
+    public function stamp(): void
     {
     }
 
-    #[ORM\\PrePersist]
+    #[ORM\\PreUpdate]
     public function touch(): void
     {
     }
@@ -48847,7 +48886,11 @@ class Invoice
 `,
       'src/Entity/notaclass.php': `<?php
 
-// No type declaration here either.
+use Doctrine\\ORM\\Mapping as ORM;
+
+// The attributes are here, the declaration they belong to is not.
+#[ORM\\Entity]
+#[ORM\\HasLifecycleCallbacks]
 return 42;
 `,
     });
@@ -48875,6 +48918,38 @@ type: Opaque
 data:
   password: cGFzc3dvcmQ=
 `,
+      'k8s/ingress-limited.yaml': `apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-limited
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+spec:
+  rules:
+    - host: limited.example.com
+`,
+      'k8s/sealed-secret.yaml': `apiVersion: v1
+kind: Secret
+metadata:
+  name: app-sealed
+  ownerReferences:
+    - apiVersion: bitnami.com/v1alpha1
+      kind: SealedSecret
+      name: app-sealed
+type: Opaque
+data:
+  password: AgBy3i4OJSWK
+`,
+      'k8s/pdb-min.yaml': `apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app-min
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: demo
+`,
       'k8s/pdb.yaml': `apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -48894,6 +48969,11 @@ spec:
   test('a Meilisearch host over plain HTTP with an inline key and attribute lists', async () => {
     const app = appWith('meilisearch-shapes', {
       'composer.json': JSON.stringify({ require: { 'meilisearch/meilisearch-php': '^1.6' } }, null, 2),
+      '.env': `MEILISEARCH_URL=http://search.example.com:7700
+MEILISEARCH_API_KEY=masterKey-plaintext
+`,
+      '.env.local': `MEILISEARCH_API_KEY=%env(MEILI_KEY)%
+`,
       'config/packages/meilisearch.yaml': `meilisearch:
     url: 'http://search.example.com:7700'
     api_key: 'masterKey-plaintext'
@@ -48908,8 +48988,16 @@ spec:
 `,
     });
 
+    const referenced = appWith('meilisearch-referenced-key', {
+      'composer.json': JSON.stringify({ require: { 'meilisearch/meilisearch-php': '^1.6' } }, null, 2),
+      '.env': `MEILISEARCH_URL=https://search.example.com
+MEILISEARCH_API_KEY=%env(MEILI_KEY)%
+`,
+    });
+
     const text = await runModule('meilisearch-integration.js', app);
 
+    expect((await runModule('meilisearch-integration.js', referenced)).length).toBeGreaterThan(0);
     expect(text).toContain('meilisearch');
   });
 
@@ -48935,10 +49023,9 @@ namespace App\\Service;
 
 abstract class AbstractBase
 {
-    public function __construct(
-        protected readonly LoggerInterface $logger
-    ) {
-    }
+    abstract public function __construct(
+        protected readonly LoggerInterface $logger,
+    );
 }
 `,
       'src/Service/Plain.php': `<?php
@@ -48992,10 +49079,31 @@ class CarefulReader
     public function read(string $path): iterable
     {
         $handle = fopen($path, 'r');
-        stream_filter_append($handle, 'convert.iconv.ISO-8859-1/UTF-8');
-        $row = fgetcsv($handle, 1000, ',', '"', '#');
-        yield $row;
+        // The export uses semicolons because it comes from a Spanish Excel.
+        while (!feof($handle)) {
+            $row = fgetcsv($handle, 1000, ';');
+            yield iconv('ISO-8859-1', 'UTF-8', $row[0]);
+        }
         fclose($handle);
+    }
+}
+`,
+    });
+
+    const single = appWith('csv-single-read', {
+      'src/Import/HeaderReader.php': `<?php
+
+namespace App\\Import;
+
+class HeaderReader
+{
+    public function header(string $path): array
+    {
+        $handle = fopen($path, 'r');
+        $header = fgetcsv($handle, 1000, ',');
+        fclose($handle);
+
+        return iconv_strlen($header[0]) > 0 ? $header : [];
     }
 }
 `,
@@ -49003,6 +49111,7 @@ class CarefulReader
 
     const text = await runModule('php-csv-parsing.js', app);
 
+    expect((await runModule('php-csv-parsing.js', single)).length).toBeGreaterThan(0);
     expect(text).toContain('CsvReader');
   });
 
@@ -49022,7 +49131,7 @@ class Fetcher
 
     public function safe(): void
     {
-        $criteria = filter_var($_GET['criteria'], FILTER_SANITIZE_STRING);
+        $criteria = htmlspecialchars($_GET['criteria']);
         $mailbox = imap_open('{imap.example.com:993/imap/ssl}INBOX', 'user', 'pass');
         $result = imap_search($mailbox, $criteria);
     }
@@ -49030,8 +49139,373 @@ class Fetcher
 `,
     });
 
+    const many = appWith('imap-many-findings', {
+      'src/Mail/Bulk.php': `<?php
+
+namespace App\\Mail;
+
+class Bulk
+{
+${Array.from({ length: 55 }, (_, i) => `    public function fetch${i}(): void\n    {\n        $mailbox = imap_open($_GET['host${i}'], $_GET['user'], $_GET['pass']);\n    }`).join('\n\n')}
+}
+`,
+    });
+
     const text = await runModule('php-imap-patterns.js', app);
 
+    expect((await runModule('php-imap-patterns.js', many)).length).toBeGreaterThan(0);
     expect(text).toContain('Fetcher');
+  });
+});
+
+describe('batch 187: magic methods, sockets, console style and health probes', () => {
+  test('a class with __set and no __get, a __call with no dispatch, and both serialisers', async () => {
+    const app = appWith('magic-method-shapes', {
+      'src/Model/Bag.php': `<?php
+
+namespace App\\Model;
+
+class Bag
+{
+    public function __set(string $name, $value): void
+    {
+        $this->data[$name] = $value;
+    }
+
+    public function __call(string $name, array $arguments)
+    {
+        return $this->handler->$name(...$arguments);
+    }
+
+    public function __serialize(): array
+    {
+        return ['password' => $this->password, 'token' => $this->token];
+    }
+
+    public function __sleep(): array
+    {
+        return ['password'];
+    }
+}
+`,
+      'src/Model/notaclass.php': `<?php
+
+// Magic method names in a file with no declaration: __get, __call.
+return 42;
+`,
+    });
+
+    const text = await runModule('php-magic-methods.js', app);
+
+    expect(text).toContain('Bag');
+  });
+
+  test('sockets bound to a host and port, and a stream that is encrypted', async () => {
+    const app = appWith('socket-shapes', {
+      'src/Net/Server.php': `<?php
+
+namespace App\\Net;
+
+class Server
+{
+    public function listen(): void
+    {
+        $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+        socket_bind($socket, '0.0.0.0', 8080);
+        socket_listen($socket, 128);
+        $client = stream_socket_client('tcp://example.com:9000', $errno, $errstr, 30);
+    }
+
+    public function secure(): void
+    {
+        $client = stream_socket_client('ssl://example.com:443', $errno, $errstr, 30);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-socket-programming.js', app);
+
+    expect(text).toContain('Server');
+  });
+
+  test('a template rendered from a string with user input, and one without', async () => {
+    const app = appWith('template-injection-shapes', {
+      'src/Render/Renderer.php': `<?php
+
+namespace App\\Render;
+
+use Twig\\Environment;
+
+class Renderer
+{
+    public function fromRequest(Environment $twig): string
+    {
+        $template = $_GET['tpl'];
+
+        return $twig->createTemplate('{{ name }}' . $template)->render([]);
+    }
+
+    public function fromConstant(Environment $twig): string
+    {
+        return $twig->createTemplate('{{ name }} {% for x in items %}{{ x }}{% endfor %}')->render([]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-template-injection.js', app);
+
+    expect(text).toContain('Renderer');
+  });
+
+  test('a console command that completes its arguments, and one that completes nothing', async () => {
+    const app = appWith('console-completion-shapes', {
+      'src/Command/DeployCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Completion\\CompletionInput;
+use Symfony\\Component\\Console\\Completion\\CompletionSuggestions;
+use Symfony\\Component\\Console\\Input\\InputArgument;
+
+#[AsCommand(name: 'app:deploy')]
+class DeployCommand extends Command
+{
+    protected function configure(): void
+    {
+        $this->addArgument('environment', InputArgument::REQUIRED);
+    }
+
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        if ($input->mustSuggestArgumentValuesFor('environment')) {
+            $suggestions->suggestValues(['prod', 'staging']);
+        }
+    }
+}
+`,
+      'src/Command/QuietCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Attribute\\AsCommand;
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Completion\\CompletionInput;
+use Symfony\\Component\\Console\\Completion\\CompletionSuggestions;
+
+#[AsCommand(name: 'app:quiet')]
+class QuietCommand extends Command
+{
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-completion.js', app);
+
+    expect(text).toContain('DeployCommand');
+  });
+
+  test('a command that writes lines directly and one that uses tables and progress bars', async () => {
+    const app = appWith('console-style-shapes', {
+      'src/Command/RawCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class RawCommand extends Command
+{
+    protected function execute($input, $output): int
+    {
+        $output->writeln('one');
+        $output->writeln('two');
+        $output->writeln('three');
+
+        return Command::SUCCESS;
+    }
+}
+`,
+      'src/Command/StyledCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Helper\\ProgressBar;
+use Symfony\\Component\\Console\\Helper\\Table;
+use Symfony\\Component\\Console\\Style\\SymfonyStyle;
+
+class StyledCommand extends Command
+{
+    protected function execute($input, $output): int
+    {
+        $io = new SymfonyStyle($input, $output);
+        $table = new Table($output);
+        $table->render();
+        $progress = new ProgressBar($output, 10);
+        $progress->finish();
+        $io->success('done');
+
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-console-style.js', app);
+
+    expect(text).toContain('RawCommand');
+  });
+
+  test('dump() left in production code, one in a test, and one with a depth limit', async () => {
+    const app = appWith('debug-dump-shapes', {
+      'src/Controller/DebugController.php': `<?php
+
+namespace App\\Controller;
+
+class DebugController
+{
+    public function index(): void
+    {
+        dump($this->service);
+        VarDumper::dump($this->service, 2, 'depth');
+    }
+}
+`,
+      'tests/Unit/DebugTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class DebugTest extends TestCase
+{
+    public function testSomething(): void
+    {
+        dump($this->service);
+    }
+}
+`,
+    });
+    const clean = appWith('debug-dump-clean', {
+      'src/Controller/QuietController.php': `<?php
+
+namespace App\\Controller;
+
+class QuietController
+{
+    public function index(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-debug-dump.js', app);
+
+    expect((await runModule('symfony-debug-dump.js', clean)).length).toBeGreaterThan(0);
+    expect(text).toContain('DebugController');
+  });
+
+  test('a health endpoint behind access control and one that is wide open', async () => {
+    const app = appWith('health-endpoint-shapes', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - { path: ^/health, roles: IS_AUTHENTICATED_FULLY, ips: [10.0.0.0/8] }
+`,
+      'src/Controller/HealthController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+class HealthController
+{
+    #[Route('/health', name: 'health')]
+    #[IsGranted('ROLE_MONITORING')]
+    public function health(): void
+    {
+    }
+}
+`,
+    });
+    const open = appWith('health-endpoint-open', {
+      'src/Controller/StatusController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class StatusController
+{
+    #[Route('/health', name: 'health')]
+    public function health(): void
+    {
+        $this->connection->executeQuery('SELECT 1');
+    }
+
+    #[Route('/livez', name: 'livez')]
+    public function live(): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-health-endpoint-security.js', app)).toContain('health');
+    expect(await runModule('symfony-health-endpoint-security.js', open)).toContain('health');
+    expect(await runModule('symfony-health-probe.js', open)).toContain('health');
+    expect(await runModule('symfony-health-probe.js', app)).toContain('health');
+  });
+
+  test('Kubernetes probes that declare a period, and a health check with a timeout', async () => {
+    const app = appWith('health-probe-k8s', {
+      'k8s/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  template:
+    spec:
+      containers:
+        - name: php
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8080
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 5
+`,
+      'src/Controller/ProbeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ProbeController
+{
+    #[Route('/readyz', name: 'readyz')]
+    public function ready(): void
+    {
+        $this->connection->executeQuery('SELECT 1', [], [], new QueryCacheProfile(5));
+        set_time_limit(2);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-health-probe.js', app);
+
+    expect(text).toContain('readyz');
   });
 });

@@ -73,6 +73,7 @@ function firstArgIsLiteral(afterParen: string): boolean {
 
 // Returns true if arg contains a variable
 function argHasVariable(afterParen: string): boolean {
+  /* istanbul ignore next -- split never returns an empty array. */
   const section = afterParen.slice(0, 150).split(')')[0] ?? '';
   return /\$/.test(section);
 }
@@ -99,7 +100,8 @@ function buildImapPatternInfos(appPath: string): ImapPatternInfo[] {
       if (imapOpenMatch) {
         const afterFn = trimmed.slice(imapOpenMatch.index + imapOpenMatch[0].length);
         // imap_open($mailbox, $username, $password) — check 2nd and 3rd args for literals
-        const argsSection = afterFn.slice(0, 200).split(')')[0] ?? '';
+        /* istanbul ignore next -- split never returns an empty array. */
+    const argsSection = afterFn.slice(0, 200).split(')')[0] ?? '';
         const parts = argsSection.split(',');
         const userArg = parts[1] ?? '';
         const passArg = parts[2] ?? '';
@@ -165,7 +167,8 @@ function buildImapPatternInfos(appPath: string): ImapPatternInfo[] {
       const searchMatch = /\bimap_search\s*\(/.exec(trimmed);
       if (searchMatch) {
         const afterFn = trimmed.slice(searchMatch.index + searchMatch[0].length);
-        const argsSection = afterFn.slice(0, 200).split(')')[0] ?? '';
+        /* istanbul ignore next -- split never returns an empty array. */
+    const argsSection = afterFn.slice(0, 200).split(')')[0] ?? '';
         const parts = argsSection.split(',');
         const criteriaArg = parts[1] ?? '';
         if (/\$/.test(criteriaArg)) {

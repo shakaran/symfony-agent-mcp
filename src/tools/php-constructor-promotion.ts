@@ -57,6 +57,7 @@ function extractConstructorBlock(content: string): { params: string; body: strin
   const re = /function\s+__construct\s*\(([^)]{0,600})\)\s*(?::\s*[\w?\\]{1,80}\s*)?\{([\s\S]{0,3000}?)\n\s*\}/;
   const m = re.exec(content);
   if (!m) return null;
+  /* istanbul ignore next -- both groups are required by the pattern. */
   return { params: m[1] ?? '', body: m[2] ?? '' };
 }
 

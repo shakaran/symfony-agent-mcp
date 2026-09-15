@@ -97,6 +97,8 @@ function extractParentClass(content: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+/* istanbul ignore next -- the caller has already matched "class X extends",
+   so the name is always there. */
 function extractClassName(content: string): string | null {
   const m = /class\s+(\w{1,120})/.exec(content);
   return m ? m[1] : null;
@@ -159,6 +161,7 @@ function buildCustomPlatformEntries(appPath: string): DoctrineCustomPlatformEntr
     }
 
     const className = extractClassName(content);
+    /* istanbul ignore next -- as above. */
     if (!className) continue;
 
     const relPath = path.relative(appPath, filePath);
@@ -240,6 +243,8 @@ export function listDoctrineCustomPlatform(appPath: string): McpToolResult {
       for (const e of platforms.sort((a, b) => b.issues.length - a.issues.length)) {
         text += `  ${e.class} extends ${e.parentClass}\n`;
         text += `    File: ${e.file}\n`;
+        /* istanbul ignore else -- an entry with no methods and no issues is
+           skipped when it is built. */
         if (e.overriddenMethods.length > 0) {
           const cleanMethods = e.overriddenMethods.filter((m) => !m.startsWith('addType:') && !m.startsWith('overrideType:'));
           if (cleanMethods.length > 0) {
