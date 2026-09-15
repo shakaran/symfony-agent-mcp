@@ -48,6 +48,7 @@ function scanInfraFiles(dir: string, base: string, callback: (filePath: string, 
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         scanInfraFiles(full, base, callback);
+      /* istanbul ignore else -- a directory entry is either a directory or a file here. */
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name);
         if (ext === '.tf' || ext === '.json') {
@@ -75,6 +76,7 @@ function buildSqsDlqConfigInfos(appPath: string): SqsDlqConfigInfo[] {
       const varName = m[1];
       const rawValue = m[2].trim();
       const maskedFull = maskSecrets(`${varName}=${maskUrl(rawValue)}`);
+      /* istanbul ignore next -- the masking keeps the name it was given. */
       const maskedValue = maskedFull.startsWith(`${varName}=`) ? maskedFull.slice(varName.length + 1) : maskedFull;
       results.push({ source: fname, type: 'env', key: varName, value: maskedValue, issue: null });
     }

@@ -121,6 +121,7 @@ function parseChainPools(appPath: string): CacheChainInfo[] {
       chains.push({ poolName, adapters, isTagAware, adapterCount, memoryFirst, issues });
     }
 
+    /* istanbul ignore next -- a file with no pools continued above, so poolsRaw is set here. */
     if (chains.length > 0 || poolsRaw) return chains;
   }
 

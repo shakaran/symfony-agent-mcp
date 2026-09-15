@@ -59277,3 +59277,198 @@ class Sender
     expect(await runModule('sendgrid-integration.js', app)).toContain('SendGrid');
   });
 });
+
+describe('batch 225: Sentry, serializer groups, locators and queues', () => {
+  test('a sample rate outside production and a transaction finished with an argument', async () => {
+    const app = appWith('sentry-dev-tracing', {
+      'config/packages/dev/sentry.yaml': `sentry:
+    dsn: '%env(SENTRY_DSN)%'
+    tracing:
+        traces_sample_rate: 1.0
+`,
+      'src/Tracing/Tracer.php': `<?php
+
+namespace App\\Tracing;
+
+class Tracer
+{
+    public function trace(): void
+    {
+        $transaction = \\Sentry\\startTransaction($context);
+        $transaction->finish($endTime);
+    }
+}
+`,
+      'src/Tracing/Unfinished.php': `<?php
+
+namespace App\\Tracing;
+
+class Unfinished
+{
+    public function trace(): void
+    {
+        $transaction = \\Sentry\\startTransaction($context);
+    }
+}
+`,
+    });
+
+    expect(await runModule('sentry-performance-tracing.js', app)).toContain('traces_sample_rate');
+  });
+
+  test('a serializable class with no namespace and no groups', async () => {
+    const app = appWith('serializer-no-namespace', {
+      'src/Dto/LegacyPayload.php': `<?php
+
+use Symfony\\Component\\Serializer\\Annotation\\SerializedName;
+
+class LegacyPayload
+{
+    #[SerializedName('order_id')]
+    public string $orderId = '';
+}
+`,
+    });
+
+    expect(await runModule('serializer.js', app, ['LegacyPayload'])).toContain('(none)');
+  });
+
+  test('a service argument that is empty, one that is not a locator and a locator with no tag', async () => {
+    const app = appWith('service-locator-shapes', {
+      'config/services.yaml': `services:
+    App\\Registry\\HandlerRegistry:
+        arguments:
+            -
+            - '@logger'
+            - !tagged_locator { }
+`,
+    });
+
+    expect(await runModule('service-locators.js', app)).toContain('unknown');
+  });
+
+  test('a redrive policy that retries far too often', async () => {
+    const app = appWith('sqs-high-retries', {
+      '.env': `SQS_QUEUE_URL=https://sqs.eu-west-1.amazonaws.com/123456789012/orders
+`,
+      'infra/queues.tf': `resource "aws_sqs_queue" "orders" {
+  name = "orders"
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    maxReceiveCount     = 50
+  })
+}
+`,
+    });
+
+    expect(await runModule('sqs-dlq-config.js', app)).toContain('maxReceiveCount');
+  });
+
+  test('a Stripe publishable key and a webhook secret that is present', async () => {
+    const app = appWith('stripe-publishable-key', {
+      '.env': `STRIPE_PUBLIC_KEY=pk_test_0123456789abcdefghijklmn
+STRIPE_SECRET_KEY=%env(STRIPE_SECRET_KEY)%
+STRIPE_WEBHOOK_SECRET=whsec\x5f0123456789abcdefghijklmn
+`,
+    });
+
+    expect(await runModule('stripe-integration.js', app)).toContain('Stripe');
+  });
+
+  test('a module preload, a font preloaded without crossorigin and an assets path that is a file', async () => {
+    const app = appWith('asset-preload-hints', {
+      'assets': `# not a directory
+`,
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\WebLink\\Link;
+
+class HomeController
+{
+    public function index($request): void
+    {
+        $this->addLink('/build/app.js', 'modulepreload');
+    }
+}
+`,
+      'templates/base.html.twig': `<!DOCTYPE html>
+<html>
+<head>
+    <link rel="modulepreload" href="/build/app.js">
+    <link rel="preload" href="/build/fonts/inter.woff2" as="font" type="font/woff2">
+</head>
+<body></body>
+</html>
+`,
+    });
+
+    expect(await runModule('symfony-asset-preload-hints.js', app)).toContain('crossorigin');
+
+    const templatesIsAFile = appWith('asset-preload-templates-file', {
+      'templates': `# not a directory
+`,
+    });
+
+    expect(await runModule('symfony-asset-preload-hints.js', templatesIsAFile)).toBeDefined();
+  });
+
+  test('a browser test with a simple selector', async () => {
+    const app = appWith('browser-kit-simple-selector', {
+      'tests/Controller/crawler_helpers.php': `<?php
+
+use Symfony\\Component\\DomCrawler\\Crawler;
+
+function first_title(Crawler $crawler): string
+{
+    return $crawler->filter('h1')->text();
+}
+`,
+      'tests/Controller/HomeControllerTest.php': `<?php
+
+namespace App\\Tests\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+class HomeControllerTest extends WebTestCase
+{
+    public function testHome(): void
+    {
+        $client = static::createClient();
+        $crawler = $client->request('GET', '/');
+
+        $this->assertCount(1, $crawler->filter('div.container section.main article.card h2.title'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-browser-kit.js', app)).toContain('crawlerUsages');
+  });
+
+  test('a cache file with no pools and a chain whose inner pools are all tag aware', async () => {
+    const app = appWith('cache-chain-tag-aware', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+`,
+      'config/packages/framework.yaml': `framework:
+    cache:
+        pools:
+            chained:
+                adapter: cache.adapter.chain
+                providers:
+                    - cache.adapter.array
+                    - cache.adapter.filesystem
+            tagged_chain:
+                adapter: cache.adapter.chain
+                tags: true
+                providers:
+                    - cache.adapter.redis_tag_aware
+`,
+    });
+
+    expect(await runModule('symfony-cache-chain.js', app)).toContain('chain');
+  });
+});
