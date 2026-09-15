@@ -114,7 +114,9 @@ function parseAutowireAttrs(filePath: string, appPath: string): AutowireAttrUsag
       }
     }
     if (lines[i].includes('#[AutowireIterator')) {
-      const block = lines.slice(i, Math.min(i + 4, lines.length)).join('\n');
+      // The attribute line itself carries "Iterator", so reading it as part of
+      // the block meant the type hint was never actually checked.
+      const block = lines.slice(i + 1, Math.min(i + 4, lines.length)).join('\n');
       if (!block.includes('iterable') && !block.includes('array') && !block.includes('Iterator')) {
         issues.push('#[AutowireIterator] should type-hint iterable or array');
       }
