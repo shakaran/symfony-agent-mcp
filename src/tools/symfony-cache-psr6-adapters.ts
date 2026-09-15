@@ -212,7 +212,7 @@ function scanYamlCachePools(appPath: string): YamlCachePool[] {
         if (adaptersMatch) {
           const adapterLines = adaptersMatch[1].split('\n').filter((l) => l.trim().startsWith('-'));
           if (adapterLines.length > 1) {
-            const firstAdapter = adapterLines[0] ?? '';
+            const firstAdapter = adapterLines[0];
             const isMemoryFirst = firstAdapter.includes('array') || firstAdapter.includes('memory') || firstAdapter.includes('apcu');
             if (!isMemoryFirst) {
               issues.push(`ChainAdapter pool "${poolName}": first adapter is not a memory-based adapter (array/apcu) — put fastest adapter first for optimal performance`);

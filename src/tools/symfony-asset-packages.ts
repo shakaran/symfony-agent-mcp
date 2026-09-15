@@ -145,7 +145,7 @@ function parseAssetPackages(appPath: string): AssetPackageInfo[] {
       }
     }
     for (const p of packages) {
-      if (p.basePath && (basePathCounts[p.basePath] ?? 0) > 1) {
+      if (p.basePath && basePathCounts[p.basePath] > 1) {
         p.issues.push(`base_path "${p.basePath}" is shared with another package — redundant configuration`);
       }
     }

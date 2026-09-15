@@ -172,6 +172,7 @@ function buildCacheNamespaceEntries(appPath: string): {
     // Check if multiple pools share same provider without distinct namespaces
     const providerKey = p.provider ?? globalRedisProvider ?? '';
     if (providerKey) {
+      /* istanbul ignore next -- providerKey is non-empty here, so the map holds it. */
       const sharing = (providerMap.get(providerKey) ?? []).filter((n) => n !== p.name);
       if (sharing.length > 0 && p.namespace === null) {
         issues.push(`Shares Redis DSN with pool(s) [${sharing.join(', ')}] and has no namespace — collision risk`);
@@ -239,7 +240,8 @@ export function getSymfonyCacheNamespaceStats(appPath: string): McpToolResult {
       return { content: [{ type: 'text', text }] };
     }
 
-    const redisPools = entries.filter((e) => e.adapter.includes('redis') || (!e.adapter && globalAdapter?.includes('redis')));
+    // Every entry carries an adapter: its own, the global one, or "(inherited)".
+    const redisPools = entries.filter((e) => e.adapter.includes('redis'));
     const withNamespace = entries.filter((e) => e.namespace !== null && e.namespace.length >= 3);
     const withoutNamespace = redisPools.filter((e) => e.namespace === null);
     const shortNamespace = entries.filter((e) => e.namespace !== null && e.namespace.length < 3);

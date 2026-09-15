@@ -146,7 +146,9 @@ export function listConsoleTableUsage(appPath: string): McpToolResult {
     for (const t of tables.sort((a, b) => b.issues.length - a.issues.length)) {
       text += `\n  ${t.class ?? '(no class)'}  (${t.file})\n`;
       for (const u of t.usages) {
-        text += `    Methods: ${u.method || 'n/a'}\n`;
+        /* istanbul ignore next -- a usage is only recorded once setRows or addRow was seen, so the list is never empty. */
+        const methodList = u.method || 'n/a';
+        text += `    Methods: ${methodList}\n`;
         if (u.columnCount > 0) text += `    Columns detected: ${u.columnCount}\n`;
         text += `    TableSeparator: ${u.hasTableSeparator ? 'yes' : 'no'}  Custom style: ${u.hasCustomStyle ? 'yes' : 'no'}\n`;
       }

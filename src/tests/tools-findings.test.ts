@@ -54179,3 +54179,209 @@ class StripeWebhook
     expect(text).toContain('Stripe');
   });
 });
+
+describe('batch 203: assets, cache pools, extensions and form mappers', () => {
+  test('a version strategy by manifest and one by static class, with and without named packages', async () => {
+    const manifest = appWith('assets-manifest', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version_strategy: 'assets.json_manifest_version_strategy'
+`,
+    });
+
+    expect(await runModule('symfony-asset-packages.js', manifest)).toContain('json_manifest');
+
+    const staticVersion = appWith('assets-static', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version_strategy: 'App\\Asset\\StaticVersionStrategy'
+        packages:
+            legacy:
+                base_path: /legacy
+`,
+    });
+
+    expect(await runModule('symfony-asset-packages.js', staticVersion)).toContain('static');
+  });
+
+  test('a cache pool with no adapter of its own and no global adapter to inherit', async () => {
+    const app = appWith('cache-inherited', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            inherited.pool:
+                default_lifetime: 120
+`,
+    });
+
+    expect(await runModule('symfony-cache-namespace.js', app)).toContain('(inherited)');
+  });
+
+  test('a pool whose adapter key has no value, one with a namespace, and a chain of a single adapter', async () => {
+    const app = appWith('cache-psr6-pools', {
+      'config/packages/cache.yaml': `framework:
+  cache:
+    broken.pool:
+      adapter:
+    good.pool:
+      adapter: cache.adapter.filesystem
+      namespace: app_good
+    chain.pool:
+      adapter: cache.adapter.chain
+      adapters:
+        - cache.adapter.array
+`,
+    });
+
+    expect(await runModule('symfony-cache-psr6-adapters.js', app)).toContain('app_good');
+  });
+
+  test('an extension that prepends nothing, names itself in two words and reads its parameter from the environment', async () => {
+    const app = appWith('config-extension-env', {
+      'src/DependencyInjection/AcmeFooExtension.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+use Symfony\\Component\\DependencyInjection\\Extension\\Extension;
+use Symfony\\Component\\DependencyInjection\\Extension\\PrependExtensionInterface;
+
+class AcmeFooExtension extends Extension implements PrependExtensionInterface
+{
+    public function getAlias(): string { return 'acme_foo'; }
+
+    public function load(array $configs, ContainerBuilder $container): void
+    {
+        $container->setParameter('acme_foo.endpoint', '%env(ACME_ENDPOINT)%');
+    }
+}
+`,
+      'src/DependencyInjection/BareExtension.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\DependencyInjection\\ContainerBuilder;
+use Symfony\\Component\\DependencyInjection\\Extension\\Extension;
+
+class BareExtension extends Extension
+{
+    public function load(array $configs, ContainerBuilder $container): void {}
+}
+`,
+    });
+
+    expect(await runModule('symfony-config-extensions.js', app)).toContain('acme_foo');
+  });
+
+  test('a table built outside any class, with rowspan cells and no render call', async () => {
+    const app = appWith('console-table-loose', {
+      'src/Console/table_report.php': `<?php
+
+use Symfony\\Component\\Console\\Helper\\Table;
+use Symfony\\Component\\Console\\Helper\\TableCell;
+
+function render_totals(Table $table): void
+{
+    $table->setRows([[new TableCell('Total', ['rowspan' => 2])]]);
+}
+`,
+    });
+
+    expect(await runModule('symfony-console-table.js', app)).toContain('(no class)');
+  });
+
+  test('a web test without a class that follows six redirects', async () => {
+    const app = appWith('controller-test-loose', {
+      'tests/Controller/redirect_helpers.php': `<?php
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\WebTestCase;
+
+function testRedirectChain(): void
+{
+    $client = WebTestCase::createClient();
+    if ($client !== null) {
+        $client->request('GET', '/one');
+    }
+    $client->followRedirect();
+    $client->followRedirect();
+    $client->followRedirect();
+    $client->followRedirect();
+    $client->followRedirect();
+    $client->followRedirect();
+}
+`,
+    });
+
+    expect(await runModule('symfony-controller-test.js', app)).toContain('followRedirect');
+  });
+
+  test('an empty Enlightn config beside a valid one, and an example file with more keys than the local one', async () => {
+    const app = appWith('enlighten-keys', {
+      '.enlightn.php': '',
+      'config/enlightn.php': `<?php
+
+return [];
+`,
+      '.env.example': `APP_ONE=1
+APP_TWO=2
+APP_THREE=3
+APP_FOUR=4
+APP_FIVE=5
+APP_SIX=6
+APP_SEVEN=7
+APP_EIGHT=8
+APP_NINE=9
+APP_TEN=10
+APP_ELEVEN=11
+APP_TWELVE=12
+`,
+      '.env.local': `# nothing configured yet
+`,
+    });
+
+    expect(await runModule('symfony-enlighten-analysis.js', app)).toContain('more)');
+  });
+
+  test('an application where no Enlightn check passes', async () => {
+    const app = appWith('enlighten-nothing-passes', {
+      'public/.env': `APP_ENV=prod
+`,
+    });
+
+    const text = await runModule('symfony-enlighten-analysis.js', app);
+
+    expect(text).toContain('exposed');
+    expect(text).not.toContain('PASSED:');
+  });
+
+  test('a data mapper that checks for null and reads the submitted data, with form config that names no mapper', async () => {
+    const app = appWith('form-data-mapper-safe', {
+      'config/packages/framework.yaml': `framework:
+    form:
+        enabled: true
+`,
+      'src/Form/DataMapper/OrderMapper.php': `<?php
+
+namespace App\\Form\\DataMapper;
+
+use Symfony\\Component\\Form\\DataMapperInterface;
+
+class OrderMapper implements DataMapperInterface
+{
+    public function mapDataToForms($viewData, $forms): void
+    {
+        if ($viewData === null) return;
+        $forms->offsetGet('total')->setData($viewData->total);
+    }
+
+    public function mapFormsToData($forms, &$viewData)
+    {
+        $viewData->total = $forms->offsetGet('total')->getData();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-data-mapper.js', app)).toContain('null-safe');
+  });
+});

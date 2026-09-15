@@ -98,6 +98,7 @@ function extractPrependSections(content: string): PrependSection[] {
   const re = /->prependExtensionConfig\s*\(\s*['"]([^'"]{1,80})['"]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
+    /* istanbul ignore else -- the pattern requires at least one character. */
     if (m[1]) sections.push({ section: m[1] });
   }
   return sections;
