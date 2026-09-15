@@ -89,6 +89,7 @@ function extractListeners(content: string): FormEventListener[] {
   let m: RegExpExecArray | null;
   while ((m = addListenerRe.exec(content)) !== null) {
     const eventName = m[1];
+    /* istanbul ignore next -- the group is required by the pattern. */
     if (!eventName) continue;
 
     const callStr = m[0];
@@ -124,11 +125,13 @@ function extractSubscriberNames(content: string): string[] {
   const re = /->addEventSubscriber\(\s*new\s+(\w+)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
+    /* istanbul ignore else -- the group is required by the pattern. */
     if (m[1]) names.push(m[1]);
   }
   // Also match variable-based: ->addEventSubscriber($varName) — extract variable name
   const reVar = /->addEventSubscriber\(\s*(\$\w+)\s*\)/g;
   while ((m = reVar.exec(content)) !== null) {
+    /* istanbul ignore else -- the group is required by the pattern. */
     if (m[1]) names.push(m[1]);
   }
   return names;

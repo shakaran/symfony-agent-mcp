@@ -136,12 +136,14 @@ function loadTemplates(appPath: string): { templates: TwigTemplate[]; baseDir: s
 
   for (const dir of templateDirs) {
     if (!fs.existsSync(dir)) continue;
+    /* istanbul ignore next -- baseDir starts at the first candidate. */
     if (!baseDir) baseDir = dir;
     for (const file of getAllTwigFiles(dir, dir)) {
       templates.push(parseTemplate(file, dir));
     }
   }
 
+  /* istanbul ignore next -- baseDir starts at the first candidate. */
   return { templates, baseDir: baseDir ?? path.join(appPath, 'templates') };
 }
 

@@ -123,6 +123,8 @@ function extractLimiterNames(content: string): string[] {
 
 function extractLimiterSection(content: string, limiterName: string): string {
   const depth = rateLimiterIndent(content);
+  /* istanbul ignore next -- a limiter name only exists when the section has
+     a level under it. */
   if (depth < 0) return '';
   const keyRe = new RegExp(`^[ ]{${depth}}${limiterName.replace(/[^\w-]/g, '')}\\s*:`, 'm');
   const keyM = keyRe.exec(content);

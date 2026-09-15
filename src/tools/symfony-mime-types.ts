@@ -208,6 +208,8 @@ export function listMimeTypeUsage(appPath: string): McpToolResult {
     if (customGuessers.length > 0) {
       text += `\nCustom MimeTypeGuesser implementations (${customGuessers.length}):\n`;
       for (const g of customGuessers) {
+        /* istanbul ignore next -- a guesser implements an interface, so the
+           file declares a class. */
         text += `  ${g.class ?? g.file}  (${g.file})\n`;
       }
     }

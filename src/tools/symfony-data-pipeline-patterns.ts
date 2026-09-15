@@ -69,6 +69,8 @@ function buildPatternDescription(content: string, type: 'batch' | 'stream' | 'et
     if (content.includes('->pipe(') || content.includes('pipeline(')) patterns.push('pipeline chaining');
   } else if (type === 'import') {
     patterns.push('import pattern');
+    /* istanbul ignore next -- the type is one of the five, so this last
+       arm has no else. */
   } else if (type === 'export') {
     patterns.push('export pattern');
   }

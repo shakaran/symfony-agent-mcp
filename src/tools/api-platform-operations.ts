@@ -86,6 +86,8 @@ function getAllPhpFiles(dir: string): string[] {
 
 function parseOperationBlock(block: string): ApiOperation | null {
   const verbM = /^new\s+(Get|GetCollection|Post|Put|Patch|Delete)\b/.exec(block.trim());
+  /* istanbul ignore next -- the caller only passes blocks that start with
+     one of these verbs. */
   if (!verbM) return null;
   const verb = verbM[1] as OperationVerb;
 
@@ -132,6 +134,7 @@ function parseApiResource(filePath: string, appPath: string): ApiResourceInfo | 
     // Split on "new Verb(" boundaries
     for (const m of opsBlock.matchAll(/new\s+(Get|GetCollection|Post|Put|Patch|Delete)\s*\([^)]*\)/g)) {
       const op = parseOperationBlock(m[0]);
+      /* istanbul ignore else -- the block always starts with a verb here. */
       if (op) operations.push(op);
     }
   } else {

@@ -46821,3 +46821,472 @@ return RectorConfig::configure()
     expect(await runModule('rector-config.js', looseRequirement)).toContain('Sets applied');
   });
 });
+
+describe('batch 182: pipelines, form events, mime guesses and rate limits', () => {
+  test('ETL classes that name only two of the three steps, and one that chunks its work', async () => {
+    const app = appWith('pipeline-etl-shapes', {
+      'src/Pipeline/NoExtract.php': `<?php
+
+namespace App\\Pipeline;
+
+class NoExtract
+{
+    public function transform(array $rows): array
+    {
+        return $this->load($rows);
+    }
+
+    public function load(array $rows): void
+    {
+    }
+}
+`,
+      'src/Pipeline/NoTransform.php': `<?php
+
+namespace App\\Pipeline;
+
+class NoTransform
+{
+    public function extract(): array
+    {
+        return $this->load([]);
+    }
+
+    public function load(array $rows): void
+    {
+    }
+}
+`,
+      'src/Pipeline/NoLoad.php': `<?php
+
+namespace App\\Pipeline;
+
+class NoLoad
+{
+    public function extract(): array
+    {
+        return $this->transform([]);
+    }
+
+    public function transform(array $rows): array
+    {
+        return $this->pipe($rows)->pipe($rows);
+    }
+}
+`,
+      'src/Pipeline/Chunked.php': `<?php
+
+namespace App\\Pipeline;
+
+class Chunked
+{
+    public function extract(): iterable
+    {
+        return $this->transform(array_chunk($this->load(), 100));
+    }
+
+    public function transform(array $rows): array
+    {
+        return $rows;
+    }
+
+    public function load(): array
+    {
+        return [];
+    }
+}
+`,
+      'src/Pipeline/Accumulator.php': `<?php
+
+namespace App\\Pipeline;
+
+use App\\Batch\\BatchInterface;
+
+class Accumulator implements BatchInterface
+{
+    public function run(): void
+    {
+        $rows = [];
+        foreach ($this->source() as $row) {
+            $rows[] = $row;
+        }
+        $this->em->flush();
+    }
+}
+`,
+      'src/Pipeline/Exporter.php': `<?php
+
+namespace App\\Pipeline;
+
+class Exporter
+{
+    public function export(): string
+    {
+        return 'Export done';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-data-pipeline-patterns.js', app);
+
+    expect(text).toContain('NoExtract');
+  });
+
+  test('form listeners with a priority, a subscriber given both ways, and a type with neither', async () => {
+    const app = appWith('form-events-shapes', {
+      'src/Form/OrderType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\Form\\FormEvents;
+
+class OrderType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, [$this, 'onPreSetData'], 10);
+        $builder->addEventListener(FormEvents::POST_SUBMIT, [$this, 'onPostSubmit'], -5);
+        $builder->addEventSubscriber(new OrderSubscriber());
+        $builder->addEventSubscriber($this->subscriber);
+    }
+}
+`,
+      'src/Form/PlainType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class PlainType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('name');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-form-events.js', app);
+
+    expect(text).toContain('OrderType');
+  });
+
+  test('mime guesses with a null check and without one, next to a vendor namespace', async () => {
+    const app = appWith('mime-types-shapes', {
+      'src/Service/Uploads.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Mime\\MimeTypes;
+
+class Uploads
+{
+    public function checked($path): string
+    {
+        $mimeTypes = MimeTypes::getDefault();
+        $exts = $mimeTypes->getExtensions('image/png');
+        if (count($exts) > 0) {
+            return 'png';
+        }
+
+        $mimes = $mimeTypes->getMimeTypes('png');
+        if (empty($mimes)) {
+            return 'application/octet-stream';
+        }
+
+        return 'image/png';
+    }
+}
+`,
+      'src/Service/Unreadable.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Mime\\MimeTypes;
+
+class Unreadable
+{
+    public function extensions($mimeTypes): array
+    {
+        return $mimeTypes->getExtensions(
+            /* a call written over more than two hundred characters of comment, which is what
+               the bounded pattern for the argument list gives up on: ..........................
+               .......................................................................... */
+            $this->type
+        );
+    }
+
+    public function mimes($mimeTypes): array
+    {
+        return $mimeTypes->getMimeTypes(
+            /* the same again, so the argument list is longer than the pattern reads: ..........
+               ..........................................................................
+               .......................................................................... */
+            $this->extension
+        );
+    }
+}
+`,
+      'src/mime_helpers.php': `<?php
+
+// A file with no class in it at all.
+function guess_mime(string $path, $mimeTypes): string
+{
+    return $mimeTypes->guessMimeType($path);
+}
+`,
+      'src/Vendorish/MimeTypes.php': `<?php
+
+namespace Symfony\\Component\\Mime;
+
+class MimeTypes
+{
+    public function guessExtension(): string
+    {
+        return 'bin';
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-mime-types.js', app);
+
+    expect(text).toContain('Uploads');
+  });
+
+  test('notifier transports behind an env variable, in the open, and chained', async () => {
+    const app = appWith('notifier-status-shapes', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: '%env(SLACK_DSN)%'
+            telegram: 'telegram://TOKEN@default?channel=%40channel'
+        texter_transports:
+            twilio: 'twilio://SID:TOKEN@default?from=FROM'
+`,
+      'src/Notification/Sender.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\NotifierInterface;
+
+class Sender
+{
+    public function send($notification): void
+    {
+        $this->notifier->send($notification);
+    }
+}
+`,
+      'src/Notification/Chained.php': `<?php
+
+namespace App\\Notification;
+
+class Chained
+{
+    public function send($notification): void
+    {
+        // chained transports with a fallback channel
+        $this->notifier->send($notification);
+    }
+}
+`,
+      'src/Notification/Plain.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+
+class Plain extends Notification
+{
+    // one of the channels this notification goes out on
+    public function getChannels($recipient): string
+    {
+        return 'email';
+    }
+}
+`,
+      'src/Notification/LastLine.php': `<?php
+
+namespace App\\Notification;
+
+class LastLine
+{
+    public function go($notification): void
+    {
+        $this->notifier->send($notification);
+    }
+}`,
+    });
+
+    const text = await runModule('symfony-notifier-status.js', app);
+
+    expect(text).toContain('telegram');
+  });
+
+  test('rate limiters with a rate, with a plain limit, and with a key nobody knows', async () => {
+    const app = appWith('rate-limiter-shapes', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        anonymous_api:
+            policy: 'sliding_window'
+            limit: 100
+            interval: '60 minutes'
+        authenticated_api:
+            policy: 'token_bucket'
+            rate: { interval: '15 minutes', amount: 500 }
+            burst: 100
+            unknown_key: 'something'
+        no_limit_at_all:
+            policy: 'no_limit'
+`,
+    });
+
+    const odd = appWith('rate-limiter-odd', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        weird:
+            policy: 'quokka_window'
+            limit: 10
+`,
+    });
+    const flat = appWith('rate-limiter-flat', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        policy: 'fixed_window'
+`,
+    });
+    const emptySection = appWith('rate-limiter-empty', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+    cache:
+        pools: {}
+`,
+    });
+    const tabbed = appWith('rate-limiter-tabs', {
+      'config/packages/rate_limiter.yaml': 'framework:\n\trate_limiter:\n\t\tapi:\n\t\t\tpolicy: sliding_window\n\t\t\tlimit: 10\n',
+    });
+
+    const text = await runModule('symfony-rate-limiter-algorithms.js', app);
+
+    expect(await runModule('symfony-rate-limiter-algorithms.js', odd)).toContain('weird');
+    expect((await runModule('symfony-rate-limiter-algorithms.js', flat)).length).toBeGreaterThan(0);
+    expect((await runModule('symfony-rate-limiter-algorithms.js', emptySection)).length).toBeGreaterThan(0);
+    expect((await runModule('symfony-rate-limiter-algorithms.js', tabbed)).length).toBeGreaterThan(0);
+    expect(text).toContain('anonymous_api');
+  });
+
+  test('templates that repeat an include, a use and a macro, in two directories', async () => {
+    const app = appWith('twig-repeated-references', {
+      'templates/page.html.twig': `{% extends 'base.html.twig' %}
+{% use 'blocks.html.twig' %}
+{% use 'blocks.html.twig' %}
+{% import 'macros.html.twig' as macros %}
+
+{% block body %}
+    {% include 'partials/header.html.twig' %}
+    {% include 'partials/header.html.twig' %}
+    {% macro field(name) %}{{ name }}{% endmacro %}
+    {% macro field(name) %}{{ name }}{% endmacro %}
+    {{ loop.index }}
+    {{ app.user }}
+    {{ customer.name }}
+{% endblock %}
+`,
+      'templates/base.html.twig': '<html>{% block body %}{% endblock %}</html>\n',
+      'src/Resources/views/legacy.html.twig': '<p>{{ legacy }}</p>\n',
+      'templates/huge.html.twig': `{% block huge %}${'<p>filler</p>\n'.repeat(40000)}{% endblock %}\n`,
+    });
+    const noRoots = appWith('twig-no-roots', {
+      'templates/child.html.twig': `{% extends 'nowhere.html.twig' %}\n`,
+    });
+    const noTemplates = appWith('twig-no-templates', {});
+
+    const text = await runModule('twig.js', app, ['page.html.twig']);
+
+    expect(text).toContain('page.html.twig');
+    expect((await runModule('twig.js', noTemplates, ['page.html.twig'])).length).toBeGreaterThan(0);
+    expect((await runModule('twig.js', noRoots, ['child.html.twig'])).length).toBeGreaterThan(0);
+  });
+
+  test('OpenAPI security schemes of each kind, and one that names no connect URL', async () => {
+    const app = appWith('openapi-security-schemes', {
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    documentation:
+        components:
+            securitySchemes:
+                Bearer:
+                    type: http
+                    scheme: bearer
+                    bearerFormat: JWT
+                Basic:
+                    type: http
+                    scheme: basic
+                ApiKey:
+                    type: apiKey
+                    name: X-API-KEY
+                    in: header
+                OpenId:
+                    type: openIdConnect
+                OpenIdWithUrl:
+                    type: openIdConnect
+                    openIdConnectUrl: 'https://example.com/.well-known/openid-configuration'
+                OAuth:
+                    type: oauth2
+                    flows:
+                        implicit:
+                            authorizationUrl: 'https://example.com/authorize'
+                            scopes: {}
+                OAuthNoFlows:
+                    type: oauth2
+                HttpNoScheme:
+                    type: http
+                Nothing: {}
+`,
+    });
+
+    const unparseable = appWith('openapi-empty-config', {
+      'config/packages/nelmio_api_doc.yaml': '# nothing configured yet\n',
+    });
+
+    const text = await runModule('api-openapi-security-schemes.js', app);
+
+    expect((await runModule('api-openapi-security-schemes.js', unparseable)).length).toBeGreaterThan(0);
+    expect(text).toContain('Bearer');
+  });
+
+  test('API Platform operations including a delete with no security', async () => {
+    const app = appWith('api-platform-operations-shapes', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Delete;
+use ApiPlatform\\Metadata\\Get;
+use ApiPlatform\\Metadata\\GetCollection;
+
+#[ApiResource(
+    operations: [
+        new GetCollection(normalizationContext: self::LIST_GROUPS),
+        new Get(),
+        new Delete(),
+        new Delete(security: "is_granted('ROLE_ADMIN')")
+    ]
+)]
+class Invoice
+{
+}
+`,
+    });
+
+    const text = await runModule('api-platform-operations.js', app, ['Invoice']);
+
+    expect(text).toContain('Invoice');
+  });
+});

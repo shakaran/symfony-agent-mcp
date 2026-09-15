@@ -44,7 +44,9 @@ function buildNotifierStatusInfos(appPath: string): NotifierStatusInfo[] {
     const dsnRe = /^\s+\w[\w.]*\s*:\s*(.{4,300})$/gm;
     let dm: RegExpExecArray | null;
     while ((dm = dsnRe.exec(content)) !== null) {
-      const raw = dm[1].trim();
+      // The value keeps the quotes YAML wrote it with, and "'%env(X)%'"
+      // does not start with %env( : the quoted form was reported as hardcoded.
+      const raw = dm[1].trim().replace(/^['"]|['"]$/g, '');
       if (!raw.includes('://')) continue;
       const masked = raw.startsWith('%env(') ? raw : maskDsn(raw);
       const transportScheme = raw.split('://')[0].replace('%env(', '').toLowerCase();
