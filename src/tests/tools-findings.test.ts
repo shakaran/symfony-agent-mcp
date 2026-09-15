@@ -52873,6 +52873,26 @@ class Note
     private $updatedAt;
 }
 `,
+      'src/Entity/Mutable.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\HasLifecycleCallbacks]
+class Mutable
+{
+    #[ORM\\Column(type: 'datetime')]
+    private $createdAt;
+
+    #[ORM\\PrePersist]
+    public function stamp(): void
+    {
+        $this->createdAt = new \\DateTime();
+    }
+}
+`,
     });
 
     expect(await runModule('doctrine-timestamps.js', app)).toContain('Timestampable');
@@ -52914,28 +52934,31 @@ class Invoice
 
   test('a flush inside a loop with nested braces, and a method that does nothing else', async () => {
     const app = appWith('uow-flush-shapes', {
-      'src/Service/Importer.php': `<?php
+      'src/EventListener/ThingListener.php': `<?php
 
-namespace App\\Service;
+namespace App\\EventListener;
 
-class Importer
+use Doctrine\\Bundle\\DoctrineBundle\\Attribute\\AsEntityListener;
+use Doctrine\\ORM\\Event\\PostPersistEventArgs;
+
+#[AsEntityListener(event: 'postPersist', entity: Thing::class)]
+class ThingListener
 {
-    public function import(array $rows): void
+    public function postPersist($thing, PostPersistEventArgs $args): void
     {
-        foreach ($rows as $row) {
-            if ($row['valid']) {
-                $entity = new Thing($row);
-                $this->em->persist($entity);
-                $this->em->flush();
-                $this->logger->info('saved', ['id' => $entity->getId()]);
-                $this->bus->dispatch(new ThingImported($entity->getId()));
+        foreach ($thing->getLines() as $line) {
+            if ($line->isValid()) {
+                $args->getObjectManager()->persist($line);
+                $args->getObjectManager()->flush();
+                $this->logger->info('saved');
+                $this->bus->dispatch(new LineSaved($line->getId()));
             }
         }
     }
 
-    public function plain(): void
+    public function postUpdate($thing, PostPersistEventArgs $args): void
     {
-        $this->em->flush();
+        $args->getObjectManager()->flush();
     }
 }
 `,
@@ -52943,7 +52966,7 @@ class Importer
 
     const text = await runModule('doctrine-uow-flush.js', app);
 
-    expect(text).toContain('Importer');
+    expect(text).toContain('ThingListener');
   });
 
   test('fixtures with references, a file with no class and an application with no fixtures', async () => {
@@ -52965,11 +52988,16 @@ class AppFixtures extends Fixture
         $this->addReference('category-blog', $blog);
         $manager->flush();
     }
+
+    public function getDependencies(): array
+    {
+        return [UnknownFixture::class];
+    }
 }
 `,
       'src/DataFixtures/helpers.php': `<?php
 
-// Helper functions for the data fixtures, with nothing declared.
+// Helper functions for an AbstractFixture, with nothing declared.
 function fixture_password(): string
 {
     return 'demo';

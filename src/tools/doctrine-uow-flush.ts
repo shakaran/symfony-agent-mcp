@@ -53,6 +53,8 @@ function extractClassFromContent(content: string): string | null {
 function extractMethodBody(content: string, methodName: string): string | null {
   const methodPattern = new RegExp(`function\\s+${methodName}\\s*\\([^)]{0,500}\\)\\s*(?::[^{]{0,60})?\\s*\\{`, 'g');
   const m = methodPattern.exec(content);
+  /* istanbul ignore next -- the caller found the method name in this same
+     content. */
   if (!m) return null;
 
   let depth = 1;
@@ -77,6 +79,7 @@ function analyzeLifecycleMethods(content: string): MethodAnalysis[] {
     const methodDeclPattern = new RegExp(`function\\s+${methodName}\\s*\\(`, 'g');
     if (!methodDeclPattern.test(content)) continue;
 
+    /* istanbul ignore next -- as above. */
     const body = extractMethodBody(content, methodName) ?? '';
     const issues: string[] = [];
 

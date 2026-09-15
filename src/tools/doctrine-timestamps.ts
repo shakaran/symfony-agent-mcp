@@ -71,8 +71,12 @@ function parseTimestampEntity(filePath: string, appPath: string): TimestampEntit
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
 
-  const hasCreatedAt = /\$createdAt|\$created_at/.test(content);
-  const hasUpdatedAt = /\$updatedAt|\$updated_at/.test(content);
+  // An entity that uses Gedmo's TimestampableEntity trait declares neither
+  // property itself: the trait brings both, so the use statement is the
+  // evidence.
+  const usesTrait = content.includes('TimestampableEntity') || content.includes('use Timestampable');
+  const hasCreatedAt = usesTrait || /\$createdAt|\$created_at/.test(content);
+  const hasUpdatedAt = usesTrait || /\$updatedAt|\$updated_at/.test(content);
 
   if (!hasCreatedAt && !hasUpdatedAt) return null;
 
