@@ -52171,3 +52171,239 @@ class Timed
     expect(text).toContain('crowdin');
   });
 });
+
+describe('batch 196: embeds, validators, pipelines and tags', () => {
+  test('Twig embeds with and without a context, nested, and a block declared twice', async () => {
+    const app = appWith('twig-embed-shapes', {
+      'templates/page.html.twig': `{% embed 'blocks/card.html.twig' with {title: 'One'} %}
+    {% block body %}One{% endblock %}
+{% endembed %}
+
+{% embed 'blocks/card.html.twig' %}
+    {% block body %}Two{% endblock %}
+    {% embed 'blocks/inner.html.twig' %}
+        {% block body %}Nested{% endblock %}
+    {% endembed %}
+{% endembed %}
+`,
+      'templates/blocks/card.html.twig': `<div>{% block body %}{% endblock %}</div>
+`,
+      'templates/blocks/inner.html.twig': `<span>{% block body %}{% endblock %}</span>
+`,
+    });
+
+    const text = await runModule('symfony-twig-embed.js', app);
+
+    expect(text).toContain('embed');
+  });
+
+  test('validator auto mapping over a namespace, with more entities than the report prints', async () => {
+    const entities: Record<string, string> = {};
+    for (let i = 0; i < 24; i += 1) {
+      entities[`src/Entity/Auto${i}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Auto${i}
+{
+    #[ORM\\Column(length: 40)]
+    private string $name = '';
+}
+`;
+    }
+    for (let i = 0; i < 22; i += 1) {
+      entities[`src/Entity/Explicit${i}.php`] = `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+#[ORM\\Entity]
+class Explicit${i}
+{
+    #[Assert\\NotBlank]
+    #[ORM\\Column(length: 40)]
+    private string $name = '';
+}
+`;
+    }
+    const app = appWith('validator-auto-mapping-shapes', {
+      ...entities,
+      'config/packages/validator.yaml': `framework:
+    validation:
+        auto_mapping:
+            'App\\Entity\\': []
+            'App\\Dto': ['strict']
+`,
+    });
+
+    const text = await runModule('symfony-validator-auto-mapping.js', app);
+
+    expect(text).toContain('auto');
+  });
+
+  test('expression constraints that are long, that touch dates, and that are simple', async () => {
+    const longExpression = 'this.getTotal() > 0 and this.getLines()|length > 0 and ' + 'this.isValid() and '.repeat(12) + 'true';
+    const app = appWith('validator-expression-shapes', {
+      'src/Dto/OrderInput.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\Validator\\Constraints as Assert;
+
+class OrderInput
+{
+    #[Assert\\Expression('${longExpression}')]
+    public $total;
+
+    #[Assert\\Expression('value > strtotime("now")')]
+    public $scheduledAt;
+
+    #[Assert\\Expression('value != null')]
+    public $reference;
+}
+`,
+    });
+
+    const text = await runModule('symfony-validator-expression.js', app);
+
+    expect(text).toContain('Expression');
+  });
+
+  test('templates with a button that has no text and headings that skip a level', async () => {
+    const app = appWith('accessibility-shapes', {
+      'templates/page.html.twig': `<h1>Title</h1>
+<h3>Skipped a level</h3>
+<button class="icon"></button>
+<button>Save</button>
+<img src="/logo.png">
+<a href="#" onclick="doThing()">click</a>
+`,
+    });
+
+    const text = await runModule('accessibility-audit.js', app);
+
+    expect(text).toContain('button');
+  });
+
+  test('an Algolia configuration with the admin key in the open and no faceting', async () => {
+    const app = appWith('algolia-shapes', {
+      'composer.json': JSON.stringify({ require: { 'algolia/search-bundle': '^4.0' } }, null, 2),
+      'config/packages/algolia_search.yaml': `algolia_search:
+    api_key: 'plaintext-admin-key'
+    application_id: 'APPID'
+    indices:
+        - name: products
+          class: App\\Entity\\Product
+`,
+      'src/Search/Indexer.php': `<?php
+
+namespace App\\Search;
+
+use Algolia\\AlgoliaSearch\\SearchClient;
+
+class Indexer
+{
+    public function index(SearchClient $client): void
+    {
+        $client->initIndex('products')->saveObjects([]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('algolia-integration.js', app);
+
+    expect(text).toContain('Algolia');
+  });
+
+  test('an ECS task definition with a secret in the environment and no health check', async () => {
+    const app = appWith('aws-ecs-shapes', {
+      'ecs/task-definition.json': JSON.stringify({
+        family: 'demo',
+        containerDefinitions: [
+          {
+            name: 'php',
+            image: 'demo/app:latest',
+            privileged: true,
+            environment: [
+              { name: 'APP_SECRET', value: 'hardcoded' },
+              { name: 'APP_ENV' },
+              { value: 'orphan' },
+            ],
+          },
+          {
+            image: 'demo/sidecar:1.0',
+            cpu: 256,
+            memory: 512,
+            healthCheck: { command: ['CMD-SHELL', 'true'] },
+          },
+        ],
+      }, null, 2),
+    });
+
+    const text = await runModule('aws-ecs-config.js', app);
+
+    expect(text).toContain('php');
+  });
+
+  test('an Azure pipeline with a job that has no name and no timeout', async () => {
+    const app = appWith('azure-pipelines-shapes', {
+      'azure-pipelines.yml': `trigger:
+  - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: Build
+    steps:
+      - script: composer install
+      - bash: vendor/bin/phpunit
+  - job:
+    steps:
+      - powershell: Write-Host "no name"
+`,
+    });
+
+    const text = await runModule('azure-pipelines-config.js', app);
+
+    expect(text).toContain('Build');
+  });
+
+  test('feature files with tags on scenarios, on features and with a skip comment', async () => {
+    const app = appWith('behat-tags-shapes', {
+      'features/checkout.feature': `@checkout @slow
+Feature: Checkout
+
+  @wip
+  Scenario: A user pays
+    Given I am on "/cart"
+
+  Scenario: A user leaves
+    Given I am on "/cart"
+`,
+      'features/skipped.feature': `# @skip this suite while the API is down
+@api
+Feature: API
+
+  @wip
+  Scenario: Call the API
+    Given I call "/api"
+`,
+      'behat.yml': `default:
+    suites:
+        default:
+            paths: ['%paths.base%/features']
+`,
+    });
+
+    const text = await runModule('behat-tags.js', app);
+
+    expect(text).toContain('wip');
+  });
+});
