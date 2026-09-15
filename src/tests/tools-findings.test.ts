@@ -53531,3 +53531,651 @@ class VendorLike
     expect(text).toContain('Types');
   });
 });
+
+describe('batch 201: threads, crypto, wrappers and coverage', () => {
+  test('parallel runtimes created inside and outside a try, and a future that is never resolved', async () => {
+    const app = appWith('parallel-extension-shapes', {
+      'src/Parallel/Worker.php': `<?php
+
+namespace App\\Parallel;
+
+use parallel\\Runtime;
+
+class Worker
+{
+    public function unguarded(): void
+    {
+        $runtime = new \\parallel\\Runtime();
+        $future = $runtime->run(function () { return 1; });
+    }
+
+    public function guarded(): void
+    {
+        try {
+            $runtime = new \\parallel\\Runtime();
+            \\parallel\\bootstrap($this->autoload);
+            $future = $runtime->run(function () { return 1; });
+            $future->value();
+        } catch (\\parallel\\Error $e) {
+            $this->logger->error($e->getMessage());
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-parallel-extension.js', app);
+
+    expect(text).toContain('parallel');
+  });
+
+  test('posix calls with and without a root check', async () => {
+    const app = appWith('posix-shapes', {
+      'src/System/Process.php': `<?php
+
+namespace App\\System;
+
+class Process
+{
+    public function drop(): void
+    {
+        posix_setuid(1000);
+        posix_setgid(1000);
+    }
+
+    public function dropSafely(): void
+    {
+        if (posix_geteuid() === 0) {
+            posix_setuid(1000);
+        }
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-posix-functions.js', app);
+
+    expect(text).toContain('posix');
+  });
+
+  test('sodium calls with a nonce that is too short, and mcrypt in a file that is not about crypto', async () => {
+    const app = appWith('sodium-shapes', {
+      'src/Crypto/Box.php': `<?php
+
+namespace App\\Crypto;
+
+class Box
+{
+    public function encrypt(string $message): string
+    {
+        $nonce = random_bytes(16);
+        $key = sodium_crypto_secretbox_keygen();
+
+        return sodium_crypto_secretbox($message, $nonce, $key);
+    }
+
+    public function decrypt(string $cipher): string
+    {
+        $nonce = random_bytes(24);
+
+        return sodium_crypto_secretbox_open($cipher, $nonce, $this->key);
+    }
+}
+`,
+      'src/Legacy/Compat.php': `<?php
+
+namespace App\\Legacy;
+
+class Compat
+{
+    public function transform(string $value): string
+    {
+        return mcrypt_create_iv(16);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-sodium-crypto.js', app);
+
+    expect(text).toContain('sodium');
+  });
+
+  test('a stream wrapper that implements only part of the interface', async () => {
+    const app = appWith('stream-wrapper-shapes', {
+      'src/Stream/MemoryWrapper.php': `<?php
+
+namespace App\\Stream;
+
+class MemoryWrapper
+{
+    public function stream_open($path, $mode, $options, &$opened): bool
+    {
+        return true;
+    }
+
+    public function stream_read($count): string
+    {
+        return '';
+    }
+
+    public function stream_eof(): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Stream/FullWrapper.php': `<?php
+
+namespace App\\Stream;
+
+class FullWrapper
+{
+    public function stream_open($path, $mode, $options, &$opened): bool
+    {
+        return true;
+    }
+
+    public function stream_read($count): string
+    {
+        return '';
+    }
+
+    public function stream_eof(): bool
+    {
+        return true;
+    }
+
+    public function stream_stat(): array
+    {
+        return [];
+    }
+
+    public function url_stat($path, $flags): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    const testsOnly = appWith('stream-wrapper-tests-only', {
+      'tests/Stream/TestWrapper.php': `<?php
+
+namespace App\\Tests\\Stream;
+
+class TestWrapper
+{
+    public function stream_open($path, $mode, $options, &$opened): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-stream-wrappers.js', app);
+
+    expect((await runModule('php-stream-wrappers.js', testsOnly)).length).toBeGreaterThan(0);
+    expect(text).toContain('Wrapper');
+  });
+
+  test('a trait conflict resolved with insteadof and one that also aliases', async () => {
+    const app = appWith('trait-conflict-shapes', {
+      'src/Model/Both.php': `<?php
+
+namespace App\\Model;
+
+class Both
+{
+    use LoggerTrait, FormatterTrait {
+        LoggerTrait::format insteadof FormatterTrait;
+    }
+}
+`,
+      'src/Model/Aliased.php': `<?php
+
+namespace App\\Model;
+
+class Aliased
+{
+    use LoggerTrait, FormatterTrait {
+        LoggerTrait::format insteadof FormatterTrait;
+        FormatterTrait::format as formatText;
+    }
+}
+`,
+      'src/Model/LoggerTrait.php': `<?php
+
+namespace App\\Model;
+
+trait LoggerTrait
+{
+    use FormatterTrait;
+
+    public function format(string $value): string
+    {
+        return $value;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-trait-conflicts.js', app);
+
+    expect(text).toContain('Trait');
+  });
+
+  test('a WeakMap indexed by a scalar, and SplObjectStorage used instead', async () => {
+    const app = appWith('weak-reference-shapes', {
+      'src/Cache/Registry.php': `<?php
+
+namespace App\\Cache;
+
+class Registry
+{
+    private \\WeakMap $entries;
+
+    public function set(object $key, $value): void
+    {
+        $this->entries[$key] = $value;
+        $this->entries['literal'] = $value;
+    }
+}
+`,
+      'src/Cache/Legacy.php': `<?php
+
+namespace App\\Cache;
+
+class Legacy
+{
+    private \\SplObjectStorage $storage;
+
+    public function attach(object $key): void
+    {
+        $this->storage->attach($key);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-weak-references.js', app);
+
+    expect(text).toContain('Weak');
+  });
+
+  test('a phpstan configuration with a stub and a bootstrap file that are not there', async () => {
+    const app = appWith('phpstan-custom-rules-shapes', {
+      'phpstan.neon': `parameters:
+    level: 8
+    stubFiles:
+        - stubs/Missing.stub
+        - /absolute/stubs/Other.stub
+    bootstrapFiles:
+        - tests/bootstrap.php
+    paths:
+        - src
+services:
+    -
+        class: App\\PHPStan\\NoEchoRule
+        tags: [phpstan.rules.rule]
+`,
+      'src/PHPStan/NoEchoRule.php': `<?php
+
+namespace App\\PHPStan;
+
+use PHPStan\\Rules\\Rule;
+
+class NoEchoRule implements Rule
+{
+    public function getNodeType(): string
+    {
+        return Echo_::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpstan-custom-rules.js', app);
+
+    expect(text).toContain('Rule');
+  });
+
+  test('coverage configured with pcov, with xdebug and with neither', async () => {
+    const pcov = appWith('coverage-pcov', {
+      'phpunit.xml.dist': `<?xml version="1.0"?>
+<phpunit>
+    <coverage pathCoverage="false">
+        <report>
+            <html outputDirectory="var/coverage"/>
+            <cobertura outputFile="var/cobertura.xml"/>
+        </report>
+    </coverage>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+    <php>
+        <ini name="pcov.enabled" value="1"/>
+    </php>
+</phpunit>
+`,
+    });
+    const xdebug = appWith('coverage-xdebug', {
+      'phpunit.xml.dist': `<?xml version="1.0"?>
+<phpunit>
+    <coverage>
+        <report>
+            <html outputDirectory="var/coverage"/>
+        </report>
+    </coverage>
+    <php>
+        <env name="XDEBUG_MODE" value="coverage"/>
+    </php>
+</phpunit>
+`,
+    });
+
+    expect(await runModule('phpunit-coverage-config.js', pcov)).toContain('pcov');
+    const plain = appWith('coverage-plain', {
+      'phpunit.xml.dist': `<?xml version="1.0"?>
+<phpunit>
+    <coverage>
+        <report>
+            <text outputFile="php://stdout"/>
+        </report>
+    </coverage>
+</phpunit>
+`,
+    });
+
+    expect(await runModule('phpunit-coverage-config.js', xdebug)).toContain('xdebug');
+    expect((await runModule('phpunit-coverage-config.js', plain)).length).toBeGreaterThan(0);
+  });
+});
+
+describe('batch 202: database tests, queues and payments', () => {
+  test('database tests with and without a group, and fixtures with no cleanup', async () => {
+    const app = appWith('phpunit-database-shapes', {
+      'tests/Functional/OrderRepositoryTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+class OrderRepositoryTest extends KernelTestCase
+{
+    public function testFindsOrders(): void
+    {
+        $this->loadFixtures([OrderFixtures::class]);
+        $orders = $this->repository->findAll();
+        self::assertCount(2, $orders);
+    }
+}
+`,
+      'tests/Functional/GroupedRepositoryTest.php': `<?php
+
+namespace App\\Tests\\Functional;
+
+use PHPUnit\\Framework\\Attributes\\Group;
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+#[Group('database')]
+class GroupedRepositoryTest extends KernelTestCase
+{
+    protected function setUp(): void
+    {
+        $this->connection->beginTransaction();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->connection->rollBack();
+    }
+
+    public function testFindsOrders(): void
+    {
+        self::assertTrue(true);
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-database.js', app);
+
+    expect(text).toContain('RepositoryTest');
+  });
+
+  test('a PHPUnit extension registered in XML and a legacy listener', async () => {
+    const app = appWith('phpunit-extensions-shapes', {
+      'phpunit.xml.dist': `<?xml version="1.0"?>
+<phpunit bootstrap="tests/bootstrap.php">
+    <extensions>
+        <bootstrap class="App\\Tests\\Extension\\ResetDatabase"/>
+    </extensions>
+    <listeners>
+        <listener class="App\\Tests\\Listener\\LegacyListener"/>
+    </listeners>
+</phpunit>
+`,
+      'tests/Extension/ResetDatabase.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Runner\\Extension\\Extension;
+
+class ResetDatabase implements Extension
+{
+}
+`,
+      'tests/Listener/LegacyListener.php': `<?php
+
+namespace App\\Tests\\Listener;
+
+use PHPUnit\\Framework\\TestListener;
+
+class LegacyListener implements TestListener
+{
+}
+`,
+    });
+
+    const text = await runModule('phpunit-extensions.js', app);
+
+    expect(text).toContain('Extension');
+  });
+
+  test('test groups repeated, a data provider named twice and a technical-debt group', async () => {
+    const app = appWith('phpunit-groups-shapes', {
+      'tests/Unit/GroupedTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+use PHPUnit\\Framework\\Attributes\\Group;
+use PHPUnit\\Framework\\TestCase;
+
+#[Group('slow')]
+#[Group('slow')]
+#[Group('skip')]
+class GroupedTest extends TestCase
+{
+    #[DataProvider('cases')]
+    #[Group('slow')]
+    public function testOne($value): void
+    {
+    }
+
+    #[DataProvider('cases')]
+    public function testTwo($value): void
+    {
+    }
+
+    public static function cases(): array
+    {
+        return [[1]];
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-groups.js', app);
+
+    expect(text).toContain('slow');
+  });
+
+  test('a RabbitMQ management call over plain HTTP with the password in the code', async () => {
+    const app = appWith('rabbitmq-management-shapes', {
+      'composer.json': JSON.stringify({ require: { 'php-amqplib/rabbitmq-bundle': '^2.0' } }, null, 2),
+      '.env': `RABBITMQ_MANAGEMENT_PASSWORD=plaintextpassword
+`,
+      'src/Queue/Management.php': `<?php
+
+namespace App\\Queue;
+
+class Management
+{
+    public function queues(): array
+    {
+        $url = 'http://rabbit.example.com:15672/api/queues';
+        $auth = base64_encode('admin:plaintextpassword');
+
+        return $this->client->request('GET', $url, ['headers' => ['Authorization' => 'Basic ' . $auth]]);
+    }
+
+    public function bindings(): array
+    {
+        return $this->client->request('GET', 'http://rabbit.example.com:15672/api/bindings/%2f');
+    }
+
+    public function policies(): array
+    {
+        return $this->client->request('GET', 'http://rabbit.example.com:15672/api/policies/%2f');
+    }
+}
+`,
+    });
+
+    const text = await runModule('rabbitmq-management-api.js', app);
+
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('a custom rector rule registered in the config and one that is not', async () => {
+    const app = appWith('rector-custom-rules-shapes', {
+      'rector.php': `<?php
+
+use App\\Rector\\RenameServiceRule;
+use Rector\\Config\\RectorConfig;
+
+return RectorConfig::configure()
+    ->withRules([RenameServiceRule::class]);
+`,
+      'src/Rector/RenameServiceRule.php': `<?php
+
+namespace App\\Rector;
+
+use PhpParser\\Node\\Stmt\\Class_;
+use Rector\\Rector\\AbstractRector;
+
+class RenameServiceRule extends AbstractRector
+{
+    public function getNodeTypes(): array
+    {
+        return [Class_::class];
+    }
+}
+`,
+      'src/Rector/OrphanRule.php': `<?php
+
+namespace App\\Rector;
+
+use PhpParser\\Node\\Expr\\MethodCall;
+use Rector\\Rector\\AbstractRector;
+
+class OrphanRule extends AbstractRector
+{
+    public function getNodeTypes(): array
+    {
+        return [MethodCall::class];
+    }
+}
+`,
+    });
+
+    const text = await runModule('rector-custom-rules.js', app);
+
+    expect(text).toContain('Rule');
+  });
+
+  test('SQS queues with a dead letter policy, a FIFO queue with no group id and a short visibility timeout', async () => {
+    const app = appWith('sqs-shapes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            orders:
+                dsn: '%env(SQS_ORDERS_DSN)%'
+                options:
+                    queue_name: orders.fifo
+                    visibility_timeout: 15
+                    MaxReceiveCount: 1
+            events:
+                dsn: '%env(SQS_EVENTS_DSN)%'
+                options:
+                    queue_name: events
+                    visibility_timeout: 60
+`,
+      'src/Queue/Publisher.php': `<?php
+
+namespace App\\Queue;
+
+use Aws\\Sqs\\SqsClient;
+
+class Publisher
+{
+    public function publish(SqsClient $sqs): void
+    {
+        $sqs->sendMessage([
+            'QueueUrl' => 'https://sqs.eu-west-1.amazonaws.com/123/orders.fifo',
+            'MessageBody' => 'x',
+            'VisibilityTimeout' => 15,
+            'MaxReceiveCount' => 1,
+        ]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('sqs-fifo-queues.js', app)).toContain('FIFO');
+    expect(await runModule('sqs-dlq-config.js', app)).toContain('queue');
+  });
+
+  test('a Stripe secret key for live and for test, and a webhook with no signature check', async () => {
+    const app = appWith('stripe-shapes', {
+      'composer.json': JSON.stringify({ require: { 'stripe/stripe-php': '^13.0' } }, null, 2),
+      '.env': `STRIPE_SECRET_KEY=sk\x5flive_abcdefghijklmnopqrstuvwx
+STRIPE_TEST_KEY=sk\x5ftest_abcdefghijklmnopqrstuvwx
+STRIPE_OTHER_KEY=sk_abcdefghijklmnopqrstuvwx
+`,
+      'src/Payment/StripeWebhook.php': `<?php
+
+namespace App\\Payment;
+
+class StripeWebhook
+{
+    public function handle($request): void
+    {
+        $event = json_decode($request->getContent(), true);
+        $this->process($event);
+    }
+}
+`,
+    });
+
+    const text = await runModule('stripe-integration.js', app);
+
+    expect(text).toContain('Stripe');
+  });
+});

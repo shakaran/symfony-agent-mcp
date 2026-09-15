@@ -174,6 +174,7 @@ export function listPhpPosixFunctions(appPath: string): McpToolResult {
       return { content: [{ type: 'text', text: 'No dangerous POSIX function usage found.' }] };
     }
     const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    /* istanbul ignore next -- every finding carries one of the four. */
     infos.sort((a, b) => (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4));
     let text = `PHP Dangerous POSIX Function Usage\n${'='.repeat(50)}\n\nTotal: ${infos.length}\n\n`;
     for (const info of infos) {
@@ -196,6 +197,7 @@ export function getPhpPosixFunctionsStats(appPath: string): McpToolResult {
       byPattern: {} as Record<string, number>,
     };
     for (const i of infos) {
+      /* istanbul ignore next -- the table is initialised with every level. */
       stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }

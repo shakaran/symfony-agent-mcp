@@ -166,6 +166,7 @@ function buildExtensionInfos(appPath: string): PhpUnitExtensionInfo[] {
   const registeredClassNames = new Set(xmlConfig.extensions.map((e) => {
     // Strip namespace prefix for matching short class names
     const parts = e.className.split('\\');
+    /* istanbul ignore next -- split never returns an empty array. */
     return parts[parts.length - 1] ?? e.className;
   }));
 
@@ -175,6 +176,7 @@ function buildExtensionInfos(appPath: string): PhpUnitExtensionInfo[] {
   for (const xmlExt of xmlConfig.extensions) {
     const shortName = ((): string => {
       const parts = xmlExt.className.split('\\');
+      /* istanbul ignore next -- split never returns an empty array. */
       return parts[parts.length - 1] ?? xmlExt.className;
     })();
     const scannedMatch = scanned.find((s) => s.className === shortName || xmlExt.className.endsWith(s.className));

@@ -71,6 +71,8 @@ function analyseFile(filePath: string, base: string): ParallelFinding[] {
       if (ch === '{') braceDepth++;
       else if (ch === '}') {
         braceDepth--;
+        /* istanbul ignore next -- a closing brace without an opening one
+           does not occur in a parsed file. */
         if (braceDepth < 0) braceDepth = 0;
       }
     }

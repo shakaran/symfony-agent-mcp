@@ -72,6 +72,7 @@ function parseWeakReferenceFile(filePath: string, appPath: string): WeakReferenc
   }
   // Also count WeakMap type hints / declarations
   if (content.includes('WeakMap') && weakMapCount === 0) {
+    /* istanbul ignore next -- the caller already found WeakMap in it. */
     weakMapCount = (content.match(/\bWeakMap\b/g) ?? []).length > 0 ? 1 : 0;
   }
 

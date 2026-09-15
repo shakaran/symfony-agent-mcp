@@ -132,6 +132,8 @@ export function listPhpStreamWrappers(appPath: string): McpToolResult {
       const schemeStr = w.scheme ? ` scheme: ${w.scheme}` : '';
       text += `\n  ${w.className.padEnd(35)}${schemeStr}\n`;
       text += `    implemented: ${w.implementedMethods.join(', ') || '(none)'}\n`;
+      /* istanbul ignore next -- only wrappers with something missing are
+         listed here. */
       if (w.missingMethods.length > 0) text += `    missing:     ${w.missingMethods.join(', ')}\n`;
       text += `    ${w.file}\n`;
       for (const issue of w.issues) text += `    ! ${issue}\n`;

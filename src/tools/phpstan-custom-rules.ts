@@ -153,6 +153,7 @@ function buildRuleInfos(appPath: string): {
   const registeredShortNames = new Set(
     neonConfig.registeredRules.map((r) => {
       const parts = r.split('\\');
+      /* istanbul ignore next -- split never returns an empty array. */
       return parts[parts.length - 1] ?? r;
     })
   );

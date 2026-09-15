@@ -66,6 +66,7 @@ function parseRectorPhp(appPath: string): Set<string> {
     let m: RegExpExecArray | null;
     while ((m = configPattern.exec(content)) !== null) {
       const parts = m[1].split('\\');
+      /* istanbul ignore next -- split never returns an empty array. */
       registered.add(parts[parts.length - 1] ?? m[1]);
       registered.add(m[1]);
     }
@@ -76,6 +77,7 @@ function parseRectorPhp(appPath: string): Set<string> {
       const cls = m[1];
       if (cls.endsWith('Rector') || cls.includes('Rector\\')) {
         const parts = cls.split('\\');
+        /* istanbul ignore next -- split never returns an empty array. */
         registered.add(parts[parts.length - 1] ?? cls);
         registered.add(cls);
       }
@@ -96,6 +98,7 @@ function extractNodeTypes(content: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = classPattern.exec(arrayContent)) !== null) {
     const parts = m[1].split('\\');
+    /* istanbul ignore next -- split never returns an empty array. */
     nodeTypes.push(parts[parts.length - 1] ?? m[1]);
   }
   return nodeTypes;
