@@ -43,7 +43,8 @@ function parseBundleConfig(filePath: string, appPath: string): BundleConfigInfo 
   const rootNodeM = /new TreeBuilder\s*\(\s*['"]([^'"]{1,80})['"]\)/.exec(content);
   const rootNode = rootNodeM?.[1];
   const configNodes: string[] = [];
-  const nodeRe = /->children\(\)\s*(?:\n[^;]{0,500}?)?->(?:scalar|boolean|integer|float|array|enum|node|variableNode|arrayNode|scalarNode|booleanNode|integerNode)Node\s*\(\s*['"](\w{1,60})['"]\)/g;
+  // Anchoring on ->children() only ever matched the first node of a block.
+  const nodeRe = /->(?:scalar|boolean|integer|float|array|enum|variable)Node\s*\(\s*['"](\w{1,60})['"]\s*\)/g;
   let m: RegExpExecArray | null;
   while ((m = nodeRe.exec(content)) !== null) {
     if (!configNodes.includes(m[1])) configNodes.push(m[1]);
