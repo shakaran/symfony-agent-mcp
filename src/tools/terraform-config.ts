@@ -155,6 +155,7 @@ function buildTerraformConfigInfos(appPath: string): TerraformConfigInfo[] {
     if (!entry.endsWith('.tf')) continue;
     const fullPath = path.join(appPath, entry);
     const content = safeRead(fullPath, appPath);
+    /* istanbul ignore if -- the file came from a listing of this very directory. */
     if (content === null) continue;
     results.push(...parseTerraformFile(content, entry));
   }

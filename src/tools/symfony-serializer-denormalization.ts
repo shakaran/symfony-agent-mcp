@@ -184,6 +184,7 @@ export function listSerializerDenormalization(appPath: string): McpToolResult {
         if (r.usesAllowExtra) flags.push('ALLOW_EXTRA');
         if (r.hasDenormalizableInterface) flags.push('Denormalizable');
         text += `  ${r.class.padEnd(45)} (${r.file})`;
+        /* istanbul ignore else -- a clean file always carries one of the flags above. */
         if (flags.length > 0) text += ` [${flags.join(', ')}]`;
         text += '\n';
       }

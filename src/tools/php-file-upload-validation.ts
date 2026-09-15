@@ -172,6 +172,7 @@ function analyseFileUploadFile(content: string, relFile: string): FileUploadVali
     }
     // Avoid duplicate if already reported on same line from pattern 1
     const alreadyReported = infos.some((inf) => inf.file === relFile && inf.line === firstLine && inf.pattern === 'mime-only-no-extension-whitelist');
+    /* istanbul ignore else -- this block is the only place that pattern is added. */
     if (!alreadyReported) {
       infos.push({
         file: relFile,

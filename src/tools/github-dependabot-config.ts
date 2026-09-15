@@ -104,6 +104,7 @@ function buildGithubDependabotConfigInfos(appPath: string): DependabotConfigInfo
 export function listGithubDependabotConfig(appPath: string): McpToolResult {
   try {
     const infos = buildGithubDependabotConfigInfos(appPath);
+    /* istanbul ignore if -- the missing-configuration entry above is always added. */
     if (infos.length === 0) {
       return { content: [{ type: 'text', text: 'No Dependabot configuration found.' }] };
     }

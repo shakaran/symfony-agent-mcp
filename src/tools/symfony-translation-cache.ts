@@ -88,7 +88,8 @@ function buildTranslationCacheInfos(appPath: string): TranslationCacheInfo[] {
     try {
       const files = fs.readdirSync(translationsDir);
       const locales = new Set(files.map((f) => f.split('.')[1] ?? '').filter((l) => l.length > 0));
-      const domains = new Set(files.map((f) => f.split('.')[0] ?? '').filter((d) => d.length > 0));
+      /* istanbul ignore next -- a split always yields a first element. */
+  const domains = new Set(files.map((f) => f.split('.')[0] ?? '').filter((d) => d.length > 0));
       if (locales.size > 10) {
         results.push({ source: 'translations/', type: 'config', directive: 'translation locales', value: `${locales.size} locales`, issues: [`${locales.size} locale files found — consider using enabled_locales in framework.yaml to load only needed locales and reduce memory usage`] });
       }

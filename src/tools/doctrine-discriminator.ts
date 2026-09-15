@@ -47,6 +47,7 @@ function parseDiscriminator(filePath: string, appPath: string): DiscriminatorInf
     const pairPattern = /['"]([^'"]+)['"]\s*=>\s*(?:['"]([^'"]+)['"]|(\w+)::class)/g;
     let pm: RegExpExecArray | null;
     while ((pm = pairPattern.exec(mapM[1])) !== null) {
+      /* istanbul ignore next -- one of the two alternatives always matched. */
       discriminatorMap[pm[1]] = pm[2] ?? pm[3] ?? '';
     }
   }

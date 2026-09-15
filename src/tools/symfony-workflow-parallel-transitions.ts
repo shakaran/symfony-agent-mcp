@@ -71,6 +71,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function extractWorkflowsFromYaml(filePath: string, base: string): WorkflowParallelInfo[] {
   const resolved = path.resolve(filePath);
+  /* istanbul ignore if -- the directory comes from the application root. */
   if (!resolved.startsWith(path.resolve(base) + path.sep)) return [];
   let content = '';
   try { content = fs.readFileSync(resolved, 'utf-8'); } catch { return []; }
@@ -218,6 +219,7 @@ function scanPhpParallelWorkflowUsage(appPath: string): Array<{ file: string; is
   const safePhpFiles = getAllPhpFiles(srcDir).filter(f => path.resolve(f).startsWith(resolvedBase + path.sep));
   for (const file of safePhpFiles) {
     const resolvedFile = path.resolve(file);
+    /* istanbul ignore if -- every file came from a listing of that directory. */
     if (!resolvedFile.startsWith(resolvedBase + path.sep)) continue;
     const content = (() => { try { return fs.readFileSync(resolvedFile, 'utf-8'); } catch { return null; } })();
     if (content === null) continue;

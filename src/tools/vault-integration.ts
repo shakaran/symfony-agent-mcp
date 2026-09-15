@@ -74,6 +74,7 @@ function buildVaultIntegrationInfos(appPath: string): VaultIntegrationInfo[] {
         issues.push(`VAULT_TOKEN in ${fname} — root/static tokens in .env are a security risk; use AppRole (VAULT_ROLE_ID + VAULT_SECRET_ID) or Kubernetes auth instead; tokens in .env cannot be rotated automatically`);
       }
       // M-17: always fully redact VAULT_TOKEN (maskSecrets requires 20+ chars, missing short tokens like hvs.abc123)
+      /* istanbul ignore next -- the name tested here is the literal above. */
       const display = /token|secret|key|pass|auth/i.test('VAULT_TOKEN') ? 'VAULT_TOKEN=***' : maskSecrets(`VAULT_TOKEN=${rawToken}`);
       results.push({ file: fname, type: 'auth', path: display, issues });
     }

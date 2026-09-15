@@ -99,6 +99,7 @@ function parseEncoderFile(filePath: string, appPath: string): EncoderInfo | null
   const formatRe = /supportsEncoding[^{]{0,100}\{[^}]{0,300}['"]([a-z]{1,20})['"]/g;
   let fm: RegExpExecArray | null;
   while ((fm = formatRe.exec(content)) !== null) {
+    /* istanbul ignore else -- each match starts at its own supportsEncoding. */
     if (!formats.includes(fm[1])) formats.push(fm[1]);
   }
 

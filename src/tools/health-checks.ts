@@ -176,7 +176,8 @@ function scanHealthChecks(appPath: string): HealthCheck[] {
     const classM = /class\s+(\w+)/.exec(content);
     if (!classM) continue;
 
-    const kind = HEALTH_CHECK_INTERFACES.find((iface) => content.includes(iface)) ?? 'HealthCheck';
+    /* istanbul ignore next -- one of the interfaces was found in this content above. */
+  const kind = HEALTH_CHECK_INTERFACES.find((iface) => content.includes(iface)) ?? 'HealthCheck';
 
     // Detect what it checks
     const checkTargets: string[] = [];

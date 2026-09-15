@@ -64586,3 +64586,1942 @@ class ObjectNormalizer
     expect(await runModule('symfony-serializer-context.js', app)).toContain('groups');
   });
 });
+
+describe('batch 248: serializer details, Sonata and translations', () => {
+  test('a denormalizable class and one with nothing to flag', async () => {
+    const app = appWith('serializer-denormalizable-clean', {
+      'src/Serializer/OrderDenormalizer.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Normalizer\\DenormalizableInterface;
+use Symfony\\Component\\Serializer\\Normalizer\\DenormalizerInterface;
+
+class OrderDenormalizer implements DenormalizableInterface
+{
+    public function denormalize(DenormalizerInterface $denormalizer, array $data, ?string $format = null, array $context = []): void
+    {
+        $extra = array_diff_key($data, array_flip(['reference', 'total']));
+        if ([] !== $extra) {
+            throw new \\InvalidArgumentException('unknown keys');
+        }
+    }
+}
+`,
+      'src/Serializer/PlainDenormalizer.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Normalizer\\DenormalizerInterface;
+
+class PlainDenormalizer implements DenormalizerInterface
+{
+    public function denormalize(mixed $data, string $type, ?string $format = null, array $context = []): mixed
+    {
+        return null;
+    }
+
+    public function supportsDenormalization(mixed $data, string $type, ?string $format = null, array $context = []): bool
+    {
+        return false;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-denormalization.js', app)).toContain('Denormalizable');
+  });
+
+  test('a discriminator field clashing with a property, and a subclass left out of the map', async () => {
+    const app = appWith('serializer-discriminator-clash', {
+      'src/Model/Payment.php': `<?php
+
+namespace App\\Model;
+
+use Symfony\\Component\\Serializer\\Annotation\\DiscriminatorMap;
+
+#[DiscriminatorMap(typeProperty: 'kind', mapping: ['card' => CardPayment::class])]
+abstract class Payment
+{
+    protected string $kind = 'card';
+}
+`,
+      'src/Model/CardPayment.php': `<?php
+
+namespace App\\Model;
+
+class CardPayment extends Payment
+{
+}
+`,
+      'src/Model/TransferPayment.php': `<?php
+
+namespace App\\Model;
+
+class TransferPayment extends Payment
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-discriminator.js', app)).toContain('conflicts with existing property');
+  });
+
+  test('an encoder naming the same format twice, beside a vendored encoder', async () => {
+    const app = appWith('serializer-encoder-repeated-format', {
+      'src/Serializer/CsvEncoder.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Encoder\\EncoderInterface;
+
+class CsvEncoder implements EncoderInterface
+{
+    public function encode(mixed $data, string $format, array $context = []): string
+    {
+        return '';
+    }
+
+    public function supportsEncoding(string $format, array $context = []): bool
+    {
+        return 'csv' === $format || 'csv' === strtolower($format);
+    }
+}
+`,
+      'src/Vendor/JsonEncoder.php': `<?php
+
+namespace Symfony\\Component\\Serializer;
+
+use Symfony\\Component\\Serializer\\Encoder\\EncoderInterface;
+
+class JsonEncoder implements EncoderInterface
+{
+    public function encode(mixed $data, string $format, array $context = []): string
+    {
+        return '';
+    }
+
+    public function supportsEncoding(string $format, array $context = []): bool
+    {
+        return 'json' === $format;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-encoders.js', app)).toContain('CsvEncoder');
+  });
+
+  test('a MaxDepth annotation with the context key missing', async () => {
+    const app = appWith('serializer-max-depth-no-context', {
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Serializer\\Annotation\\MaxDepth;
+
+class Category
+{
+    #[MaxDepth(1)]
+    private $children;
+
+    #[MaxDepth(2)]
+    private $parent;
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-max-depth.js', app)).toContain('Category');
+  });
+
+  test('a custom name converter alongside the two that conflict', async () => {
+    const app = appWith('name-converter-custom-third', {
+      'config/services.yaml': `services:
+    serializer.name_converter.camel_case:
+        class: Symfony\\Component\\Serializer\\NameConverter\\CamelCaseToSnakeCaseNameConverter
+
+    serializer.name_converter.metadata_aware:
+        class: Symfony\\Component\\Serializer\\NameConverter\\MetadataAwareNameConverter
+
+    App\\Serializer\\PrefixNameConverter:
+        class: App\\Serializer\\PrefixNameConverter
+`,
+      'src/Serializer/PrefixNameConverter.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\NameConverter\\NameConverterInterface;
+
+class PrefixNameConverter implements NameConverterInterface
+{
+    public function normalize(string $propertyName): string
+    {
+        return 'app_' . $propertyName;
+    }
+
+    public function denormalize(string $propertyName): string
+    {
+        return substr($propertyName, 4);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-name-converter.js', app)).toContain('NameConverter');
+  });
+
+  test('a Sonata admin naming its entity with a string, beside a vendored admin', async () => {
+    const app = appWith('sonata-admin-string-entity', {
+      'src/Admin/OrderAdmin.php': `<?php
+
+namespace App\\Admin;
+
+use Sonata\\AdminBundle\\Admin\\AbstractAdmin;
+use Sonata\\AdminBundle\\Form\\FormMapper;
+
+class OrderAdmin extends AbstractAdmin
+{
+    public function getEntityFqcn(): string
+    {
+        return 'App\\\\Entity\\\\Order';
+    }
+
+    protected function configureFormFields(FormMapper $form): void
+    {
+        $form->add('reference');
+    }
+}
+`,
+      'src/Vendor/CoreAdmin.php': `<?php
+
+namespace Sonata\\AdminBundle\\Admin;
+
+class CoreAdmin extends AbstractAdmin
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-sonata-admin.js', app)).toContain('OrderAdmin');
+  });
+
+  test('an application with more translation domains than the inspector expects', async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 22; i++) {
+      files[`translations/domain${i}.en.yaml`] = `key${i}: 'value ${i}'\n`;
+    }
+    const app = appWith('translation-cache-many-domains', files);
+
+    expect(await runModule('symfony-translation-cache.js', app)).toContain('domains');
+  });
+
+  test('two firewalls sharing one user checker, next to an empty firewall', async () => {
+    const app = appWith('user-checker-shared', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        empty:
+        main:
+            user_checker: App\\Security\\AccountChecker
+        api:
+            user_checker: App\\Security\\AccountChecker
+`,
+      'src/Security/AccountChecker.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Core\\User\\UserCheckerInterface;
+use Symfony\\Component\\Security\\Core\\User\\UserInterface;
+
+class AccountChecker implements UserCheckerInterface
+{
+    public function checkPreAuth(UserInterface $user): void
+    {
+    }
+
+    public function checkPostAuth(UserInterface $user): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-user-checker.js', app)).toContain('AccountChecker');
+  });
+});
+
+describe('batch 249: validators, webhooks, workflows and Turbo', () => {
+  test('a constraint mentioning the payload without declaring it', async () => {
+    const app = appWith('validator-payload-missing-property', {
+      'src/Validator/IsValidIban.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class IsValidIban extends Constraint
+{
+    public string $message = 'The IBAN is not valid; the payload carries the severity.';
+
+    public function getDefaultOption(): ?string
+    {
+        return 'message';
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-validator-payload.js', app)).toContain('IsValidIban');
+  });
+
+  test('a group sequence leaving out Default and a provider full of conditions', async () => {
+    const app = appWith('validator-sequence-without-default', {
+      'src/Entity/Registration.php': `<?php
+
+namespace App\\Entity;
+
+use Symfony\\Component\\Validator\\Constraints\\GroupSequence;
+use Symfony\\Component\\Validator\\GroupSequenceProviderInterface;
+
+class Registration implements GroupSequenceProviderInterface
+{
+    public function sequence(): GroupSequence
+    {
+        return new GroupSequence(['Basic', 'Strict']);
+    }
+
+    public function safeSequence(): GroupSequence
+    {
+        return new GroupSequence(['Default', 'Strict']);
+    }
+
+    public function getGroupSequence(): array
+    {
+        if ($this->isCompany()) return ['Company', 'Strict'];
+        if ($this->isMinor()) return ['Minor'];
+        if ($this->isForeign()) return ['Foreign'];
+        if ($this->isTrusted()) return ['Trusted'];
+
+        return ['Default'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-validator-sequence-provider.js', app)).toContain('Default');
+  });
+
+  test('an HMAC compared with equals, and a webhook secret left empty', async () => {
+    const app = appWith('webhook-security-direct-compare', {
+      'config/packages/webhook.yaml': `framework:
+    webhook:
+        routing:
+            stripe:
+                service: 'webhook.request_parser.stripe'
+                secret: ''
+`,
+      'src/Controller/WebhookController.php': `<?php
+
+namespace App\\Controller;
+
+class WebhookController
+{
+    public function handle(string $payload, string $signature): bool
+    {
+        $expected = hash_hmac('sha256', $payload, getenv('WEBHOOK_SECRET'));
+
+        return $expected === $signature;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-webhook-security.js', app)).toContain('hash_equals');
+  });
+
+  test('a Doctrine marking store in an application with no src directory', async () => {
+    const app = appWith('workflow-persistence-no-src', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        order:
+            type: state_machine
+            marking_store:
+                type: doctrine
+                service: doctrine.orm.entity_manager
+            supports:
+                - App\\Entity\\Order
+            initial_marking: draft
+            places: [draft, paid]
+            transitions:
+                pay:
+                    from: draft
+                    to: paid
+`,
+    });
+
+    expect(await runModule('symfony-workflow-persistence.js', app)).toContain('doctrine_marking_store');
+  });
+
+  test('a Terraform stack that already declares a backend', async () => {
+    const app = appWith('terraform-with-backend', {
+      'infra/main.tf': `terraform {
+  required_version = ">= 1.5"
+
+  backend "s3" {
+    bucket = "app-tfstate"
+    key    = "prod/terraform.tfstate"
+    region = "eu-west-1"
+  }
+}
+
+resource "aws_s3_bucket" "uploads" {
+  bucket = "app-uploads"
+}
+`,
+    });
+
+    expect(await runModule('terraform-config.js', app)).toContain('TF files analyzed');
+  });
+
+  test('a translation file named without a locale', async () => {
+    const app = appWith('xliff-without-locale', {
+      'translations/messages.xlf': `<?xml version="1.0"?>
+<xliff version="1.2">
+    <file source-language="en" datatype="plaintext" original="app">
+        <body>
+            <trans-unit id="1">
+                <source>hello</source>
+                <target>hello</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
+`,
+    });
+
+    expect(await runModule('translation-xliff-format.js', app)).toContain('unknown');
+  });
+
+  test('a lazy Turbo frame repeated across two templates', async () => {
+    const app = appWith('turbo-lazy-repeated-frame', {
+      'templates/orders/index.html.twig': `<turbo-frame loading="lazy" id="order_list" src="/orders/list"></turbo-frame>
+`,
+      'templates/orders/show.html.twig': `<turbo-frame loading="lazy" id="order_list" src="/orders/list"></turbo-frame>
+`,
+    });
+
+    expect(await runModule('turbo-bundle.js', app)).toContain('lazy');
+  });
+
+  test('a workflow whose marking store is backed by Doctrine and a history entity', async () => {
+    const app = appWith('workflow-persistence-with-history', {
+      'config/packages/workflow.yaml': `framework:
+    workflows:
+        invoice:
+            type: workflow
+            marking_store:
+                type: doctrine
+                service: doctrine.orm.entity_manager
+            supports:
+                - App\\Entity\\Invoice
+            initial_marking: draft
+            places: [draft, sent]
+            transitions:
+                send:
+                    from: draft
+                    to: sent
+`,
+      'src/Entity/WorkflowHistory.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class WorkflowHistory
+{
+    #[ORM\\Column]
+    private string $transition = '';
+}
+`,
+    });
+
+    fs.symlinkSync(
+      path.join(app, 'src/Entity/WorkflowHistory.php'),
+      path.join(app, 'src/Entity/WorkflowHistoryAlias.php')
+    );
+
+    expect(await runModule('symfony-workflow-persistence.js', app)).toContain('DOCTRINE');
+  });
+});
+
+describe('batch 250: Twig forms, webhooks and front-end integrations', () => {
+  test('errors rendered before the widgets, and a loop with a prototype', async () => {
+    const app = appWith('twig-form-errors-before-widget', {
+      'templates/form/order.html.twig': `{{ form_start(form) }}
+    {{ form_errors(form) }}
+    {{ form_widget(form.reference) }}
+{{ form_end(form) }}
+`,
+      'templates/form/lines.html.twig': `{{ form_start(form) }}
+    <div data-prototype="{{ form_widget(form.lines.vars.prototype)|e('html_attr') }}">
+        {% for line in lines %}
+            {{ form_row(line) }}
+        {% endfor %}
+    </div>
+{{ form_end(form) }}
+`,
+    });
+
+    expect(await runModule('twig-form-rendering.js', app)).toContain('form_errors');
+  });
+
+  test('a template chain five levels deep and one with a great many blocks', async () => {
+    const files: Record<string, string> = {
+      'templates/base.html.twig': `{% block body %}{% endblock %}\n`,
+    };
+    for (let i = 1; i <= 5; i++) {
+      const parent = i === 1 ? 'base.html.twig' : `level${i - 1}.html.twig`;
+      files[`templates/level${i}.html.twig`] = `{% extends '${parent}' %}\n\n{% block body %}level ${i}{% endblock %}\n`;
+    }
+    const blocks: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      blocks.push(`{% block section${i} %}{% endblock %}`);
+    }
+    files['templates/dashboard.html.twig'] = `${blocks.join('\n')}\n`;
+    const app = appWith('twig-inheritance-deep-chain', files);
+
+    expect(await runModule('twig-template-inheritance.js', app)).toContain('Inheritance depth');
+  });
+
+  test('a Vault token read from the shell', async () => {
+    const app = appWith('vault-integration-env-token', {
+      '.env': `VAULT_ADDR=https://vault.internal:8200
+VAULT_TOKEN=\${VAULT_TOKEN}
+`,
+    });
+
+    expect(await runModule('vault-integration.js', app)).toContain('VAULT_TOKEN');
+  });
+
+  test('a request parser named after its provider and a consumer bound to an event', async () => {
+    const app = appWith('webhooks-provider-parser', {
+      'src/Webhook/StripeRequestParser.php': `<?php
+
+namespace App\\Webhook;
+
+use Symfony\\Component\\Webhook\\Client\\RequestParserInterface;
+
+class StripeRequestParser implements RequestParserInterface
+{
+    public function parse($request, string $secret): ?object
+    {
+        return null;
+    }
+}
+`,
+      'src/Webhook/InvoicePaidConsumer.php': `<?php
+
+namespace App\\Webhook;
+
+use Symfony\\Component\\RemoteEvent\\Attribute\\AsRemoteEventConsumer;
+use Symfony\\Component\\Webhook\\Client\\AsWebhookConsumer;
+
+#[AsWebhookConsumer(type: 'stripe')]
+class InvoicePaidConsumer
+{
+    public function consume($event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('webhooks.js', app)).toContain('Stripe');
+  });
+
+  test('an abstract service whose calls are written as plain strings', async () => {
+    const app = appWith('abstract-parent-string-calls', {
+      'config/services.yaml': `services:
+    app.abstract_handler:
+        abstract: true
+        calls: ['setLogger', 'setDispatcher']
+        properties:
+            timeout: 30
+
+    app.invoice_handler:
+        parent: app.abstract_handler
+        class: App\\Handler\\InvoiceHandler
+`,
+    });
+
+    expect(await runModule('abstract-parent-services.js', app)).toContain('app.abstract_handler');
+  });
+
+  test('a button whose only content is an icon', async () => {
+    const app = appWith('accessibility-icon-button', {
+      'templates/toolbar.html.twig': `<button class="btn" type="submit"><i class="fa fa-trash"></i></button>
+`,
+    });
+
+    expect(await runModule('accessibility-audit.js', app)).toContain('button');
+  });
+
+  test('an Alpine component initialised from a Twig expression', async () => {
+    const app = appWith('alpine-x-data-from-twig', {
+      'templates/catalog.html.twig': `<div x-data="{ items: {{ items|json_encode }} }">
+    <span x-show="items.length > 0">{{ items|length }}</span>
+</div>
+`,
+    });
+
+    expect(await runModule('alpine-js-integration.js', app)).toContain('x-data');
+  });
+
+  test('an Ansible task that ignores its own failures', async () => {
+    const app = appWith('ansible-ignore-errors', {
+      'ansible/deploy.yml': `---
+- name: Deploy the application
+  hosts: web
+  tasks:
+    - name: Warm the cache
+      command: php bin/console cache:warmup
+      ignore_errors: yes
+
+    - name: Restart php-fpm
+      service:
+        name: php-fpm
+        state: restarted
+      become: true
+`,
+    });
+
+    expect(await runModule('ansible-playbook-config.js', app)).toContain('ignore_errors');
+  });
+});
+
+describe('batch 251: API Platform, AWS and pipeline configuration', () => {
+  test('a pacts directory holding no contract', async () => {
+    const app = appWith('api-contract-empty-pacts', {
+      'pacts/README.md': `Contracts are published by the consumer build.
+`,
+    });
+
+    expect(await runModule('api-contract-testing.js', app)).toContain('contract');
+  });
+
+  test('a composer file that requires nothing', async () => {
+    const app = appWith('api-idempotency-no-require', {
+      'composer.json': JSON.stringify({ name: 'app/app', autoload: { 'psr-4': { 'App\\\\': 'src/' } } }, null, 2),
+      'src/Controller/PaymentController.php': `<?php
+
+namespace App\\Controller;
+
+class PaymentController
+{
+    public function pay($request): void
+    {
+        $key = $request->headers->get('Idempotency-Key');
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-idempotency.js', app)).toContain('Idempotency');
+  });
+
+  test('an API key store with no key identifier', async () => {
+    const app = appWith('api-key-rotation-no-versioning', {
+      'src/Security/ApiKeyAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+class ApiKeyAuthenticator
+{
+    public function supports($request): bool
+    {
+        return $request->headers->has('X-Api-Key');
+    }
+
+    public function authenticate($request): void
+    {
+        $apiKey = $request->headers->get('X-Api-Key');
+        $known = $this->repository->findOneBy(['key' => $apiKey]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-key-rotation.js', app)).toContain('versioning');
+  });
+
+  test('a resource paginated with a cursor', async () => {
+    const app = appWith('api-platform-cursor-pagination', {
+      'src/Entity/Feed.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(paginationViaCursor: [['field' => 'id', 'direction' => 'DESC']], paginationPartial: true)]
+class Feed
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('api-platform-pagination.js', app)).toContain('cursor');
+  });
+
+  test('an operation opened to everyone through its security expression', async () => {
+    const app = appWith('api-platform-public-operation', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+use ApiPlatform\\Metadata\\Delete;
+use ApiPlatform\\Metadata\\Get;
+use ApiPlatform\\Metadata\\Post;
+
+#[ApiResource(operations: [
+    new Get(security: "is_granted('PUBLIC_ACCESS')"),
+    new Post(security: "is_granted('ROLE_EDITOR')"),
+    new Delete(),
+])]
+class Article
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('api-platform-security.js', app)).toContain('public access');
+  });
+
+  test('a state processor whose instanceof check names a scalar', async () => {
+    const app = appWith('api-state-processor-scalar', {
+      'src/State/PayloadProcessor.php': `<?php
+
+namespace App\\State;
+
+use ApiPlatform\\State\\ProcessorInterface;
+
+class PayloadProcessor implements ProcessorInterface
+{
+    public function process(mixed $data, $operation, array $uriVariables = [], array $context = []): mixed
+    {
+        // Accepts anything that is instanceof array after normalisation.
+        if ($data instanceof \\ArrayObject) {
+            return $data;
+        }
+
+        return $data;
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-platform-state-processors.js', app)).toContain('PayloadProcessor');
+  });
+
+  test('a global configuration with denormalization groups only', async () => {
+    const app = appWith('api-platform-denormalization-only', {
+      'config/packages/api_platform.yaml': `api_platform:
+    title: 'App API'
+    defaults:
+        denormalization_context:
+            groups: ['write']
+`,
+      'src/Entity/Comment.php': `<?php
+
+namespace App\\Entity;
+
+use ApiPlatform\\Metadata\\ApiResource;
+
+#[ApiResource(denormalizationContext: ['groups' => ['comment:write']])]
+class Comment
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('api-platform.js', app)).toContain('Write (denormalization)');
+  });
+
+  test('an import map entry pointing at a bare package with no path', async () => {
+    const app = appWith('asset-mapper-local-without-path', {
+      'importmap.php': `<?php
+
+return [
+    './assets/app.js' => [
+        'version' => '1.0.0',
+    ],
+    'stimulus' => [
+        'version' => '3.2.2',
+        'url' => 'https://cdn.jsdelivr.net/npm/stimulus',
+    ],
+];
+`,
+    });
+
+    expect(await runModule('asset-mapper.js', app)).toContain('Local assets');
+  });
+
+  test('S3, Secrets Manager and Bugsnag credentials taken from the shell', async () => {
+    const app = appWith('aws-env-indirection', {
+      '.env': `AWS_SECRET_ACCESS_KEY=\${AWS_SECRET_ACCESS_KEY}
+AWS_ACCESS_KEY_ID=\${AWS_ACCESS_KEY_ID}
+AWS_SECRETS_MANAGER_SECRET=\${AWS_SECRETS_MANAGER_SECRET}
+BUGSNAG_API_KEY=\${BUGSNAG_API_KEY}
+`,
+      'config/packages/flysystem.yaml': `flysystem:
+    storages:
+        default.storage:
+            adapter: 'aws'
+            options:
+                bucket: 'app-uploads'
+`,
+    });
+
+    expect(await runModule('aws-s3-integration.js', app)).toContain('AWS');
+    expect(await runModule('aws-secrets-manager.js', app)).toContain('AWS');
+    expect(await runModule('bugsnag-integration.js', app)).toContain('BUGSNAG');
+  });
+
+  test('a Behat step whose pattern is far too long to compile', async () => {
+    const longPattern = 'the user sees :string '.repeat(12).trim();
+    const app = appWith('behat-step-very-long-pattern', {
+      'features/bootstrap/FeatureContext.php': `<?php
+
+use Behat\\Behat\\Context\\Context;
+
+class FeatureContext implements Context
+{
+    /**
+     * @Then ${longPattern}
+     */
+    public function theUserSees(): void
+    {
+    }
+}
+`,
+      'features/checkout.feature': `Feature: Checkout
+  Scenario: Pay
+    Then the user sees a receipt
+`,
+    });
+
+    expect(await runModule('behat-step-coverage.js', app)).toContain('step');
+  });
+
+  test('a Bitbucket pipeline with a literal password in a command', async () => {
+    const app = appWith('bitbucket-literal-password', {
+      'bitbucket-pipelines.yml': `image: php:8.3
+
+pipelines:
+    default:
+        - step:
+            name: Deploy
+            script:
+                - mysql --password=abc#12345 --host=db app < dump.sql
+`,
+    });
+
+    expect(await runModule('bitbucket-pipelines-config.js', app)).toContain('credential');
+  });
+
+  test('a bundle whose composer package carries no name', async () => {
+    const app = appWith('bundles-package-without-name', {
+      'config/bundles.php': `<?php
+
+return [
+    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => ['all' => true],
+    Acme\\ReportBundle\\AcmeReportBundle::class => ['all' => true],
+];
+`,
+      'composer.json': JSON.stringify({
+        require: { 'symfony/framework-bundle': '^7.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'vendor/composer/installed.json': JSON.stringify({
+        packages: [
+          { version: '1.0.0', autoload: { 'psr-4': { 'Acme\\\\ReportBundle\\\\': 'src/' } } },
+        ],
+      }, null, 2),
+    });
+
+    expect(await runModule('bundles.js', app)).toContain('AcmeReportBundle');
+  });
+
+  test('a cache warmer registered with a priority', async () => {
+    const app = appWith('cache-warmer-with-priority', {
+      'src/Cache/RouteWarmer.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AsTaggedItem;
+use Symfony\\Component\\HttpKernel\\CacheWarmer\\CacheWarmerInterface;
+
+#[AsTaggedItem(index: 'route', priority: 32)]
+class RouteWarmer implements CacheWarmerInterface
+{
+    public function isOptional(): bool
+    {
+        return true;
+    }
+
+    public function warmUp(string $cacheDir, ?string $buildDir = null): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('cache-warmers.js', app)).toContain('RouteWarmer');
+  });
+
+  test('logs shipped to a third party instead of CloudWatch', async () => {
+    const app = appWith('cloudwatch-sentry-instead', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        sentry:
+            type: sentry
+            level: error
+`,
+    });
+
+    expect(await runModule('cloudwatch-integration.js', app)).toContain('CloudWatch');
+  });
+
+  test('a Codeception suite with no test directory beside it', async () => {
+    const app = appWith('codeception-without-tests', {
+      'codeception.yml': `paths:
+    tests: tests
+    output: var/codeception
+suites:
+    api:
+        actor: ApiTester
+`,
+    });
+
+    expect(await runModule('codeception-config.js', app)).toContain('Codeception');
+  });
+});
+
+describe('batch 252: configuration, containers and Doctrine details', () => {
+  test('a per-environment directory holding no configuration file', async () => {
+    const app = appWith('config-empty-env-dir', {
+      'config/packages/prod/.gitkeep': '',
+      'config/packages/dev/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+`,
+    });
+
+    expect(await runModule('config.js', app)).toContain('dev');
+  });
+
+  test('a built-in tag used by two custom services', async () => {
+    const app = appWith('container-tags-two-services', {
+      'config/services.yaml': `services:
+    App\\EventListener\\FirstListener:
+        tags:
+            - { name: 'kernel.event_listener', event: 'kernel.request' }
+
+    App\\EventListener\\SecondListener:
+        tags:
+            - { name: 'kernel.event_listener', event: 'kernel.response' }
+`,
+    });
+
+    expect(await runModule('container-tags.js', app)).toContain('kernel.event_listener');
+  });
+
+  test('a vendored copy of the HttpFoundation cookie', async () => {
+    const app = appWith('cookie-security-vendored', {
+      'src/Vendor/Cookie.php': `<?php
+
+namespace Symfony\\Component\\HttpFoundation\\Session;
+
+class Cookie
+{
+    public static function create(string $name): self
+    {
+        return new Cookie($name);
+    }
+}
+`,
+      'src/Controller/SessionController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Cookie;
+
+class SessionController
+{
+    public function remember(): Cookie
+    {
+        return Cookie::create('remember_me')->withSecure(false);
+    }
+}
+`,
+    });
+
+    expect(await runModule('cookie-security.js', app)).toContain('Cookie');
+  });
+
+  test('a cron service declaring its command', async () => {
+    const app = appWith('cron-jobs-service-command', {
+      'docker-compose.yml': `services:
+  cron:
+    image: php:8.3-cli
+    command: php bin/console app:cleanup
+  php:
+    image: php:8.3-fpm
+`,
+    });
+
+    expect(await runModule('cron-jobs.js', app)).toContain('app:cleanup');
+  });
+
+  test('two services in a cycle reachable from both ends', async () => {
+    const app = appWith('dependency-graph-shared-cycle', {
+      'src/Service/Alpha.php': `<?php
+
+namespace App\\Service;
+
+class Alpha
+{
+    public function __construct(private Beta $beta)
+    {
+    }
+}
+`,
+      'src/Service/Beta.php': `<?php
+
+namespace App\\Service;
+
+class Beta
+{
+    public function __construct(private Gamma $gamma)
+    {
+    }
+}
+`,
+      'src/Service/Gamma.php': `<?php
+
+namespace App\\Service;
+
+class Gamma
+{
+    public function __construct(private Alpha $alpha)
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('dependency-graph.js', app)).toContain('Alpha');
+  });
+
+  test('a schema listener that writes through executeStatement', async () => {
+    const app = appWith('dbal-listener-execute-statement', {
+      'src/Doctrine/SchemaListener.php': `<?php
+
+namespace App\\Doctrine;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Attribute\\AsDoctrineListener;
+
+#[AsDoctrineListener(event: 'onSchemaCreateTable')]
+class SchemaListener
+{
+    public function onSchemaCreateTable($args): void
+    {
+        $connection = $args->getConnection();
+        $connection->executeStatement('CREATE INDEX idx_state ON orders (state)');
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-event-listeners.js', app)).toContain('SchemaListener');
+  });
+
+  test('an EXPLAIN query confined to the profiler', async () => {
+    const app = appWith('dbal-explain-in-profiler', {
+      'src/Profiler/QueryProfiler.php': `<?php
+
+namespace App\\Profiler;
+
+class QueryProfiler
+{
+    public function explain($connection, string $sql): array
+    {
+        return $connection->executeQuery('EXPLAIN ' . $sql)->fetchAllAssociative();
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-dbal-query-profiling.js', app)).toContain('EXPLAIN');
+  });
+
+  test('an entity detached from the manager', async () => {
+    const app = appWith('entity-state-detach', {
+      'src/Service/BatchImporter.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class BatchImporter
+{
+    public function __construct(private EntityManagerInterface $em)
+    {
+    }
+
+    public function import(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $entity = $this->em->getReference('App\\Entity\\Order', $row['id']);
+            $this->em->persist($entity);
+            $this->em->flush();
+            $this->em->detach($entity);
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-entity-state.js', app)).toContain('detach');
+  });
+
+  test('an entity that is only soft-deleted', async () => {
+    const app = appWith('doctrine-extensions-soft-delete', {
+      'composer.json': JSON.stringify({
+        require: { 'stof/doctrine-extensions-bundle': '^1.7' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Entity/Document.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+#[Gedmo\\SoftDeleteable(fieldName: 'deletedAt', timeAware: false)]
+class Document
+{
+    #[ORM\\Column(nullable: true)]
+    private ?\\DateTimeImmutable $deletedAt = null;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-extensions.js', app)).toContain('SoftDeleteable');
+  });
+
+  test('a fetch mode declared on the last line of a file', async () => {
+    const app = appWith('fetch-mode-at-end-of-file', {
+      'src/Entity/Fragment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Fragment
+{
+    private $owner;
+}
+
+#[ORM\\ManyToOne(targetEntity: Owner::class, fetch: 'EAGER')]
+`,
+    });
+
+    expect(await runModule('doctrine-fetch-modes.js', app)).toContain('EAGER');
+  });
+
+  test('a mapping directory written as a parameter', async () => {
+    const app = appWith('mapping-format-parameter-dir', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        mappings:
+            App:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Entity'
+                prefix: 'App\\Entity'
+`,
+      'src/Entity/Order.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Order
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-mapping-format.js', app)).toContain('attribute');
+  });
+
+  test('a migration file whose name carries no timestamp', async () => {
+    const app = appWith('migration-history-untimestamped', {
+      'migrations/Version20240101120000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20240101120000 extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('CREATE TABLE orders (id INT)');
+    }
+}
+`,
+      'migrations/VersionLegacy.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class VersionLegacy extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('CREATE TABLE legacy (id INT)');
+    }
+}
+`,
+      'migrations/VersionInitial.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class VersionInitial extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('CREATE TABLE settings (id INT)');
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-migration-history.js', app)).toContain('Version');
+  });
+
+  test('migrations organised by year', async () => {
+    const app = appWith('migrations-organised-by-year', {
+      'config/packages/doctrine_migrations.yaml': `doctrine_migrations:
+    migrations_paths:
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+    organize_migrations: 'year'
+`,
+    });
+
+    expect(await runModule('doctrine-migrations-config.js', app)).toContain('year');
+  });
+
+  test('a Doctrine filter with no enabled flag', async () => {
+    const app = appWith('orm-config-filter-without-enabled', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        filters:
+            tenant_filter:
+                class: App\\Doctrine\\Filter\\TenantFilter
+`,
+    });
+
+    expect(await runModule('doctrine-orm-config.js', app)).toContain('TenantFilter');
+  });
+
+  test('a profiling call inside a test', async () => {
+    const app = appWith('orm-profiling-in-test', {
+      'src/Tests/QueryCountTest.php': `<?php
+
+namespace App\\Tests;
+
+use PHPUnit\\Framework\\TestCase;
+
+class QueryCountTest extends TestCase
+{
+    public function testQueryCount(): void
+    {
+        $logger = $this->em->getConfiguration()->getSQLLogger();
+        $this->assertNotNull($logger);
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-orm-profiling.js', app)).toContain('profiling');
+  });
+
+  test('a paginator used in a file with no class', async () => {
+    const app = appWith('paginator-without-class', {
+      'src/export_orders.php': `<?php
+
+use Doctrine\\ORM\\Tools\\Pagination\\Paginator;
+
+$paginator = new Paginator($query, true);
+$paginator->getQuery()->setMaxResults(50);
+`,
+    });
+
+    expect(await runModule('doctrine-paginator.js', app)).toContain('(file)');
+  });
+
+  test('a repository implementing its own contract', async () => {
+    const app = appWith('repository-implements-interface', {
+      'src/Repository/OrderRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\Bundle\\DoctrineBundle\\Repository\\ServiceEntityRepository;
+
+class OrderRepository extends ServiceEntityRepository implements OrderRepositoryInterface
+{
+    public function findPaid(): array
+    {
+        return $this->createQueryBuilder('o')->getQuery()->getResult();
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-repository-patterns.js', app)).toContain('implements');
+  });
+});
+
+describe('batch 253: repositories, deployment files and headers', () => {
+  test('a repository query written outside a class', async () => {
+    const app = appWith('repository-queries-script', {
+      'src/report_query.php': `<?php
+
+// Ad-hoc queries that used to live in OrderRepository.
+$qb = $entityManager->createQueryBuilder()
+    ->select('o')
+    ->from('App\\Entity\\Order', 'o')
+    ->where('o.state = :state');
+
+$qb->getQuery()->getResult();
+`,
+    });
+
+    expect(await runModule('doctrine-repository-queries.js', app)).toContain('(file)');
+  });
+
+  test('second level cache enabled with no entity using it', async () => {
+    const app = appWith('second-level-cache-enabled-unused', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        second_level_cache:
+            enabled: true
+            regions:
+                default:
+                    lifetime: 3600
+`,
+      'src/Entity/Plain.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Plain
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('doctrine-second-level-cache.js', app)).toContain('enabled in config: yes');
+  });
+
+  test('an onClear listener that only resets its own state', async () => {
+    const app = appWith('uow-onclear-plain', {
+      'src/EventListener/UowListener.php': `<?php
+
+namespace App\\EventListener;
+
+class UowListener
+{
+    public function onClear($args): void
+    {
+        $this->pending = [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-uow-flush.js', app)).toContain('UowListener');
+  });
+
+  test('a coding standard configuration in an application with no composer file', async () => {
+    const app = appWith('ecs-without-composer', {
+      'ecs.php': `<?php
+
+use Symfony\\Component\\DependencyInjection\\Loader\\Configurator\\ContainerConfigurator;
+
+return static function (ContainerConfigurator $containerConfigurator): void {
+};
+`,
+    });
+    fs.rmSync(path.join(app, 'composer.json'));
+
+    expect(await runModule('easy-coding-standard.js', app)).toContain('ecs.php');
+  });
+
+  test('an Elasticsearch URL carrying credentials', async () => {
+    const app = appWith('elasticsearch-with-credentials', {
+      '.env': `ELASTICSEARCH_URL=https://elastic:hunter2@search.internal:9200
+`,
+    });
+
+    expect(await runModule('elasticsearch-mapping-config.js', app)).toContain('ELASTICSEARCH_URL');
+
+    const open = appWith('elasticsearch-without-credentials', {
+      '.env': `ELASTICSEARCH_URL=https://search.internal:9200
+`,
+    });
+    expect(await runModule('elasticsearch-mapping-config.js', open)).toContain('authentication');
+  });
+
+  test('an entity with no property at all', async () => {
+    const app = appWith('entities-without-properties', {
+      'src/Entity/Marker.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Marker
+{
+}
+`,
+    });
+
+    expect(await runModule('entities.js', app, ['Marker'])).toContain('Marker');
+  });
+
+  test('an error template for a status code the labels do not cover', async () => {
+    const app = appWith('error-pages-unusual-code', {
+      'templates/bundles/TwigBundle/Exception/error418.html.twig': `<h1>I am a teapot</h1>
+`,
+    });
+
+    expect(await runModule('error-pages.js', app)).toContain('418');
+  });
+
+  test('Firebase credentials pointing at a file that is there', async () => {
+    const app = appWith('firebase-present-credentials', {
+      '.env': `GOOGLE_APPLICATION_CREDENTIALS=config/firebase/service-account.json
+`,
+      'config/firebase/service-account.json': JSON.stringify({ type: 'service_account', project_id: 'app' }, null, 2),
+      'composer.json': JSON.stringify({
+        require: { 'kreait/firebase-php': '^7.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+
+    expect(await runModule('firebase-integration.js', app)).toContain('CREDENTIALS');
+  });
+
+  test('fixtures declared in a file outside any fixtures directory', async () => {
+    const app = appWith('fixtures-outside-directory', {
+      'src/Loader/OrderFixtures.php': `<?php
+
+namespace App\\Loader;
+
+use Doctrine\\Bundle\\FixturesBundle\\Fixture;
+use Doctrine\\Persistence\\ObjectManager;
+
+class OrderFixtures extends Fixture
+{
+    public function load(ObjectManager $manager): void
+    {
+        $manager->flush();
+    }
+}
+`,
+    });
+
+    expect(await runModule('fixtures.js', app)).toContain('not found');
+  });
+
+  test('a Fly.io service with a health check', async () => {
+    const app = appWith('fly-io-health-check', {
+      'fly.toml': `app = "symfony-app"
+primary_region = "mad"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.http_checks]]
+    interval = "10s"
+    path = "/health"
+`,
+    });
+
+    expect(await runModule('fly-io-config.js', app)).toContain('Fly.io');
+  });
+
+  test('a REST query parameter with an unbounded requirement', async () => {
+    const app = appWith('fos-rest-unbounded-requirement', {
+      'src/Controller/SearchController.php': `<?php
+
+namespace App\\Controller;
+
+use FOS\\RestBundle\\Controller\\Annotations as Rest;
+
+class SearchController
+{
+    #[Rest\\QueryParam(name: 'query', requirements: '.+', description: 'Free text')]
+    public function search($paramFetcher): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('fos-rest-bundle.js', app)).toContain('ReDoS');
+  });
+
+  test('a FrankenPHP site served on localhost', async () => {
+    const app = appWith('frankenphp-localhost', {
+      'Caddyfile': `localhost {
+    root * /app/public
+    php_server
+}
+`,
+    });
+
+    expect(await runModule('frankenphp-config.js', app)).toContain('FrankenPHP');
+  });
+
+  test('an application with no Dependabot configuration', async () => {
+    const app = appWith('dependabot-absent', {});
+
+    expect(await runModule('github-dependabot-config.js', app)).toContain('Dependabot');
+  });
+
+  test('a response listener that sets every security header', async () => {
+    const app = appWith('security-headers-complete', {
+      'src/EventListener/SecurityHeadersListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\HttpKernel\\Event\\ResponseEvent;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class SecurityHeadersListener
+{
+    public function onKernelResponse(ResponseEvent $event): void
+    {
+        $headers = $event->getResponse()->headers;
+        $headers->set('X-Content-Type-Options', 'nosniff');
+        $headers->set('X-Frame-Options', 'DENY');
+        $headers->set('Referrer-Policy', 'no-referrer');
+        $headers->set('Permissions-Policy', 'camera=()');
+        $headers->set('Strict-Transport-Security', 'max-age=31536000');
+        $headers->set('Cross-Origin-Opener-Policy', 'same-origin');
+        $headers->set('Cross-Origin-Resource-Policy', 'same-origin');
+    }
+
+    public static function getSubscribedEvents(): array
+    {
+        return [KernelEvents::RESPONSE => 'onKernelResponse'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('http-security-headers.js', app)).toContain('SecurityHeadersListener');
+  });
+
+  test('a handler bound to a named transport', async () => {
+    const app = appWith('messenger-handler-from-transport', {
+      'src/MessageHandler/ExportHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use App\\Message\\ExportRequested;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler(from_transport: 'async_export')]
+class ExportHandler
+{
+    public function __invoke(ExportRequested $message): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('messenger-handlers.js', app)).toContain('async_export');
+  });
+});
+
+describe('batch 254: monitoring agents and PHP code quality', () => {
+  test('a Monolog handler bound to no channel in particular', async () => {
+    const app = appWith('monolog-handler-without-channels', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            level: debug
+`,
+    });
+
+    expect(await runModule('monolog.js', app)).toContain('all');
+  });
+
+  test('a New Relic licence read from the environment', async () => {
+    const app = appWith('new-relic-env-licence', {
+      'docker/newrelic.ini': `extension=newrelic.so
+newrelic.license = \${NEW_RELIC_LICENSE_KEY}
+newrelic.appname = "App"
+`,
+    });
+
+    expect(await runModule('new-relic-integration.js', app)).toContain('newrelic');
+  });
+
+  test('an NGINX Unit application running as a low-privilege group', async () => {
+    const app = appWith('nginx-unit-low-privilege', {
+      'unit.json': JSON.stringify({
+        listeners: { '*:8080': { pass: 'applications/symfony' } },
+        applications: {
+          symfony: { type: 'php', root: '/app/public', user: 'app', group: 'app' },
+        },
+      }, null, 2),
+    });
+
+    expect(await runModule('nginx-unit-config.js', app)).toContain('group');
+  });
+
+  test('the OpenTelemetry contrib package', async () => {
+    const app = appWith('opentelemetry-contrib-package', {
+      'composer.json': JSON.stringify({
+        require: { 'opentelemetry-php/contrib-auto-symfony': '^1.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+
+    expect(await runModule('opentelemetry-config.js', app)).toContain('opentelemetry');
+  });
+
+  test('a Pest setup with nothing to report', async () => {
+    const app = appWith('pest-without-issues', {
+      'composer.json': JSON.stringify({
+        'require-dev': { 'pestphp/pest': '^2.34' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'pest.php': `<?php
+
+uses(Tests\\TestCase::class)->in('Feature');
+
+arch()->expect('App')->toUseStrictTypes();
+
+it('adds numbers', function () {
+    expect(1 + 1)->toBe(2);
+})->with([[1, 2]]);
+`,
+    });
+
+    expect(await runModule('pest-php-config.js', app)).toContain('Pest');
+  });
+
+  test('two methods where the more complex one comes second', async () => {
+    const app = appWith('cognitive-complexity-second-worse', {
+      'src/Service/Rules.php': `<?php
+
+namespace App\\Service;
+
+class Rules
+{
+    public function simple(int $a, int $b): int
+    {
+        if ($a > $b) {
+            if ($a > 10) {
+                return 1;
+            }
+            foreach (range(0, $a) as $i) {
+                if ($i % 2 === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    public function complicated(array $rows, int $limit): int
+    {
+        $total = 0;
+        foreach ($rows as $row) {
+            if ($row['active']) {
+                foreach ($row['lines'] as $line) {
+                    if ($line['qty'] > 0) {
+                        if ($line['price'] > $limit) {
+                            $total += $line['price'];
+                        } elseif ($line['price'] > 0) {
+                            $total += 1;
+                        }
+                    }
+                }
+            } elseif ($row['archived']) {
+                while ($total > $limit) {
+                    $total--;
+                    if ($total < 0) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $total;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-cognitive-complexity.js', app)).toContain('complicated');
+  });
+
+  test('a command built straight from user input and nothing else', async () => {
+    const app = appWith('command-injection-user-input-only', {
+      'src/Service/Archiver.php': `<?php
+
+namespace App\\Service;
+
+class Archiver
+{
+    public function archive(): void
+    {
+        exec('tar -czf backup.tgz ' . $_GET['path']);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-command-injection.js', app)).toContain('HIGH SEVERITY');
+  });
+
+  test('a namespace mapped to several directories', async () => {
+    const app = appWith('composer-autoload-multiple-paths', {
+      'composer.json': JSON.stringify({
+        autoload: { 'psr-4': { 'App\\\\': ['src/', 'lib/'] } },
+      }, null, 2),
+    });
+
+    expect(await runModule('php-composer-autoload-optimize.js', app)).toContain('src/, lib/');
+  });
+
+  test('a repeatable custom attribute', async () => {
+    const app = appWith('custom-attribute-repeatable', {
+      'src/Attribute/Tag.php': `<?php
+
+namespace App\\Attribute;
+
+#[\\Attribute(\\Attribute::TARGET_CLASS | \\Attribute::IS_REPEATABLE)]
+class Tag
+{
+    public function __construct(public readonly string $name)
+    {
+    }
+}
+`,
+      'src/Entity/Product.php': `<?php
+
+namespace App\\Entity;
+
+use App\\Attribute\\Tag;
+
+#[Tag('catalog')]
+#[Tag('public')]
+class Product
+{
+}
+`,
+    });
+
+    expect(await runModule('php-custom-attributes.js', app)).toContain('repeatable');
+  });
+
+  test('a DateTime built with an explicit timezone', async () => {
+    const app = appWith('date-time-with-timezone', {
+      'src/Service/Clock.php': `<?php
+
+namespace App\\Service;
+
+class Clock
+{
+    public function now(): \\DateTime
+    {
+        return new DateTime('now', new DateTimeZone('UTC'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-date-time.js', app)).toContain('DateTime');
+  });
+
+  test('a polyfill kept with no PHP constraint declared', async () => {
+    const app = appWith('polyfill-without-php-constraint', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/polyfill-php72': '^1.29' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'composer.lock': JSON.stringify({
+        packages: [{ name: 'symfony/polyfill-php72', version: 'v1.29.0' }],
+      }, null, 2),
+    });
+
+    expect(await runModule('php-deprecation-polyfills.js', app)).toContain('polyfill');
+  });
+
+  test('a catch block that logs what it caught', async () => {
+    const app = appWith('error-handling-logged-catch', {
+      'src/Service/Importer.php': `<?php
+
+namespace App\\Service;
+
+class Importer
+{
+    public function import(string $path): void
+    {
+        try {
+            $this->parse($path);
+        } catch (Throwable $e) {
+            $this->logger->error($e->getMessage());
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-error-handling.js', app)).toContain('No notable error handling patterns');
+  });
+
+  test('a service creating a great many fibers', async () => {
+    const creates: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      creates.push(`        $fiber${i} = new Fiber(function () { Fiber::suspend(); });\n        $fiber${i}->start();\n        $fiber${i}->resume();`);
+    }
+    const app = appWith('fibers-many-instances', {
+      'src/Service/FiberPool.php': `<?php
+
+namespace App\\Service;
+
+class FiberPool
+{
+    public function run(): void
+    {
+${creates.join('\n')}
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-fibers.js', app)).toContain('pooling');
+  });
+
+  test('an upload validated by MIME type only, reported once', async () => {
+    const app = appWith('file-upload-mime-only', {
+      'src/Controller/UploadController.php': `<?php
+
+namespace App\\Controller;
+
+class UploadController
+{
+    public function upload(): void
+    {
+        $mime = mime_content_type($_FILES['file']['tmp_name']);
+        if ('image/png' !== $mime) {
+            throw new \\RuntimeException('bad type');
+        }
+        move_uploaded_file($_FILES['file']['tmp_name'], '/var/uploads/' . $_FILES['file']['name']);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-file-upload-validation.js', app)).toContain('upload');
+  });
+
+  test('a value object offering wither methods', async () => {
+    const app = appWith('immutable-value-object-withers', {
+      'src/Dto/Range.php': `<?php
+
+namespace App\\Dto;
+
+final class Range
+{
+    public function __construct(
+        public readonly int $from,
+        public readonly int $to,
+    ) {
+    }
+
+    public function withFrom(int $from): self
+    {
+        return new self($from, $this->to);
+    }
+
+    public function withTo(int $to): self
+    {
+        return new self($this->from, $to);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-immutable-value-objects.js', app)).toContain('withers');
+  });
+
+  test('a static factory reaching for self instead of static', async () => {
+    const app = appWith('late-static-binding-self', {
+      'src/Model/Record.php': `<?php
+
+namespace App\\Model;
+
+class Record
+{
+    public static function create(array $data): self
+    {
+        $record = self::build($data);
+
+        return $record;
+    }
+
+    protected static function build(array $data): self
+    {
+        return new self();
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-late-static-binding.js', app)).toContain('static::');
+  });
+});

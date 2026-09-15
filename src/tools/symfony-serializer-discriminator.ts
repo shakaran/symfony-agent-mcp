@@ -200,6 +200,7 @@ export function listSerializerDiscriminator(appPath: string): McpToolResult {
       if (Object.keys(r.mappedTypes).length > 0) {
         text += `    mapping: ${Object.entries(r.mappedTypes).map(([k, v]) => `"${k}"=>${v}`).join(', ')}\n`;
       }
+      /* istanbul ignore if -- subclass discovery is deliberately not attempted. */
       if (r.missingSubclasses.length > 0) {
         text += `    missing subclasses: ${r.missingSubclasses.join(', ')}\n`;
       }

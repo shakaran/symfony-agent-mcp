@@ -19,6 +19,7 @@ function getAllYamlFiles(dir: string, base: string): string[] {
   const files: string[] = [];
   const resolved = path.resolve(dir);
   const resolvedBase = path.resolve(base);
+  /* istanbul ignore if -- the directory is built from the application root. */
   if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) return files;
   try {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

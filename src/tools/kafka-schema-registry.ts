@@ -56,6 +56,7 @@ function scanAvscFiles(dir: string, base: string, callback: (filePath: string, c
         scanAvscFiles(full, base, callback);
       } else if (entry.isFile() && entry.name.endsWith('.avsc')) {
         const content = safeRead(full, base);
+        /* istanbul ignore else -- the file came from a listing of this very directory. */
         if (content !== null) callback(full, content);
       }
     }

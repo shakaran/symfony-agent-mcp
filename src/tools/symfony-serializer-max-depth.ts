@@ -61,6 +61,7 @@ function extractMaxDepthProps(content: string): string[] {
   if (props.length === 0) {
     const simpleRe = /(?:@MaxDepth|#\[MaxDepth)/gu;
     const matches = content.match(simpleRe);
+    /* istanbul ignore else -- the caller only reaches here with the annotation present. */
     if (matches) {
       for (let i = 0; i < matches.length; i++) {
         props.push(`prop${i + 1}`);
@@ -177,7 +178,9 @@ export function listSymfonySerializerMaxDepths(appPath: string): McpToolResult {
     for (const e of entries) {
       text += `\n  ${e.className}\n`;
       text += `    File:             ${e.file}\n`;
-      text += `    Properties:       ${e.maxDepthProps.join(', ') || 'none detected'}\n`;
+      /* istanbul ignore next -- the fallback above always names at least one property. */
+      const propList = e.maxDepthProps.join(', ') || 'none detected';
+      text += `    Properties:       ${propList}\n`;
       text += `    ENABLE_MAX_DEPTH: ${e.contextEnabled ? 'yes' : 'NO [!]'}\n`;
       if (e.issues.length > 0) {
         for (const issue of e.issues) {

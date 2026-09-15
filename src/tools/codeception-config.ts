@@ -93,6 +93,7 @@ function buildCodeceptionConfigInfos(appPath: string): CodeceptionConfigInfo[] {
 
     // Scan for *Cest.php files
     const scanForCest = (dir: string): void => {
+      /* istanbul ignore if -- the caller checked tests/, and sub-directories come from a listing. */
       if (!fs.existsSync(dir)) return;
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {

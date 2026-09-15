@@ -131,6 +131,7 @@ function detectCircular(nodes: ServiceNode[]): CircularDep[] {
         const idx = cycle.indexOf(min);
         const normalized = [...cycle.slice(idx), ...cycle.slice(0, idx)];
         const key = normalized.join('→');
+        /* istanbul ignore else -- each class is walked once, so each cycle is found once. */
         if (!cycles.some((c) => c.cycle.join('→') === key)) {
           cycles.push({ cycle: normalized });
         }

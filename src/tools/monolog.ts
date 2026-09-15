@@ -209,6 +209,7 @@ export function listMonologConfig(appPath: string): McpToolResult {
       const icon = levelIcon(h.level ?? h.actionLevel);
       const level = (h.level ?? h.actionLevel ?? '-').padEnd(10);
       const type = (TYPE_LABELS[h.type] ?? h.type).padEnd(22);
+      /* istanbul ignore next -- the parser always records an array of channels. */
       const chans = (h.channels?.length ?? 0) > 0 ? h.channels!.join(', ') : 'all';
       text += `  ${h.name.padEnd(25)} ${type} ${icon}${level} ${chans}\n`;
       if (h.path) text += `    path: ${h.path}\n`;

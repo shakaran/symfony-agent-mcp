@@ -94,6 +94,7 @@ function analyzeFile(filePath: string, appPath: string): A11yFileResult | null {
     if (buttonM) {
       /* istanbul ignore next -- both groups are required by the pattern. */
       const attrs = buttonM[1] ?? '';
+      /* istanbul ignore next -- both groups are required by the pattern. */
       const inner = buttonM[2]?.trim() ?? '';
       const hasText = inner.length > 0 && !/<i\b|<span\b.*?icon|<svg\b/.test(inner);
       const hasAriaLabel = attrs.includes('aria-label') || attrs.includes('aria-labelledby');

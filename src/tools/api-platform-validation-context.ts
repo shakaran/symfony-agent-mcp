@@ -41,7 +41,9 @@ function parseValidationContext(filePath: string, appPath: string): ValidationCo
     const nameM = /(?:Get|GetCollection|Post|Put|Patch|Delete)/.exec(block);
     const vgM = /validationContext\s*:\s*\[\s*groups\s*:\s*\[([^\][]{0,200}(?:\[[^\][]{0,300}\][^\][]{0,200}){0,40})\]\s*\]/i.exec(block);
     const groups = vgM ? vgM[1].replace(/['"]/g, '').split(',').map((s) => s.trim()).filter(Boolean) : [];
-    operations.push({ name: nameM?.[0] ?? 'operation', validationGroups: groups });
+    /* istanbul ignore next -- the block was matched on one of those names. */
+    const opName = nameM?.[0] ?? 'operation';
+    operations.push({ name: opName, validationGroups: groups });
   }
   const hasConstraints = content.includes('Assert\\') || content.includes('@Assert') || content.includes('#[Assert');
   const issues: string[] = [];

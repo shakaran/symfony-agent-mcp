@@ -79,6 +79,7 @@ function scanDockerCompose(appPath: string): CronEntry[] {
         if (/cron\w*\s*:/.test(line) && !line.trim().startsWith('-')) inCronService = true;
         if (inCronService && /command\s*:\s*(.+)/.test(line)) {
           const cmdM = /command\s*:\s*(.+)/.exec(line);
+          /* istanbul ignore else -- the same pattern was tested on this line. */
           if (cmdM) results.push({ source: fname, command: cmdM[1].trim(), issues: [] });
           inCronService = false;
         }

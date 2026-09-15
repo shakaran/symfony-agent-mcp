@@ -218,6 +218,7 @@ export function getFixtureStats(appPath: string): McpToolResult {
     text += `With dependencies: ${withDeps}\n`;
     text += `With references:   ${withRefs}  (${totalRefs} total reference keys)\n`;
     text += `Avg lines/fixture: ${Math.round(fixtures.reduce((s, f) => s + f.lineCount, 0) / fixtures.length)}\n`;
+    /* istanbul ignore next -- a fixture was found, so the directory exists. */
     text += `Directory:         ${dir ? path.relative(appPath, dir) : 'not found'}\n`;
 
     if (allGroups.length > 0) {

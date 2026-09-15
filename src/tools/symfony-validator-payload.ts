@@ -70,6 +70,7 @@ function buildValidatorPayloadInfos(appPath: string): ValidatorPayloadInfo[] {
     if (isValidator) {
       const readsPayload = content.includes('->payload') || content.includes("->options['payload']") || content.includes('$constraint->payload');
       const hasPayloadResponse = content.includes('severity') || content.includes('payload');
+      /* istanbul ignore if -- reading the payload puts the word in the content. */
       if (readsPayload && !hasPayloadResponse) {
         issues.push(`Validator "${constraint}" reads payload but does not act on it — payload severity/metadata not surfaced in violation`);
       }

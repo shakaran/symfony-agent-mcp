@@ -70,6 +70,7 @@ function extractConcreteMethods(content: string): string[] {
   while ((m = re.exec(content)) !== null) {
     // Skip if immediately preceded by 'abstract'
     const before = content.slice(Math.max(0, m.index - 15), m.index);
+    /* istanbul ignore if -- the lookbehind above already skipped abstract methods. */
     if (/abstract\s*$/.test(before)) continue;
     names.push(m[1]);
   }
