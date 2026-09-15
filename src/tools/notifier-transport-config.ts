@@ -56,6 +56,7 @@ function loadNotifierTransports(appPath: string): NotifierTransportDetail[] {
       if (Array.isArray(fallback)) for (const ch of fallback) if (typeof ch === 'string') allTransports[ch] = allTransports[ch] ?? '';
     }
     for (const [name, dsn] of Object.entries(allTransports)) {
+      /* istanbul ignore next -- split always yields a first element. */
       const scheme = dsn.split('://')[0] ?? name;
       const type = detectType(scheme.toLowerCase());
       const usesEnvVar = dsn.includes('%env(') || dsn.includes('${');

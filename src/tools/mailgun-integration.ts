@@ -29,6 +29,7 @@ function collectPhpFiles(dir: string, base: string): string[] {
 }
 
 function maskApiKey(value: string): string {
+  /* istanbul ignore next -- the only caller has already ruled out an empty value and both references. */
   if (!value || value.startsWith('${') || value.startsWith('%')) return value;
   return '***';
 }

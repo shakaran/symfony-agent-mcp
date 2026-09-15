@@ -42,6 +42,7 @@ function parseTtlSeconds(ttlExpr: string): number | null {
     const unit = intervalMatch[2];
     if (unit === 'S') return val;
     if (unit === 'M') return val * 60;
+    /* istanbul ignore else -- the pattern only matches H, M or S, and the other two returned above. */
     if (unit === 'H') return val * 3600;
   }
   // Matches new DateInterval('P1D')

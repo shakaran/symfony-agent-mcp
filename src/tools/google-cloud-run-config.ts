@@ -16,6 +16,7 @@ interface CloudRunConfigInfo {
 function collectYamlFiles(dir: string, base: string): string[] {
   const files: string[] = [];
   const resolved = path.resolve(dir);
+  /* istanbul ignore next -- every directory walked here already lives under the application. */
   if (!resolved.startsWith(path.resolve(base) + path.sep) && resolved !== path.resolve(base)) return files;
   try {
     for (const entry of fs.readdirSync(resolved, { withFileTypes: true })) {

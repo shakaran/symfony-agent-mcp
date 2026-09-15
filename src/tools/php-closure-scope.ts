@@ -100,6 +100,7 @@ function parseClosureScope(filePath: string, appPath: string): ClosureScopeFile 
     issues.push(`${className}: Closure::bind()/bindTo() — verify scope compatibility with target class`);
   }
 
+  /* istanbul ignore next -- a file with no closures returned above. */
   if (closureCount === 0 && issues.length === 0) return null;
 
   return {

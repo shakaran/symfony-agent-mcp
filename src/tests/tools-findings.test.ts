@@ -55656,3 +55656,546 @@ class PlainType extends AbstractType
     expect(await runModule('forms.js', app)).toContain('PlainType');
   });
 });
+
+describe('batch 210: Heroku, HTTP clients, input DTOs and pipelines', () => {
+  test('a buildpack with neither url nor name, and a formation entry with no quantity or size', async () => {
+    const app = appWith('heroku-bare-entries', {
+      'app.json': JSON.stringify({
+        name: 'shop',
+        buildpacks: [{ note: 'set later' }],
+        formation: { web: {} },
+      }, null, 2),
+    });
+
+    expect(await runModule('heroku-config.js', app)).toContain('unknown');
+  });
+
+  test('an http_client whose options sit directly under it, with a scoped client whose basic auth is a bare token', async () => {
+    const app = appWith('http-client-flat-options', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        max_host_connections: 10
+        scoped_clients:
+            github.client:
+                base_uri: 'https://api.github.com'
+                auth_basic: 'bare-token'
+`,
+      'src/Service/GithubClient.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class GithubClient
+{
+    public function __construct(
+        #[Target('github.client')]
+        private HttpClientInterface $githubClient,
+    ) {
+    }
+
+    public function repos(): array
+    {
+        return $this->githubClient->request('GET', '/user/repos')->toArray();
+    }
+}
+`,
+    });
+
+    expect(await runModule('http-client.js', app)).toContain('github.client');
+  });
+
+  test('mapped request parameters with no type hint at all', async () => {
+    const app = appWith('input-dto-untyped', {
+      'src/Controller/SearchController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpKernel\\Attribute\\MapQueryString;
+
+class SearchController
+{
+    public function search(#[MapQueryString] $filters): array
+    {
+        return [$filters];
+    }
+}
+`,
+    });
+
+    expect(await runModule('input-dto.js', app)).toContain('MapQueryString');
+  });
+
+  test('a Jenkinsfile with a timeout, failure notifications and a stage that runs no shell step', async () => {
+    const app = appWith('jenkins-complete', {
+      'Jenkinsfile': `pipeline {
+  agent any
+  options {
+    timeout(time: 30, unit: 'MINUTES')
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+  }
+  post {
+    failure {
+      mail to: 'team@example.com', subject: 'Build failed'
+    }
+  }
+}
+`,
+    });
+
+    expect(await runModule('jenkins-config.js', app)).toContain('Checkout');
+  });
+
+  test('an encoder with no algorithm named, and an application with OAuth2 but no JWT', async () => {
+    const jwt = appWith('jwt-encoder-default', {
+      'config/packages/lexik_jwt_authentication.yaml': `lexik_jwt_authentication:
+    secret_key: '%env(resolve:JWT_SECRET_KEY)%'
+    public_key: '%env(resolve:JWT_PUBLIC_KEY)%'
+    encoder:
+        service: lexik_jwt_authentication.encoder.lcobucci
+    token_ttl: 3600
+`,
+    });
+
+    expect(await runModule('jwt-auth.js', jwt)).toContain('RS256');
+
+    const oauthOnly = appWith('oauth2-without-jwt', {
+      'config/packages/league_oauth2_server.yaml': `league_oauth2_server:
+    authorization_server:
+        enable_client_credentials_grant: true
+        access_token_ttl: PT1H
+`,
+    });
+
+    expect(await runModule('jwt-auth.js', oauthOnly)).toContain('OAuth2');
+  });
+
+  test('a promtail client whose URL carries credentials, and one that does not', async () => {
+    const withCreds = appWith('loki-credentials', {
+      'docker/promtail.yml': `clients:
+  - url: https://tenant:secret@loki.example.com/loki/api/v1/push
+`,
+    });
+
+    expect(await runModule('loki-log-config.js', withCreds)).toContain('credentials');
+
+    const clean = appWith('loki-plain-url', {
+      'docker/promtail.yml': `clients:
+  - url: https://loki.example.com/loki/api/v1/push
+scrape_configs:
+  - job_name: symfony
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+limits_config:
+  retention_period: 168h
+`,
+    });
+
+    const text = await runModule('loki-log-config.js', clean);
+
+    expect(text).toContain('promtail');
+    expect(text).not.toContain('Issues Summary');
+  });
+
+  test('a short Mailgun key and a DSN that names the European endpoint', async () => {
+    const app = appWith('mailgun-eu-endpoint', {
+      '.env': `MAILGUN_API_KEY=short
+MAILER_DSN=mailgun+api://KEY:DOMAIN@eu.api.mailgun.net
+`,
+    });
+
+    expect(await runModule('mailgun-integration.js', app)).toContain('Mailgun');
+  });
+
+  test('a channel declared in two files, a handler with no body and one whose channels are a single string', async () => {
+    const app = appWith('monolog-channel-shapes', {
+      'config/packages/monolog.yaml': `monolog:
+    channels: ['app']
+    handlers:
+        bare:
+        single:
+            type: stream
+            path: '%kernel.logs_dir%/single.log'
+            channels: app
+`,
+      'config/packages/prod/monolog.yaml': `monolog:
+    channels: ['app']
+    handlers:
+        prod_main:
+            type: rotating_file
+            path: '%kernel.logs_dir%/prod.log'
+            max_files: 30
+`,
+    });
+
+    expect(await runModule('monolog-channel-mapping.js', app)).toContain('app');
+  });
+});
+
+describe('batch 211: agents, web servers, notifier transports and cloud config', () => {
+  test('an empty New Relic ini, one disabled in a production path, and an application with only PHP calls', async () => {
+    const app = appWith('newrelic-ini-shapes', {
+      'conf.d/newrelic.ini': '',
+      'docker/newrelic-prod.ini': `[newrelic]
+newrelic.appname = "shop"
+newrelic.enabled = false
+`,
+    });
+
+    expect(await runModule('newrelic-php-agent.js', app)).toContain('production');
+
+    const phpOnly = appWith('newrelic-php-only', {
+      'src/Monitoring/Transactions.php': `<?php
+
+namespace App\\Monitoring;
+
+class Transactions
+{
+    public function name(string $name): void
+    {
+        newrelic_name_transaction($name);
+    }
+}
+`,
+    });
+
+    expect(await runModule('newrelic-php-agent.js', phpOnly)).toContain('newrelic_name_transaction');
+  });
+
+  test('an nginx that hides its version and a pool file whose settings are plain pairs', async () => {
+    const app = appWith('nginx-tokens-off', {
+      'docker/nginx/nginx.conf': `server {
+    listen 80;
+    server_tokens off;
+    client_max_body_size 8m;
+}
+`,
+      'docker/php/www.conf': `[www]
+pm = dynamic
+pm.max_children = 20
+`,
+    });
+
+    expect(await runModule('nginx-php-fpm.js', app)).toContain('client_max_body_size');
+  });
+
+  test('a notifier with an email transport and a channel policy given as a single string', async () => {
+    const app = appWith('notifier-email-transport', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        texter_transports:
+            gateway: '%env(SMS_DSN)%'
+        chatter_transports:
+            postbox: 'smtp://user:pass@mail.example.com'
+        channel_policy:
+            urgent: ['postbox', 'chat/other', ~]
+            low: 'chat/postbox'
+`,
+    });
+
+    expect(await runModule('notifier-transport-config.js', app)).toContain('postbox');
+  });
+
+  test('an OAuth2 server with a day-long access token, and an application with no src at all', async () => {
+    const app = appWith('oauth2-day-ttl', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-server': '^8.5' } }, null, 2),
+      'src/OAuth/ServerFactory.php': `<?php
+
+namespace App\\OAuth;
+
+use League\\OAuth2\\Server\\AuthorizationServer;
+
+class ServerFactory
+{
+    public function build(AuthorizationServer $server): void
+    {
+        $server->setAccessTokenTTL(new \\DateInterval('P1D'));
+    }
+}
+`,
+    });
+
+    expect(await runModule('oauth2-server-config.js', app)).toContain('P1D');
+
+    const bare = appWith('oauth2-no-src', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-server': '^8.5' } }, null, 2),
+    });
+
+    expect(await runModule('oauth2-server-config.js', bare)).toContain('OAuth2');
+  });
+
+  test('a GitHub token and an App private key that both resolve through the environment', async () => {
+    const app = appWith('github-env-secrets', {
+      '.env': `GITHUB_TOKEN=%env(GITHUB_TOKEN)%
+GITHUB_APP_PRIVATE_KEY=\${GITHUB_APP_PRIVATE_KEY}
+`,
+    });
+
+    expect(await runModule('github-api-integration.js', app)).toContain('GITHUB');
+  });
+
+  test('a pipeline that scans for vulnerabilities, publishes only build artifacts and triggers a downstream one', async () => {
+    const app = appWith('gitlab-scanned-pipeline', {
+      '.gitlab-ci.yml': `include:
+  - template: Security/SAST.gitlab-ci.yml
+
+build:
+  script:
+    - composer install
+  artifacts:
+    paths:
+      - build/
+      - public/bundles/
+
+downstream:
+  trigger:
+    project: group/other
+`,
+    });
+
+    expect(await runModule('gitlab-ci-config.js', app)).toContain('trigger');
+  });
+
+  test('an empty Cloud Run manifest beside a real one', async () => {
+    const app = appWith('cloudrun-empty-manifest', {
+      'deploy/cloudrun/empty.yaml': '',
+      'deploy/cloudrun/service.yaml': `apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: shop
+spec:
+  template:
+    spec:
+      containers:
+        - image: gcr.io/project/shop
+          resources:
+            limits:
+              memory: 512Mi
+`,
+    });
+
+    expect(await runModule('google-cloud-run-config.js', app)).toContain('shop');
+  });
+
+  test('a key file path taken from the environment, a signed URL beyond the seven-day limit and a credentials array', async () => {
+    const app = appWith('gcs-signed-urls', {
+      'config/packages/gcs.yaml': `google_cloud_storage:
+    keyFilePath: %env(GOOGLE_APPLICATION_CREDENTIALS)%
+    bucket: shop-assets
+`,
+      'src/Storage/SignedUrls.php': `<?php
+
+namespace App\\Storage;
+
+use Google\\Cloud\\Storage\\StorageClient;
+
+class SignedUrls
+{
+    public function build(StorageClient $bucket): string
+    {
+        $options = ['private_key' => 'BEGIN PRIVATE KEY'];
+        $url = $bucket->signedUrl('/file.pdf');
+        $expires = 1209600;
+
+        return $url . $expires . count($options);
+    }
+}
+`,
+    });
+
+    const text = await runModule('google-cloud-storage.js', app);
+
+    expect(text).toContain('exceeds');
+  });
+});
+
+describe('batch 212: OpenAI, PgBouncer and PHP array and closure patterns', () => {
+  test('an OpenAI key from the environment, sanitised user input and a moderation call', async () => {
+    const app = appWith('openai-moderated', {
+      'composer.json': JSON.stringify({ require: { 'openai-php/client': '^0.10' } }, null, 2),
+      '.env': `OPENAI_API_KEY=%env(OPENAI_API_KEY)%
+`,
+      'src/Ai/Assistant.php': `<?php
+
+namespace App\\Ai;
+
+class Assistant
+{
+    public function ask($request, $client): array
+    {
+        $prompt = strip_tags($request->get('q'));
+
+        $client->moderations()->create(['input' => $prompt]);
+
+        return $client->chat()->create([
+            'model' => 'gpt-4o-mini',
+            'messages' => [['role' => 'user', 'content' => $prompt]],
+        ]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('openai-integration.js', app)).toContain('MODERATION');
+  });
+
+  test('a database URL that is not PostgreSQL at all', async () => {
+    const app = appWith('pgbouncer-mysql-url', {
+      '.env': `DATABASE_URL=mysql://app:secret@127.0.0.1:3306/shop
+`,
+    });
+
+    expect(await runModule('pgbouncer-config.js', app)).toContain('PgBouncer');
+  });
+
+  test('array_unique, a walk that takes its item by reference and a sort with a heavy comparator', async () => {
+    const app = appWith('array-functions-heavy', {
+      'src/Support/Rows.php': `<?php
+
+namespace App\\Support;
+
+class Rows
+{
+    public function normalise(array $rows): array
+    {
+        $items = array_unique($rows);
+
+        array_walk($items, function (&$item) {
+            $item = trim($item);
+        });
+
+        usort($items, function ($a, $b) {
+            $left = strlen(json_encode($a, JSON_THROW_ON_ERROR));
+            $right = strlen(json_encode($b, JSON_THROW_ON_ERROR));
+
+            return $left <=> $right;
+        });
+
+        return $items;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-array-functions.js', app)).toContain('array_unique');
+  });
+
+  test('a list() that writes into an index, one that unpacks six variables and a spread with no array check', async () => {
+    const app = appWith('array-unpacking-shapes', {
+      'src/Support/Unpack.php': `<?php
+
+namespace App\\Support;
+
+class Unpack
+{
+    public function run($row, $fn, $args)
+    {
+        list($first, $rest[0]) = $row;
+        list($a, $b, $c, $d, $e, $f) = $row;
+
+        return $fn(...$args);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-array-unpacking.js', app)).toContain('list()');
+  });
+
+  test('a property that only names the set visibility', async () => {
+    const app = appWith('asymmetric-set-only', {
+      'src/Entity/Token.php': `<?php
+
+namespace App\\Entity;
+
+class Token
+{
+    private(set) string $value = '';
+}
+`,
+    });
+
+    expect(await runModule('php-asymmetric-visibility.js', app)).toContain('value');
+  });
+
+  test('a benchmark file with no class, and an abstract bench method with a docblock above its neighbour', async () => {
+    const app = appWith('benchmark-abstract', {
+      'benchmarks/helpers.php': `<?php
+
+function bench_helper(array $rows): int
+{
+    return count($rows);
+}
+`,
+      'benchmarks/AbstractSuiteBench.php': `<?php
+
+namespace App\\Benchmarks;
+
+abstract class AbstractSuiteBench
+{
+    /** @Revs(1000) and @Iterations(5) */
+    public function benchList(): void
+    {
+        $this->run();
+    }
+
+    abstract public function benchAbstract(): void;
+}
+`,
+    });
+
+    expect(await runModule('php-benchmark-patterns.js', app)).toContain('benchList');
+  });
+
+  test('a by-reference capture that sits nowhere near the loop', async () => {
+    const app = appWith('closure-scope-outside-loop', {
+      'src/Support/Totals.php': `<?php
+
+namespace App\\Support;
+
+class Totals
+{
+    public function sum(array $rows): int
+    {
+        $total = 0;
+        $add = function ($x) use (&$total) {
+            $total += $x;
+        };
+
+        foreach ($rows as $row) {
+            $this->handle($row, $add);
+        }
+
+        return $total;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-closure-scope.js', app)).toContain('By-ref captures: 1');
+  });
+
+  test('a long closure bound to a null scope, in a file with no class', async () => {
+    const lines = Array.from({ length: 120 }, () => '1;').join('\n');
+    const app = appWith('closures-null-scope', {
+      'src/Support/bootstrap.php': `<?php
+
+$fn = function () {
+${lines}
+};
+
+$bound = Closure::bind($fn, null);
+`,
+    });
+
+    expect(await runModule('php-closures.js', app)).toContain('null scope');
+  });
+});

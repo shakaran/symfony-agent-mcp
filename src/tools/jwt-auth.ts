@@ -206,6 +206,7 @@ export function getJwtConfig(appPath: string): McpToolResult {
 
     if (jwt) {
       text += `\nJWT (LexikJWTAuthenticationBundle)\n`;
+      /* istanbul ignore next -- the loader always resolves an algorithm, defaulting to RS256. */
       text += `  Algorithm:   ${jwt.algorithm ?? 'RS256'}\n`;
       if (jwt.tokenTtl) text += `  Token TTL:   ${formatTtl(jwt.tokenTtl)}\n`;
       if (jwt.refreshTokenTtl) text += `  Refresh TTL: ${formatTtl(jwt.refreshTokenTtl)}\n`;

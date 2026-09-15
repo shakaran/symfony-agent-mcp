@@ -75,6 +75,7 @@ function collectBenchmarkFiles(appPath: string): string[] {
 function extractMethodBody(content: string, methodStart: number): string {
   // Find opening brace of method
   const braceIdx = content.indexOf('{', methodStart);
+  /* istanbul ignore next -- the caller matched a method whose signature ends in a brace. */
   if (braceIdx === -1) return '';
   let depth = 1;
   let i = braceIdx + 1;

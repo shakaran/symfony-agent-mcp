@@ -116,7 +116,9 @@ function parseAsymmetricVisibility(filePath: string): AsymmetricVisibilityInfo |
       propIssues.push(`$${propName}: private(set) combined with readonly is redundant — readonly already prevents external writes`);
     }
 
+    /* istanbul ignore next -- both visibilities come from the pattern's own alternation. */
     const getRank = VISIBILITY_RANK[getVisibility] ?? 3;
+    /* istanbul ignore next -- as above. */
     const setRank = VISIBILITY_RANK[setVisibility] ?? 3;
     if (getRank < setRank) {
       propIssues.push(`$${propName}: get visibility (${getVisibility}) is more restrictive than set visibility (${setVisibility}) — unusual pattern`);

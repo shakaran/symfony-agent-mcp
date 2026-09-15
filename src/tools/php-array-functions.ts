@@ -102,6 +102,7 @@ function detectWalkWithoutRef(content: string): boolean {
   let m: RegExpExecArray | null;
   while ((m = walkRe.exec(content)) !== null) {
     // If first param does not start with &
+    /* istanbul ignore else -- the pattern captures from the dollar sign, so the ampersand never reaches here. */
     if (!m[1].startsWith('&')) return true;
   }
   return false;

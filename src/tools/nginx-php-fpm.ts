@@ -113,7 +113,9 @@ function buildNginxPhpFpmInfos(appPath: string): NginxPhpFpmInfo[] {
       if (t.startsWith('#') || !t.includes('=')) continue;
 
       const [rawKey, rawVal] = t.split('=');
+      /* istanbul ignore next -- the line was checked for "=", so both sides exist. */
       const k = (rawKey ?? '').trim();
+      /* istanbul ignore next -- as above. */
       const v = (rawVal ?? '').trim();
 
       if (k === 'pm') {
