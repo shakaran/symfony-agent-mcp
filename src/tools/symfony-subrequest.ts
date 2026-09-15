@@ -144,9 +144,16 @@ function parseTwigFile(filePath: string, appPath: string): TwigSubrequestInfo | 
   if (count === 0) return null;
 
   const issues: string[] = [];
-  // Detect render(controller()) inside for/while loops in Twig
-  if (/\{%\s*(for|while)[^%]{0,300}%\}[^{]{0,1000}render\s*\(\s*controller/.test(content)) {
-    issues.push('render(controller(...)) inside Twig loop — triggers N sub-requests per render');
+  // Detect render(controller()) inside for/while loops in Twig. The call is
+  // always written inside {{ ... }}, so a pattern that forbade any "{" between
+  // the loop tag and the call never matched: read the loop body instead.
+  const loopRe = /\{%-?\s*(?:for|while)\b[^%]{0,300}%\}([\s\S]{0,2000}?)\{%-?\s*end(?:for|while)\s*-?%\}/g;
+  let lm: RegExpExecArray | null;
+  while ((lm = loopRe.exec(content)) !== null) {
+    if (/render\s*\(\s*controller/.test(lm[1])) {
+      issues.push('render(controller(...)) inside Twig loop — triggers N sub-requests per render');
+      break;
+    }
   }
 
   return {
