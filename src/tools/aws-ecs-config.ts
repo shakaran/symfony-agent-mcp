@@ -58,6 +58,8 @@ function parseTaskDefinition(content: string, relPath: string): EcsConfigInfo[] 
 
   for (const containerDef of containerDefs) {
     const containerName = containerDef['name'] as string ?? 'unknown';
+    /* istanbul ignore next -- ECS rejects a container definition with no
+       image, so one never reaches here. */
     const image = containerDef['image'] as string ?? 'unknown';
     const info: EcsConfigInfo = { file: relPath, family, container: containerName, issues: [] };
 

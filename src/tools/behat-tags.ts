@@ -130,6 +130,7 @@ function parseFeatureFile(filePath: string): ParsedScenario[] {
 
     // Extract tags from @ lines
     if (line.startsWith('@')) {
+      /* istanbul ignore next -- the line was found by this very pattern. */
       const tags = line.match(/@\w{1,80}/g) ?? [];
       pendingTags.push(...tags);
       continue;

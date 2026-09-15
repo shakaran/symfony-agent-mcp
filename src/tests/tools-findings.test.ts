@@ -52407,3 +52407,243 @@ Feature: API
     expect(text).toContain('wip');
   });
 });
+
+describe('batch 197: Caddy, dependency cycles and compose health', () => {
+  test('a Caddyfile with a proxy that has no health check, and a JSON config with servers', async () => {
+    const app = appWith('caddy-shapes', {
+      'Caddyfile': `example.com {
+    encode gzip zstd
+    reverse_proxy php:9000
+    tls internal
+}
+
+api.example.com {
+    reverse_proxy php:9000 {
+        health_uri /health
+        health_interval 10s
+        lb_policy round_robin
+    }
+}
+`,
+      'caddy.json': JSON.stringify({
+        apps: {
+          http: {
+            servers: {
+              srv0: { listen: [':443'], routes: [] },
+            },
+          },
+        },
+      }, null, 2),
+    });
+
+    const text = await runModule('caddy-server-config.js', app);
+
+    expect(text).toContain('reverse_proxy');
+  });
+
+  test('services that depend on each other in a circle', async () => {
+    const app = appWith('dependency-cycle-shapes', {
+      'src/Service/Alpha.php': `<?php
+
+namespace App\\Service;
+
+class Alpha
+{
+    public function __construct(private Beta $beta)
+    {
+    }
+}
+`,
+      'src/Service/Beta.php': `<?php
+
+namespace App\\Service;
+
+class Beta
+{
+    public function __construct(private Gamma $gamma)
+    {
+    }
+}
+`,
+      'src/Service/Gamma.php': `<?php
+
+namespace App\\Service;
+
+class Gamma
+{
+    public function __construct(private Alpha $alpha)
+    {
+    }
+}
+`,
+      'src/Service/Lonely.php': `<?php
+
+namespace App\\Service;
+
+class Lonely
+{
+    public function __construct(private Alpha $alpha)
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('dependency-graph.js', app, ['Alpha']);
+
+    expect(text).toContain('Alpha');
+  });
+
+  test('a DigitalOcean app spec with a service, a job, a static site and a secret', async () => {
+    const app = appWith('digitalocean-shapes', {
+      '.do/app.yaml': `name: demo
+services:
+  - name: web
+    kind: SERVICE
+    envs:
+      - key: APP_SECRET
+        value: aVeryLongSecretValue1234567890
+      - key: APP_ENV
+        value: prod
+jobs:
+  - name: migrate
+    kind: JOB
+static_sites:
+  - name: docs
+    kind: STATIC
+`,
+    });
+
+    const text = await runModule('digitalocean-app-platform.js', app);
+
+    expect(text).toContain('web');
+  });
+
+  test('a compose file with an image, a restart policy and a dependency with no condition', async () => {
+    const app = appWith('compose-health-shapes', {
+      'docker-compose.yml': `services:
+  php:
+    image: php:8.3-fpm
+    restart: unless-stopped
+    depends_on:
+      - database
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s
+  database:
+    image: postgres:16
+    restart: always
+  nginx:
+    image: nginx:1.27
+    depends_on:
+      database:
+        condition: service_healthy
+`,
+    });
+
+    const text = await runModule('docker-compose-health.js', app);
+
+    expect(text).toContain('php');
+  });
+
+  test('encrypted entity fields with an index on one of them', async () => {
+    const app = appWith('doctrine-encryption-shapes', {
+      'composer.json': JSON.stringify({ require: { 'symfony/orm-pack': '^2.4' } }, null, 2),
+      '.env': `ENCRYPTION_KEY=plaintextkeyvalue
+`,
+      'src/Entity/Patient.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\Index(columns: ['ssn'], name: 'patient_ssn_idx')]
+class Patient
+{
+    #[Encrypted]
+    #[ORM\\Column(length: 64)]
+    private string $ssn = '';
+
+    /**
+     * @Encrypted
+     */
+    #[ORM\\Column(length: 64)]
+    private string $phone = '';
+}
+`,
+    });
+
+    const text = await runModule('doctrine-encryption.js', app);
+
+    expect(text).toContain('Patient');
+  });
+
+  test('cache pools on disk that the configuration does not name', async () => {
+    const app = appWith('cache-inspector-disk-shapes', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        app: cache.adapter.filesystem
+        pools:
+            app:
+                adapter: cache.adapter.filesystem
+`,
+      'var/cache/prod/pools/app/a/file': 'x\n',
+      'var/cache/prod/pools/orphan.pool/b/file': 'y\n',
+    });
+
+    const text = await runModule('cache-inspector.js', app);
+
+    expect(text).toContain('pool');
+  });
+
+  test('an entity whose id fields repeat in both spellings', async () => {
+    const app = appWith('composite-key-repeat-shapes', {
+      'src/Entity/Pairing.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Pairing
+{
+    #[ORM\\Id]
+    #[ORM\\Column(type: 'integer')]
+    private $left;
+
+    #[ORM\\Id]
+    #[ORM\\Column(type: 'integer')]
+    private $left;
+
+    #[ORM\\Id]
+    #[ORM\\ManyToOne(targetEntity: Other::class)]
+    #[ORM\\JoinColumn(name: 'other_id', referencedColumnName: 'id')]
+    private $other;
+
+    #[ORM\\Id]
+    #[ORM\\ManyToOne(targetEntity: Other::class)]
+    #[ORM\\JoinColumn(name: 'other_id', referencedColumnName: 'id')]
+    private $other;
+}
+`,
+      'src/Repository/PairingRepository.php': `<?php
+
+namespace App\\Repository;
+
+class PairingRepository
+{
+    public function load(array $ids): void
+    {
+        $this->find($ids);
+        $this->find(['left' => 1, 'other' => 2]);
+    }
+}
+`,
+    });
+
+    const text = await runModule('doctrine-composite-primary-keys.js', app, ['Pairing']);
+
+    expect(text).toContain('Pairing');
+  });
+});

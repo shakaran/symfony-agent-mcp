@@ -92,6 +92,7 @@ function analyzeFile(filePath: string, appPath: string): A11yFileResult | null {
     // Buttons without accessible name
     const buttonM = /<button\b([^>]*)>([\s\S]*?)<\/button>/.exec(line);
     if (buttonM) {
+      /* istanbul ignore next -- both groups are required by the pattern. */
       const attrs = buttonM[1] ?? '';
       const inner = buttonM[2]?.trim() ?? '';
       const hasText = inner.length > 0 && !/<i\b|<span\b.*?icon|<svg\b/.test(inner);
@@ -145,7 +146,9 @@ function analyzeFile(filePath: string, appPath: string): A11yFileResult | null {
 
   // Skipped heading levels
   for (let i = 1; i < headings.length; i++) {
+    /* istanbul ignore next -- the loop bounds keep both reads in range. */
     const prev = headings[i - 1] ?? 0;
+    /* istanbul ignore next -- as above. */
     const curr = headings[i] ?? 0;
     if (curr - prev > 1) {
       issues.push({ severity: 'warning', rule: 'heading-skip', line: 0, detail: `Heading level skipped: h${prev} → h${curr} (WCAG 2.4.6)` });

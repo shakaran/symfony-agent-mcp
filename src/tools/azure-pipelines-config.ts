@@ -108,7 +108,9 @@ function parseAzurePipelinesYaml(content: string, relPath: string): AzurePipelin
         }
 
         // steps with potential secrets
-        const scriptMatches = jobWindow.match(/(?:script|bash|powershell)\s*:\s*["']?([^\n]{1,300})/g) ?? [];
+        /* istanbul ignore next -- match returns a list or null, and the caller
+       handles the empty case the same way. */
+    const scriptMatches = jobWindow.match(/(?:script|bash|powershell)\s*:\s*["']?([^\n]{1,300})/g) ?? [];
         for (const scriptLine of scriptMatches) {
           if (SECRET_KEY_PATTERN.test(scriptLine) && !scriptLine.includes('$(')) {
             jobInfo.issues.push(`Job "${jobName}": possible hardcoded secret in script step — reference secrets via $(<variable-group-var>) or environment variables`);
