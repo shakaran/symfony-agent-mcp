@@ -132,6 +132,7 @@ export function getPhpTimingAttackStats(appPath: string): McpToolResult {
       'secret-comparison': 0,
     };
     for (const info of infos) {
+      /* istanbul ignore next -- the three patterns are seeded above. */
       byPattern[info.pattern] = (byPattern[info.pattern] ?? 0) + 1;
     }
     const filesAffected = new Set(infos.map((i) => i.file)).size;

@@ -52,6 +52,7 @@ function buildZipArchiveInfos(appPath: string): ZipArchiveInfo[] {
       const issues: string[] = [];
       // Look for open() call not followed by === TRUE or !== FALSE check
       const openIdx = content.indexOf('->open(');
+      /* istanbul ignore else -- the block only runs when the call is in the file. */
       if (openIdx !== -1) {
         const surroundingSlice = content.slice(Math.max(0, openIdx - 50), Math.min(content.length, openIdx + 150));
         if (!surroundingSlice.includes('=== true') && !surroundingSlice.includes('=== TRUE') &&
@@ -69,6 +70,7 @@ function buildZipArchiveInfos(appPath: string): ZipArchiveInfo[] {
     if (hasExtract) {
       const issues: string[] = [];
       const extractIdx = content.indexOf('->extractTo(');
+      /* istanbul ignore else -- the block only runs when the call is in the file. */
       if (extractIdx !== -1) {
         const surroundingSlice = content.slice(Math.max(0, extractIdx - 300), Math.min(content.length, extractIdx + 200));
         // Heuristic: look for user-controlled input near extractTo
@@ -87,6 +89,7 @@ function buildZipArchiveInfos(appPath: string): ZipArchiveInfo[] {
       const issues: string[] = [];
       if (hasAddFile) {
         const addIdx = content.indexOf('->addFile(');
+        /* istanbul ignore else -- as above. */
         if (addIdx !== -1) {
           const surroundingSlice = content.slice(Math.max(0, addIdx - 200), Math.min(content.length, addIdx + 150));
           if (surroundingSlice.includes('$_GET') || surroundingSlice.includes('$_POST') ||

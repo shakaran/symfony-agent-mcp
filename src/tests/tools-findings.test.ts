@@ -58859,3 +58859,238 @@ fclose($fp);
     expect(await runModule('php-resource-handle-leaks.js', app)).toContain('try-finally');
   });
 });
+
+describe('batch 223: splats, interpolation, timing and PHPUnit attributes', () => {
+  test('a spread call inside an array literal', async () => {
+    const app = appWith('splat-in-array-literal', {
+      'src/Support/Merge.php': `<?php
+
+namespace App\\Support;
+
+class Merge
+{
+    public function all(array $parts): array
+    {
+        $list = [array_merge(...$parts)];
+
+        return $list;
+    }
+
+    public function sum(int ...$numbers): int
+    {
+        return array_sum($numbers);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-splat-operator.js', app)).toContain('variadic');
+  });
+
+  test('an old create_function and a braced interpolation of request data', async () => {
+    const app = appWith('interpolation-request-data', {
+      'src/Legacy/Formatter.php': `<?php
+
+namespace App\\Legacy;
+
+class Formatter
+{
+    public function format(string $fmt, string $value): string
+    {
+        return sprintf($fmt, $value);
+    }
+}
+`,
+      'src/Legacy/Renderer.php': `<?php
+
+namespace App\\Legacy;
+
+class Renderer
+{
+    public function render(): string
+    {
+        $name = $_GET['name'];
+        $callback = create_function('$x', 'return $x;');
+
+        return "\${name}";
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-string-interpolation-security.js', app)).toContain('create_function');
+  });
+
+  test('a token compared with strcmp and a hash compared with equals', async () => {
+    const app = appWith('timing-attack-comparisons', {
+      'src/Security/TokenChecker.php': `<?php
+
+namespace App\\Security;
+
+class TokenChecker
+{
+    public function check(string $token, string $expected): bool
+    {
+        if (strcmp($token, $expected) === 0) {
+            return true;
+        }
+
+        return md5($token) === md5($expected);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-timing-attack.js', app)).toContain('timing');
+  });
+
+  test('a file that declares strict types and casts with floatval and strval', async () => {
+    const app = appWith('type-coercion-strict', {
+      'src/Support/Caster.php': `<?php
+
+declare(strict_types=1);
+
+namespace App\\Support;
+
+class Caster
+{
+    public function toFloat($value): float
+    {
+        return floatval($value);
+    }
+
+    public function toString($value): string
+    {
+        return strval($value);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-type-coercion.js', app)).toContain('strict');
+  });
+
+  test('a ZipArchive built without opening, extracting or adding a file', async () => {
+    const app = appWith('zip-archive-bare', {
+      'src/Archive/Bundler.php': `<?php
+
+namespace App\\Archive;
+
+class Bundler
+{
+    public function build(): \\ZipArchive
+    {
+        $zip = new ZipArchive();
+        $zip->addFromString('readme.txt', 'hello');
+
+        return $zip;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-zip-archive.js', app)).toContain('addFromString');
+  });
+
+  test('a test attribute on a method named like a test, a file with no class and a project that mixes styles', async () => {
+    const app = appWith('phpunit-attribute-mix', {
+      'tests/Unit/OrderTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\Test;
+use PHPUnit\\Framework\\TestCase;
+
+class OrderTest extends TestCase
+{
+    #[Test]
+    public function testItAdds(): void
+    {
+    }
+
+    #[Test]
+    public function itRemoves(): void
+    {
+    }
+}
+`,
+      'tests/Unit/LegacyTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class LegacyTest extends TestCase
+{
+    /**
+     * @test
+     * @group legacy
+     */
+    public function itStillWorks(): void
+    {
+    }
+
+    #[Test]
+    public function testItAlsoWorks(): void
+    {
+    }
+}
+`,
+      'tests/Unit/helpers.php': `<?php
+
+use PHPUnit\\Framework\\Attributes\\Group;
+
+#[Group('helpers')]
+function make_order(): array
+{
+    return [];
+}
+`,
+    });
+
+    expect(await runModule('phpunit-attributes.js', app)).toContain('PHPUnit Attribute');
+  });
+
+  test('a test that asserts against time()', async () => {
+    const app = appWith('clock-time-assertions', {
+      'tests/Unit/ClockTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class ClockTest extends TestCase
+{
+    public function testExpiry(): void
+    {
+        $expiry = $this->subject->expiresAt();
+
+        $this->assertGreaterThan(time(), $expiry);
+    }
+}
+`,
+    });
+
+    expect(await runModule('phpunit-clock-assertion.js', app)).toContain('flaky');
+  });
+
+  test('shared memory segments read and written', async () => {
+    const app = appWith('shmop-segments', {
+      'src/Ipc/Segment.php': `<?php
+
+namespace App\\Ipc;
+
+class Segment
+{
+    public function write(string $data): void
+    {
+        $id = shmop_open(0xff3, 'c', 0644, 1024);
+        shmop_write($id, $data, 0);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-shmop-ipc.js', app)).toContain('shmop');
+  });
+});

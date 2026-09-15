@@ -195,6 +195,7 @@ export function getPhpunitClockAssertionStats(appPath: string): McpToolResult {
       'missing-trait': 0,
     };
     for (const info of allIssues) {
+      /* istanbul ignore next -- every type is seeded above. */
       counts[info.type] = (counts[info.type] ?? 0) + 1;
     }
 

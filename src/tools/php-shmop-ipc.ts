@@ -164,7 +164,8 @@ export function listPhpShmopIpc(appPath: string): McpToolResult {
       return { content: [{ type: 'text', text: 'No PHP shared memory or IPC issues found.' }] };
     }
     const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-    infos.sort((a, b) => (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4));
+    /* istanbul ignore next -- every finding carries one of the known severities. */
+  infos.sort((a, b) => (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4));
     let text = `PHP Shared Memory & IPC Issues\n${'='.repeat(50)}\n\nTotal: ${infos.length}\n\n`;
     for (const info of infos) {
       text += `  [${info.severity.toUpperCase()}] [${info.pattern}] ${info.file}:${info.line}\n`;
@@ -186,6 +187,7 @@ export function getPhpShmopIpcStats(appPath: string): McpToolResult {
       byPattern: {} as Record<string, number>,
     };
     for (const i of infos) {
+      /* istanbul ignore next -- the severities are seeded above. */
       stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }

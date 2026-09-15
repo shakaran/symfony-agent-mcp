@@ -67,6 +67,7 @@ function findVariadicFunctions(content: string): SplatMatch[] {
   const re = /function\s+(\w{1,80})\s*\(([^)]{0,400})\)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
+    /* istanbul ignore next -- the pattern requires the parameter list. */
     const paramList = m[2] ?? '';
     if (!paramList.includes('...')) continue;
     matches.push({
@@ -113,6 +114,7 @@ function findCallSpreads(content: string): SplatMatch[] {
       type: 'call-spread',
       method: methodM ? methodM[1] : '(global)',
       snippet: m[0],
+      /* istanbul ignore next -- the pattern requires the variable name. */
       paramList: m[2] ?? '',
     });
   }
