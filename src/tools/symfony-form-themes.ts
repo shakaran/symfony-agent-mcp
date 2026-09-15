@@ -142,6 +142,7 @@ function buildThemeInfoList(appPath: string): FormThemeInfo[] {
     const themeType = classifyTheme(lt.template);
     const issues: string[] = [];
 
+    /* istanbul ignore next -- every local theme was counted just above. */
     const usageCount = templateUsageCount[lt.template] ?? 0;
     if (usageCount > 3) {
       issues.push(`Template "${lt.template}" used as local form_theme in ${usageCount} files — consider making it a global theme`);
@@ -197,7 +198,9 @@ export function listFormThemes(appPath: string): McpToolResult {
     if (localThemes.length > 0) {
       text += `\nLocal Themes (${localThemes.length}):\n`;
       for (const t of localThemes) {
-        text += `  [${t.themeType}] ${t.template}  in ${t.file ?? '(unknown)'}\n`;
+        /* istanbul ignore next -- a local theme always records the file it sits in. */
+        const themeFile = t.file ?? '(unknown)';
+        text += `  [${t.themeType}] ${t.template}  in ${themeFile}\n`;
         for (const issue of t.issues) {
           text += `    ⚠ ${issue}\n`;
         }

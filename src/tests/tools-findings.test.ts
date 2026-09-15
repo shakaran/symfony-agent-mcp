@@ -63044,3 +63044,1545 @@ class Reader
     expect(await runModule('php-null-byte-injection.js', app)).toContain('null byte');
   });
 });
+
+describe('batch 241: formatting, SSRF, traits and XML', () => {
+  test('a number_format call that passes every separator', async () => {
+    const app = appWith('sprintf-number-format-full', {
+      'src/Twig/MoneyExtension.php': `<?php
+
+namespace App\\Twig;
+
+class MoneyExtension
+{
+    public function format(float $amount): string
+    {
+        return number_format($amount, 2, ',', '.');
+    }
+
+    public function round(float $amount): string
+    {
+        return number_format($amount);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-sprintf-type-safety.js', app)).toContain('number_format');
+  });
+
+  test('an HTTP client built with a variable base URI', async () => {
+    const app = appWith('ssrf-client-constructor', {
+      'src/Http/RemoteClient.php': `<?php
+
+namespace App\\Http;
+
+use GuzzleHttp\\Client;
+
+class RemoteClient
+{
+    public function build(string $baseUri): Client
+    {
+        return new Client(['base_uri' => $baseUri]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-ssrf-patterns.js', app)).toContain('new Client()');
+  });
+
+  test('a file with more string helper calls than the counter follows', async () => {
+    const calls: string[] = [];
+    for (let i = 0; i < 520; i++) {
+      calls.push(`        $flag${i} = str_contains($haystack, 'needle${i}');`);
+    }
+    const app = appWith('string-helpers-over-the-cap', {
+      'src/Service/Matcher.php': `<?php
+
+namespace App\\Service;
+
+class Matcher
+{
+    public function scan(string $haystack): void
+    {
+${calls.join('\n')}
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-string-helpers.js', app)).toContain('str_contains');
+  });
+
+  test('a trait that uses itself', async () => {
+    const app = appWith('trait-self-reference', {
+      'src/Trait/Timestampable.php': `<?php
+
+namespace App\\Trait;
+
+trait Timestampable
+{
+    use Timestampable;
+
+    private ?\\DateTimeImmutable $createdAt = null;
+}
+`,
+    });
+
+    expect(await runModule('php-trait-conflicts.js', app)).toContain('self-referencing');
+  });
+
+  test('a PHP constraint pinned to the 8.3 series', async () => {
+    const app = appWith('typed-constants-pinned-83', {
+      'composer.json': JSON.stringify({
+        require: { php: '8.3.*' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Model/Currency.php': `<?php
+
+declare(strict_types=1);
+
+namespace App\\Model;
+
+class Currency
+{
+    public const string DEFAULT = 'EUR';
+}
+`,
+    });
+
+    expect(await runModule('php-typed-constants.js', app)).toContain('Currency');
+  });
+
+  test('both UUID libraries generating identifiers', async () => {
+    const app = appWith('uuid-both-libraries', {
+      'composer.json': JSON.stringify({
+        require: { 'ramsey/uuid': '^4.7', 'symfony/uid': '^7.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Service/IdFactory.php': `<?php
+
+namespace App\\Service;
+
+use Ramsey\\Uuid\\Uuid as RamseyUuid;
+use Symfony\\Component\\Uid\\Uuid;
+
+class IdFactory
+{
+    public function legacy(): string
+    {
+        return RamseyUuid::uuid4()->toString();
+    }
+
+    public function modern(): string
+    {
+        return Uuid::v4()->toRfc4122();
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-uuid-generation.js', app)).toContain('uuid4');
+  });
+
+  test('a WeakMap read with a string key, and an object storage with no WeakMap in sight', async () => {
+    const app = appWith('weak-references-scalar-key', {
+      'src/Cache/ObjectCache.php': `<?php
+
+namespace App\\Cache;
+
+class ObjectCache
+{
+    public function get(object $key): mixed
+    {
+        $map = new WeakMap();
+
+        return $map['fallback'] ?? null;
+    }
+}
+`,
+      'src/Cache/VisitedSet.php': `<?php
+
+namespace App\\Cache;
+
+class VisitedSet
+{
+    private \\SplObjectStorage $seen;
+
+    private ?\\WeakReference $last = null;
+
+    public function __construct()
+    {
+        $this->seen = new \\SplObjectStorage();
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-weak-references.js', app)).toContain('SplObjectStorage');
+  });
+
+  test('XML parsed without disabling entity loading', async () => {
+    const app = appWith('xml-entities-not-disabled', {
+      'src/Import/FeedParser.php': `<?php
+
+namespace App\\Import;
+
+class FeedParser
+{
+    public function parse(string $xml): \\SimpleXMLElement
+    {
+        return simplexml_load_string($xml);
+    }
+
+    public function stream(string $path): \\XMLReader
+    {
+        $reader = new XMLReader();
+        $reader->open($path);
+
+        return $reader;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-xml-security.js', app)).toContain('XMLReader');
+  });
+});
+
+describe('batch 242: XSL and the PHPUnit toolbelt', () => {
+  test('an XSL parameter taken from a variable, beside an empty stylesheet', async () => {
+    const app = appWith('xsl-parameter-from-variable', {
+      'src/Report/XslRenderer.php': `<?php
+
+namespace App\\Report;
+
+class XslRenderer
+{
+    public function render(string $locale): string
+    {
+        $processor = new \\XSLTProcessor();
+        $processor->setParameter('', 'locale', $locale);
+
+        return $processor->transformToXml(new \\DOMDocument());
+    }
+}
+`,
+      'templates/empty.xsl': '',
+    });
+
+    expect(await runModule('php-xsl-transformation.js', app)).toContain('setParameter');
+  });
+
+  test('a database test that asserts before the rollback and declares its group', async () => {
+    const app = appWith('phpunit-database-assert-before-rollback', {
+      'tests/Repository/OrderRepositoryTest.php': `<?php
+
+namespace App\\Tests\\Repository;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+/**
+ * @group database
+ */
+class OrderRepositoryTest extends KernelTestCase
+{
+    public function testTotals(): void
+    {
+        $this->assertSame(2, $this->connection->fetchOne('SELECT COUNT(*) FROM orders'));
+        $this->connection->rollback();
+    }
+}
+`,
+      'tests/Repository/CustomerRepositoryTest.php': `<?php
+
+namespace App\\Tests\\Repository;
+
+use Symfony\\Bundle\\FrameworkBundle\\Test\\KernelTestCase;
+
+/**
+ * @group database
+ */
+class CustomerRepositoryTest extends KernelTestCase
+{
+    public function testCount(): void
+    {
+        $repository = static::getContainer()->get(CustomerRepository::class);
+        $this->assertCount(3, $repository->findAll());
+    }
+}
+`,
+    });
+
+    expect(await runModule('phpunit-database.js', app)).toContain('CustomerRepositoryTest');
+  });
+
+  test('a modern extension that is never registered, with an absolute bootstrap path', async () => {
+    const app = appWith('phpunit-extension-not-registered', {
+      'phpunit.xml': `<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="/app/tests/bootstrap.php">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
+`,
+      'tests/Extension/PreparedTimer.php': `<?php
+
+namespace App\\Tests\\Extension;
+
+use PHPUnit\\Event\\Test\\Prepared;
+use PHPUnit\\Event\\Test\\PreparedSubscriber as TestPreparedSubscriber;
+
+class PreparedTimer implements TestPreparedSubscriber
+{
+    public function notify(Prepared $event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('phpunit-extensions.js', app)).toContain('PreparedTimer');
+  });
+
+  test('a Pest plugin with no snapshot wording, and a pipeline that updates snapshots', async () => {
+    const app = appWith('phpunit-snapshot-pest-plugin', {
+      'composer.json': JSON.stringify({
+        'require-dev': { 'pestphp/pest': '^2.34', 'pestphp/pest-plugin-drift': '^2.5' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      '.gitlab-ci.yml': `test:
+    script:
+        - vendor/bin/pest --update-snapshots
+`,
+    });
+
+    expect(await runModule('phpunit-snapshot.js', app)).toContain('snapshot');
+  });
+
+  test('a fake with no public method at all, and doubles in a file with no class', async () => {
+    const app = appWith('phpunit-doubles-empty-fake', {
+      'tests/Double/FakeClock.php': `<?php
+
+namespace App\\Tests\\Double;
+
+class FakeClock implements ClockInterface
+{
+}
+`,
+      'tests/Double/recorder.php': `<?php
+
+$calls[] = 'recorded';
+`,
+    });
+
+    expect(await runModule('phpunit-test-doubles.js', app)).toContain('Fake');
+  });
+
+  test('a test repeating its group and data provider in both notations', async () => {
+    const app = appWith('phpunit-groups-both-notations', {
+      'tests/Service/SluggerTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\Attributes\\DataProvider;
+use PHPUnit\\Framework\\Attributes\\Group;
+use PHPUnit\\Framework\\TestCase;
+
+#[Group('slow')]
+class SluggerTest extends TestCase
+{
+    /**
+     * @group slow
+     * @dataProvider provideWords
+     */
+    #[DataProvider('provideWords')]
+    public function testSlug(string $word): void
+    {
+        $this->assertNotEmpty($word);
+    }
+
+    public static function provideWords(): array
+    {
+        return [['hello']];
+    }
+}
+`,
+    });
+
+    expect(await runModule('phpunit-test-groups.js', app)).toContain('slow');
+  });
+
+  test('a constant defined before the first test method', async () => {
+    const app = appWith('phpunit-isolation-define-at-top', {
+      'tests/Bootstrap/ConstantsTest.php': `<?php
+
+namespace App\\Tests\\Bootstrap;
+
+define('APP_TEST_MODE', true);
+
+use PHPUnit\\Framework\\TestCase;
+
+class ConstantsTest extends TestCase
+{
+    public function testMode(): void
+    {
+        $this->assertTrue(APP_TEST_MODE);
+    }
+}
+`,
+      'tests/Bootstrap/RunnerExpectationsTest.php': `<?php
+
+namespace App\\Tests\\Bootstrap;
+
+$runner->expectException(\\RuntimeException::class);
+
+use PHPUnit\\Framework\\TestCase;
+
+class RunnerExpectationsTest extends TestCase
+{
+    public function testNothing(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+    });
+
+    expect(await runModule('phpunit-test-isolation.js', app)).toContain('(unknown)');
+  });
+
+  test('two undocumented test methods in one class, and an application with no tests', async () => {
+    const app = appWith('phpunit-naming-two-methods', {
+      'tests/Service/MailerTest.php': `<?php
+
+namespace App\\Tests\\Service;
+
+use PHPUnit\\Framework\\TestCase;
+
+class MailerTest extends TestCase
+{
+    public function testSend(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    public function testQueue(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+    });
+    expect(await runModule('phpunit-test-naming.js', app)).toContain('MailerTest');
+
+    const bare = appWith('phpunit-naming-no-tests', {});
+    expect(await runModule('phpunit-test-naming.js', bare)).toContain('test');
+  });
+});
+
+describe('batch 243: alert rules, PSR, sessions and queues', () => {
+  test('a rules file whose group declares no rule at all', async () => {
+    const app = appWith('prometheus-empty-rule-group', {
+      'monitoring/app.rules.yml': `groups:
+  - name: placeholders
+    rules:
+      - alert: ''
+        expr: up == 0
+      - record: ''
+        expr: sum(up)
+  - name: workers
+    rules:
+      - alert: WorkerBacklog
+        expr: sum(messenger_messages) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Worker backlog'
+          description: 'The queue is not draining'
+`,
+    });
+
+    expect(await runModule('prometheus-alerting-rules.js', app)).toContain('WorkerBacklog');
+  });
+
+  test('an application that only touches PSR interfaces', async () => {
+    const app = appWith('psr-only-interfaces', {
+      'composer.json': JSON.stringify({
+        require: { 'psr/http-client': '^1.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Service/Fetcher.php': `<?php
+
+namespace App\\Service;
+
+use Psr\\Http\\Client\\ClientInterface;
+
+class Fetcher
+{
+    public function __construct(private ClientInterface $client)
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('psr-compliance.js', app)).toContain('portable');
+  });
+
+  test('a session block that leaves the cookie flags to their defaults', async () => {
+    const app = appWith('session-config-defaults', {
+      'config/packages/framework.yaml': `framework:
+    session:
+        handler_id: null
+        save_path: '%kernel.project_dir%/var/sessions'
+`,
+    });
+
+    expect(await runModule('session-config.js', app)).toContain('auto');
+  });
+
+  test('visibility timeouts long enough in both the queue config and the client', async () => {
+    const app = appWith('sqs-visibility-long-enough', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            orders:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    queue_name: orders.fifo
+                    VisibilityTimeout: 120
+`,
+      'src/Queue/QueueFactory.php': `<?php
+
+namespace App\\Queue;
+
+class QueueFactory
+{
+    public function attributes(): array
+    {
+        return [
+            'QueueName' => 'orders.fifo',
+            'FifoQueue' => 'true',
+            'ContentBasedDeduplication' => 'true',
+            'VisibilityTimeout' => 300,
+        ];
+    }
+}
+`,
+    });
+
+    expect(await runModule('sqs-fifo-queues.js', app)).toContain('FIFO');
+  });
+
+  test('a Stripe subscription flow with nothing to flag, in an application with no src', async () => {
+    const app = appWith('stripe-no-src', {
+      'composer.json': JSON.stringify({
+        require: { 'stripe/stripe-php': '^13.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Controller/StripeWebhookController.php': `<?php
+
+namespace App\\Controller;
+
+use Stripe\\Webhook;
+
+class StripeWebhookController
+{
+    public function handle(string $payload, string $signature): void
+    {
+        $event = Webhook::constructEvent($payload, $signature, getenv('STRIPE_WEBHOOK_SECRET'));
+
+        match ($event->type) {
+            'invoice.payment_failed' => $this->onPaymentFailed($event),
+            'customer.subscription.deleted' => $this->onSubscriptionDeleted($event),
+            default => null,
+        };
+    }
+
+    private function onPaymentFailed($event): void
+    {
+    }
+
+    private function onSubscriptionDeleted($event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('stripe-billing-subscriptions.js', app)).toContain('Stripe');
+
+    const composerOnly = appWith('stripe-composer-only', {
+      'composer.json': JSON.stringify({
+        require: { 'stripe/stripe-php': '^13.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+    expect(await runModule('stripe-billing-subscriptions.js', composerOnly)).toContain('Stripe');
+  });
+
+  test('an assets configuration with no named package, and one whose package has no body', async () => {
+    const app = appWith('assets-versioning-no-packages', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version: 'v3'
+        version_format: '%%s?v=%%s'
+`,
+    });
+    expect(await runModule('symfony-assets-versioning.js', app)).toContain('(global)');
+
+    const empty = appWith('assets-versioning-empty-package', {
+      'config/packages/framework.yaml': `framework:
+    assets:
+        version: 'v3'
+        packages:
+            inherited:
+`,
+    });
+    expect(await runModule('symfony-assets-versioning.js', empty)).toContain('inherited');
+  });
+
+  test('an iterator injection with no iterable type hint, and an attribute that only looks like one', async () => {
+    const app = appWith('autowire-iterator-untyped', {
+      'src/Service/HandlerRegistry.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireIterator;
+
+class HandlerRegistry
+{
+    public function __construct(
+        #[AutowireIterator('app.handler')]
+        private $handlers,
+    ) {
+    }
+}
+`,
+      'src/Service/CallableCaller.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutowireCallable;
+
+class CallableCaller
+{
+    public function __construct(
+        #[AutowireCallable(service: 'app.formatter', method: 'format')]
+        private $formatter,
+    ) {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-autowire-attributes.js', app)).toContain('iterable');
+  });
+
+  test('a configuration tree with a repeated node and more nodes than are listed', async () => {
+    const app = appWith('bundle-config-tree-many-nodes', {
+      'src/DependencyInjection/Configuration.php': `<?php
+
+namespace App\\DependencyInjection;
+
+use Symfony\\Component\\Config\\Definition\\Builder\\TreeBuilder;
+use Symfony\\Component\\Config\\Definition\\ConfigurationInterface;
+
+class Configuration implements ConfigurationInterface
+{
+    public function getConfigTreeBuilder(): TreeBuilder
+    {
+        $treeBuilder = new TreeBuilder('app');
+        $treeBuilder->getRootNode()
+            ->children()
+                ->scalarNode('api_key')->end()
+                ->scalarNode('endpoint')->end()
+                ->scalarNode('region')->end()
+                ->scalarNode('timeout')->end()
+                ->scalarNode('retries')->end()
+                ->scalarNode('locale')->end()
+                ->scalarNode('currency')->end()
+                ->scalarNode('sender')->end()
+                ->scalarNode('reply_to')->end()
+                ->scalarNode('api_key')->end()
+            ->end();
+
+        return $treeBuilder;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-bundle-config-tree.js', app)).toContain('more');
+  });
+});
+
+describe('batch 244: cache tuning, console helpers and makers', () => {
+  test('a default lifetime in the cache config and a beta of INF in the code', async () => {
+    const app = appWith('cache-early-expiry-inf-beta', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        default_lifetime: 3600
+        app: cache.adapter.redis
+`,
+      'src/Service/PriceCache.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Cache\\CacheInterface;
+use Symfony\\Contracts\\Cache\\ItemInterface;
+
+class PriceCache
+{
+    public function __construct(private CacheInterface $cache)
+    {
+    }
+
+    public function get(string $sku): string
+    {
+        return $this->cache->get($sku, function (ItemInterface $item) use ($sku) {
+            $item->expiresAfter(300);
+
+            return $sku;
+        }, beta: INF);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-cache-early-expiry.js', app)).toContain('beta=INF');
+  });
+
+  test('a Redis URL over TLS', async () => {
+    const app = appWith('redis-cluster-tls-url', {
+      '.env': `REDIS_URL=rediss://cache.internal:6380
+`,
+      'config/packages/cache.yaml': `framework:
+    cache:
+        default_redis_provider: 'rediss://cache.internal:6380'
+`,
+    });
+
+    expect(await runModule('symfony-cache-redis-cluster.js', app)).toContain('Redis');
+  });
+
+  test('a console helper writing to a stored output', async () => {
+    const app = appWith('console-helper-stored-output', {
+      'src/Console/TableHelper.php': `<?php
+
+namespace App\\Console;
+
+use Symfony\\Component\\Console\\Helper\\Helper;
+
+class TableHelper extends Helper
+{
+    private $out;
+
+    public function render(array $rows): void
+    {
+        foreach ($rows as $row) {
+            $this->out->writeln(implode(' | ', $row));
+        }
+    }
+
+    public function getName(): string
+    {
+        return 'table';
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-console-helper.js', app)).toContain('TableHelper');
+  });
+
+  test('a progress bar whose custom format keeps the percentage', async () => {
+    const app = appWith('progress-bar-percent-format', {
+      'src/Command/ImportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Helper\\ProgressBar;
+
+class ImportCommand extends Command
+{
+    protected function execute($input, $output): int
+    {
+        $bar = new ProgressBar($output, 100);
+        $bar->setFormat('%percent%%% imported');
+        $bar->start();
+        $bar->advance();
+        $bar->finish();
+
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-console-progress-bar.js', app)).toContain('ImportCommand');
+
+    const doubleQuoted = appWith('progress-bar-double-quoted-format', {
+      'src/Command/ExportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\Console\\Helper\\ProgressBar;
+
+class ExportCommand extends Command
+{
+    protected function execute($input, $output): int
+    {
+        $bar = new ProgressBar($output, 50);
+        $bar->setFormat("exporting: %message%");
+        $bar->start();
+        $bar->finish();
+
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+    expect(await runModule('symfony-console-progress-bar.js', doubleQuoted)).toContain('ExportCommand');
+  });
+
+  test('a container with many non-shared services, beside an empty kernel file', async () => {
+    const services: string[] = [];
+    for (let i = 0; i < 22; i++) {
+      services.push(`        App\\Service\\Worker${i}:\n            shared: false`);
+    }
+    const app = appWith('container-many-non-shared', {
+      'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+
+${services.join('\n')}
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Symfony\\Bundle\\FrameworkBundle\\Kernel\\MicroKernelTrait;
+use Symfony\\Component\\HttpKernel\\Kernel as BaseKernel;
+
+class Kernel extends BaseKernel
+{
+    use MicroKernelTrait;
+
+    public function getCacheDir(): string
+    {
+        return '/tmp/app-cache';
+    }
+}
+`,
+      'src/Test/EmptyKernel.php': '',
+    });
+
+    expect(await runModule('symfony-container-compile.js', app)).toContain('shared: false');
+  });
+
+  test('a maker with a skeleton template, next to a vendored maker copy', async () => {
+    const app = appWith('custom-makers-with-skeleton', {
+      'src/Maker/MakeReport.php': `<?php
+
+namespace App\\Maker;
+
+use Symfony\\Bundle\\MakerBundle\\Maker\\AbstractMaker;
+
+class MakeReport extends AbstractMaker
+{
+    public static function getCommandName(): string
+    {
+        return 'make:report';
+    }
+}
+`,
+      'src/Maker/skeleton/Report.tpl.php': `<?= "<?php\\n" ?>
+
+class <?= $class_name ?>
+{
+}
+`,
+      'src/Maker/Vendored/MakeEntityCopy.php': `<?php
+
+namespace Symfony\\Bundle\\MakerBundle\\Maker;
+
+class MakeEntityCopy extends AbstractMaker implements MakerInterface
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-custom-makers.js', app)).toContain('MakeReport');
+  });
+
+  test('a tagged item that declares its priority', async () => {
+    const app = appWith('di-factories-tagged-priority', {
+      'src/Handler/PdfExporter.php': `<?php
+
+namespace App\\Handler;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AsTaggedItem;
+
+#[AsTaggedItem(index: 'pdf', priority: 10)]
+class PdfExporter
+{
+    public function export(): string
+    {
+        return 'pdf';
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-di-factories.js', app)).toContain('PdfExporter');
+  });
+
+  test('a metadata cache configured for the test environment', async () => {
+    const app = appWith('doctrine-metadata-cache-test-env', {
+      'config/packages/test/doctrine.yaml': `doctrine:
+    orm:
+        metadata_cache_driver:
+            type: pool
+            pool: doctrine.system_cache_pool
+`,
+    });
+
+    expect(await runModule('symfony-doctrine-metadata-cache.js', app)).toContain('test');
+  });
+});
+
+describe('batch 245: events, exceptions, filesystem and forms', () => {
+  test('a custom event that is dispatched and listened to', async () => {
+    const app = appWith('events-custom-all-dispatched', {
+      'src/Event/OrderPlacedEvent.php': `<?php
+
+namespace App\\Event;
+
+use Symfony\\Contracts\\EventDispatcher\\Event;
+
+class OrderPlacedEvent extends Event
+{
+    public const NAME = 'order.placed';
+
+    public function __construct(public readonly int $orderId)
+    {
+    }
+}
+`,
+      'src/Service/OrderPlacer.php': `<?php
+
+namespace App\\Service;
+
+use App\\Event\\OrderPlacedEvent;
+use Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface;
+
+class OrderPlacer
+{
+    public function __construct(private EventDispatcherInterface $dispatcher)
+    {
+    }
+
+    public function place(int $orderId): void
+    {
+        $this->dispatcher->dispatch(new OrderPlacedEvent($orderId));
+    }
+}
+`,
+      'src/EventSubscriber/OrderPlacedSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use App\\Event\\OrderPlacedEvent;
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+
+class OrderPlacedSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return ['App\\Event\\OrderPlacedEvent' => 'onOrderPlaced'];
+    }
+
+    public function onOrderPlaced(OrderPlacedEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-events-custom.js', app)).toContain('OrderPlacedEvent');
+  });
+
+  test('a denied-access exception that names its attributes and a 5xx one that logs', async () => {
+    const app = appWith('exception-mapping-complete', {
+      'src/Exception/ProjectAccessDeniedException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\Security\\Core\\Exception\\AccessDeniedException;
+use Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface;
+
+class ProjectAccessDeniedException extends AccessDeniedException implements HttpExceptionInterface
+{
+    public function getStatusCode(): int
+    {
+        return 403;
+    }
+
+    public function getAttributes(): array
+    {
+        return ['project' => $this->projectId];
+    }
+
+    public function getHeaders(): array
+    {
+        return [];
+    }
+}
+`,
+      'src/Exception/StorageUnavailableException.php': `<?php
+
+namespace App\\Exception;
+
+use Psr\\Log\\LoggerInterface;
+use Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface;
+
+class StorageUnavailableException extends \\RuntimeException implements HttpExceptionInterface
+{
+    public function __construct(private LoggerInterface $logger)
+    {
+        $this->logger->error('storage unavailable');
+        parent::__construct('Storage unavailable');
+    }
+
+    public function getStatusCode(): int
+    {
+        return 503;
+    }
+
+    public function getHeaders(): array
+    {
+        return [];
+    }
+}
+`,
+      'src/Exception/ReportAccessDeniedException.php': `<?php
+
+namespace App\\Exception;
+
+use Symfony\\Component\\Security\\Core\\Exception\\AccessDeniedException;
+use Symfony\\Component\\HttpKernel\\Exception\\HttpExceptionInterface;
+
+class ReportAccessDeniedException extends AccessDeniedException implements HttpExceptionInterface
+{
+    public function getStatusCode(): int
+    {
+        return 403;
+    }
+
+    public function getHeaders(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-exception-mapping.js', app)).toContain('AccessDenied');
+  });
+
+  test('an expression function service with a nameless tag', async () => {
+    const app = appWith('expression-language-nameless-tag', {
+      'config/services.yaml': `services:
+    app.expression.functions:
+        tags:
+            - { priority: 10 }
+            - 'expression_language.function'
+`,
+      'src/Expression/AppExpressionFunctions.php': `<?php
+
+namespace App\\Expression;
+
+use Symfony\\Component\\ExpressionLanguage\\ExpressionFunctionProviderInterface;
+
+class AppExpressionFunctions implements ExpressionFunctionProviderInterface
+{
+    public function getFunctions(): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-expression-language-ext.js', app)).toContain('AppExpressionFunctions');
+  });
+
+  test('a vendored copy of the Filesystem component inside src', async () => {
+    const app = appWith('filesystem-vendored-copy', {
+      'src/Vendor/Filesystem.php': `<?php
+
+namespace Symfony\\Component\\Filesystem;
+
+class Filesystem
+{
+    public function mkdir($dirs, int $mode = 0777): void
+    {
+    }
+}
+`,
+      'src/Service/Archiver.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Filesystem\\Filesystem;
+
+class Archiver
+{
+    public function archive(string $path): void
+    {
+        $filesystem = new Filesystem();
+        $filesystem->dumpFile($path . '/archive.txt', 'done');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-filesystem.js', app)).toContain('Archiver');
+  });
+
+  test('a form directory holding a plain class, and an application whose src is a file', async () => {
+    const app = appWith('form-compound-plain-class', {
+      'src/Form/OrderType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class OrderType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('reference');
+    }
+}
+`,
+      'src/Form/OrderData.php': `<?php
+
+namespace App\\Form;
+
+class OrderData
+{
+    public string $reference = '';
+}
+`,
+    });
+    expect(await runModule('symfony-form-compound-types.js', app)).toContain('No compound form types found');
+
+    const srcIsFile = appWith('form-compound-src-is-a-file', {
+      src: "<?php\n// The application keeps its classes elsewhere.\n",
+    });
+    expect(await runModule('symfony-form-compound-types.js', srcIsFile)).toContain('form');
+  });
+
+  test('a type guesser that always returns null', async () => {
+    const app = appWith('form-guess-always-null', {
+      'src/Form/TypeGuesser/NullGuesser.php': `<?php
+
+namespace App\\Form\\TypeGuesser;
+
+use Symfony\\Component\\Form\\FormTypeGuesserInterface;
+use Symfony\\Component\\Form\\Guess\\TypeGuess;
+
+class NullGuesser implements FormTypeGuesserInterface
+{
+    public function getTypeGuess(string $class, string $property): ?TypeGuess
+    {
+        return null;
+    }
+
+    public function getRequiredGuess(string $class, string $property): ?ValueGuess
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-guess.js', app)).toContain('NullGuesser');
+  });
+});
+
+describe('batch 246: buses, HTTP caching, locks and mail', () => {
+  test('a handler using the trait on an event bus, dispatching the same message twice', async () => {
+    const app = appWith('handle-trait-event-bus', {
+      'src/Bus/EventDispatcherService.php': `<?php
+
+namespace App\\Bus;
+
+use App\\Message\\OrderShipped;
+use Symfony\\Component\\Messenger\\HandleTrait;
+use Symfony\\Component\\Messenger\\MessageBusInterface;
+
+class EventDispatcherService
+{
+    use HandleTrait;
+
+    public function __construct(private MessageBusInterface $eventBus)
+    {
+        $this->messageBus = $eventBus;
+    }
+
+    public function shipTwice(int $first, int $second): void
+    {
+        $this->handle(new OrderShipped($first));
+        $this->handle(new OrderShipped($second));
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-handle-trait.js', app)).toContain('event_bus');
+  });
+
+  test('a controller setting cache headers with no validator at all', async () => {
+    const app = appWith('http-cache-headers-only', {
+      'src/Controller/CatalogController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class CatalogController extends AbstractController
+{
+    #[Route('/catalog')]
+    public function index(): Response
+    {
+        $response = new Response('catalog');
+        $response->setSharedMaxAge(600);
+        $response->setEtag(md5('catalog'));
+
+        return $response;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-http-cache-validation.js', app)).toContain('CatalogController');
+  });
+
+  test('an outgoing request that only asks for no-cache', async () => {
+    const app = appWith('http-client-no-cache-only', {
+      'src/Http/PriceClient.php': `<?php
+
+namespace App\\Http;
+
+use Symfony\\Contracts\\HttpClient\\HttpClientInterface;
+
+class PriceClient
+{
+    public function __construct(private HttpClientInterface $client)
+    {
+    }
+
+    public function fetch(string $sku): array
+    {
+        return $this->client->request('GET', '/prices/' . $sku, [
+            'headers' => ['Cache-Control' => 'no-cache'],
+        ])->toArray();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-http-client-caching.js', app)).toContain('No HTTP client caching patterns found');
+  });
+
+  test('a lazy service declared on an interface', async () => {
+    const app = appWith('lazy-service-on-interface', {
+      'config/services.yaml': `services:
+    App\\Service\\ReportGeneratorInterface:
+        class: App\\Service\\PdfReportGenerator
+        lazy: true
+`,
+    });
+
+    expect(await runModule('symfony-lazy-services.js', app)).toContain('interface');
+  });
+
+  test('a lock section left empty, and named stores with no value', async () => {
+    const app = appWith('lock-resources-empty-section', {
+      'config/packages/lock.yaml': `framework:
+    lock: ~
+`,
+    });
+    expect(await runModule('symfony-lock-resources.js', app)).toContain('lock');
+
+    const named = appWith('lock-resources-named-empty', {
+      'config/packages/lock.yaml': `framework:
+    lock:
+        invoice:
+        report: 'redis://cache:6379'
+`,
+    });
+    expect(await runModule('symfony-lock-resources.js', named)).toContain('invoice');
+  });
+
+  test('a mail class extending nothing in particular, with a listener that lets messages through', async () => {
+    const app = appWith('mailer-events-plain-message', {
+      'src/Mail/Newsletter.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Message;
+
+class Newsletter extends Message
+{
+    public function subjectLine(): string
+    {
+        return 'News';
+    }
+}
+`,
+      'src/EventListener/MailerTaggingListener.php': `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\Mailer\\Event\\MessageEvent;
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+
+#[AsEventListener(event: MessageEvent::class)]
+class MailerTaggingListener
+{
+    public function __invoke(MessageEvent $event): void
+    {
+        $event->getMessage()->getHeaders()->addTextHeader('X-App', 'yes');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-mailer-events.js', app)).toContain('MailerTaggingListener');
+  });
+
+  test('an application with more entities than the maker expects', async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 52; i++) {
+      files[`src/Entity/Entity${i}.php`] = `<?php\n\nnamespace App\\Entity;\n\nclass Entity${i}\n{\n}\n`;
+    }
+    for (let i = 0; i < 32; i++) {
+      files[`src/Controller/Controller${i}.php`] = `<?php\n\nnamespace App\\Controller;\n\nclass Controller${i}\n{\n}\n`;
+    }
+    const app = appWith('maker-config-large-domain', files);
+
+    expect(await runModule('symfony-maker-config.js', app)).toContain('large domain');
+  });
+
+  test('an email that removes its From header', async () => {
+    const app = appWith('mime-headers-removes-from', {
+      'src/Mail/AnonymousMailer.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Email;
+
+class AnonymousMailer
+{
+    public function build(): Email
+    {
+        $email = new Email();
+        $email->getHeaders()->remove('From');
+
+        return $email;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-mime-message-headers.js', app)).toContain('From');
+  });
+});
+
+describe('batch 247: processors, property access and security configuration', () => {
+  test('a monolog handler with no body of its own', async () => {
+    const app = appWith('monolog-processors-bare-handler', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        bare:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            processors:
+                - 'App\\Logger\\RequestIdProcessor'
+`,
+    });
+
+    expect(await runModule('symfony-monolog-processors.js', app)).toContain('RequestIdProcessor');
+  });
+
+  test('a property accessor wrapped in try/catch, beside a vendored copy of the component', async () => {
+    const app = appWith('property-access-try-catch', {
+      'src/Service/Mapper.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\PropertyAccess\\PropertyAccess;
+
+class Mapper
+{
+    public function read(object $source, string $path): mixed
+    {
+        $accessor = PropertyAccess::createPropertyAccessor();
+
+        try {
+            return $accessor->getValue($source, $path);
+        } catch (\\Throwable $e) {
+            return null;
+        }
+    }
+}
+`,
+      'src/Vendor/PropertyAccessor.php': `<?php
+
+namespace Symfony\\Component\\PropertyAccess;
+
+class PropertyAccessor
+{
+    public function getValue($objectOrArray, $propertyPath): mixed
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-property-access.js', app)).toContain('Mapper');
+  });
+
+  test('a token bucket with a burst and a rate with no interval', async () => {
+    const app = appWith('rate-limiter-policy-burst', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        uploads:
+            policy: 'token_bucket'
+            limit: 100
+            burst: 20
+            rate:
+                amount: 10
+`,
+    });
+
+    expect(await runModule('symfony-rate-limiter-policy.js', app)).toContain('uploads');
+  });
+
+  test('a role that inherits nothing', async () => {
+    const app = appWith('role-hierarchy-leaf-role', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_READER: []
+        ROLE_ADMIN: [ROLE_READER]
+`,
+    });
+
+    expect(await runModule('symfony-role-hierarchy.js', app)).toContain('ROLE_READER');
+  });
+
+  test('a stateless firewall that still remembers the user, next to an empty one', async () => {
+    const app = appWith('firewalls-stateless-remember-me', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        empty:
+        api:
+            pattern: ^/api
+            stateless: true
+            remember_me:
+                secret: '%kernel.secret%'
+`,
+    });
+
+    expect(await runModule('symfony-security-firewalls.js', app)).toContain('stateless');
+  });
+
+  test('login throttling intervals written in minutes and in hours', async () => {
+    const app = appWith('login-throttle-interval-units', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            login_throttling:
+                max_attempts: 5
+                interval: '15m'
+        admin:
+            login_throttling:
+                max_attempts: 3
+                interval: '1h'
+`,
+    });
+
+    expect(await runModule('symfony-security-login-throttle.js', app)).toContain('throttl');
+  });
+
+  test('a session whose cookie flags are written as booleans', async () => {
+    const app = appWith('session-strategy-boolean-cookies', {
+      'config/packages/framework.yaml': `framework:
+    session:
+        cookie_secure: true
+        cookie_httponly: true
+        cookie_samesite: lax
+`,
+      'config/packages/security.yaml': `security:
+    firewalls:
+        empty:
+        main:
+            session_fixation_strategy: migrate
+`,
+    });
+
+    expect(await runModule('symfony-security-session-strategy.js', app)).toContain('migrate');
+  });
+
+  test('a serializer context repeating a key, beside a vendored normalizer', async () => {
+    const app = appWith('serializer-context-repeated-key', {
+      'src/Serializer/OrderNormalizerContext.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Attribute\\Context;
+
+class OrderNormalizerContext
+{
+    public const NORMALIZATION = [
+        'groups' => ['order:read'],
+        'skip_null_values' => true,
+    ];
+
+    public const DENORMALIZATION = [
+        'groups' => ['order:write'],
+    ];
+
+    #[Context(normalizationContext: self::NORMALIZATION)]
+    public array $payload = [];
+}
+`,
+      'src/Vendor/ObjectNormalizer.php': `<?php
+
+namespace Symfony\\Component\\Serializer;
+
+class ObjectNormalizer
+{
+    public const DEFAULTS = ['groups' => [], 'default_context' => []];
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-context.js', app)).toContain('groups');
+  });
+});

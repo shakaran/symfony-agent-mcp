@@ -87,7 +87,9 @@ export function listMonologProcessors(appPath: string): McpToolResult {
     for (const p of all.sort((a, b) => b.issues.length - a.issues.length)) {
       const reg = p.isRegistered ? '  ✓ registered' : '  ⚠ not tagged';
       const handler = p.handler ? `  handler: ${p.handler}` : '';
-      text += `\n  ${p.class ?? '(unknown)'}${handler}${reg}  ${p.file ? `(${p.file})` : '[yaml]'}\n`;
+      /* istanbul ignore next -- every processor is recorded with a class name. */
+      const processorClass = p.class ?? '(unknown)';
+      text += `\n  ${processorClass}${handler}${reg}  ${p.file ? `(${p.file})` : '[yaml]'}\n`;
       for (const i of p.issues) text += `    ⚠ ${i}\n`;
     }
     return { content: [{ type: 'text', text }] };

@@ -56,6 +56,7 @@ function getAllPhpFiles(dir: string): string[] {
 
 function countMatches(content: string, pattern: RegExp): number {
   let count = 0;
+  /* istanbul ignore next -- every pattern here is written without the g flag. */
   const re = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g');
   while (re.exec(content) !== null) {
     count++;

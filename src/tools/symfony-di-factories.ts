@@ -32,6 +32,7 @@ function loadYamlFactories(appPath: string): DiFactory[] {
       factoryMethod = String(factory[1]);
     } else if (typeof factory === 'string') {
       const parts = factory.split('::');
+      /* istanbul ignore next -- a split always yields a first element. */
       factoryClass = parts[0] ?? '';
       factoryMethod = parts[1] ?? '__invoke';
     }

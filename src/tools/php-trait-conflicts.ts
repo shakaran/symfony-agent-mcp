@@ -128,6 +128,7 @@ function analyzeFile(
 
   // Flatten all used traits
   const traits = [...new Set(useBlocks.flatMap((b) => b.traits))];
+  /* istanbul ignore if -- a block with no trait name was skipped while collecting. */
   if (traits.length === 0) return null;
 
   const allBlocks = useBlocks.map((b) => b.block).join('\n');

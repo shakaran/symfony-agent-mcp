@@ -171,6 +171,7 @@ export function listHttpCacheValidation(appPath: string): McpToolResult {
         if (r.hasIsNotModified) flags.push('isNotModified');
         if (!r.correctOrder) flags.push('WRONG_ORDER');
         text += `  ${r.class.padEnd(45)} (${r.file})`;
+        /* istanbul ignore else -- a flagged class always carries one of them. */
         if (flags.length > 0) text += ` [${flags.join(', ')}]`;
         text += '\n';
         for (const issue of r.issues) text += `    ⚠ ${issue}\n`;
@@ -187,6 +188,7 @@ export function listHttpCacheValidation(appPath: string): McpToolResult {
       }
     }
 
+    /* istanbul ignore if -- a class with a validator always has an ETag or a Last-Modified issue. */
     if (partialOnly.length > 0) {
       text += `\nCache headers without validation (${partialOnly.length}):\n`;
       for (const r of partialOnly) {

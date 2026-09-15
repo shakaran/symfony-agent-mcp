@@ -105,6 +105,7 @@ function parseMimeHeaderFile(filePath: string, appPath: string): MimeHeaderInfo 
   const removeCalls = content.match(/getHeaders\s*\(\s*\)\s*->\s*remove\s*\(\s*['"]([^'"]{1,100})['"]/g) ?? [];
   for (const call of removeCalls) {
     const nameM = /remove\s*\(\s*['"]([^'"]{1,100})['"]/.exec(call);
+    /* istanbul ignore else -- the call was matched with the same pattern above. */
     if (nameM) {
       const removed = nameM[1].toLowerCase();
       if (removed === 'from' || removed === 'to' || removed === 'subject') {

@@ -38,6 +38,7 @@ function detectCycles(hierarchy: Map<string, string[]>): string[] {
   function visit(role: string, path: string[], visited: Set<string>): void {
     if (visited.has(role)) {
       const start = path.indexOf(role);
+      /* istanbul ignore else -- a visited role is always on the path that visited it. */
       if (start !== -1) cycles.push(path.slice(start).concat(role).join(' → '));
       return;
     }

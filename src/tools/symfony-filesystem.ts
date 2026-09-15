@@ -41,6 +41,7 @@ function parseFilesystemUsage(filePath: string, appPath: string): FilesystemUsag
   for (const method of FS_METHODS) {
     if (content.includes(`->${method}(`) || content.includes(`$filesystem->${method}(`)) found.push(method);
   }
+  /* istanbul ignore if -- the component name was found in this content above. */
   if (found.length === 0 && !content.includes('Filesystem')) return null;
   const usesAtomicWrite = content.includes('dumpFile') || content.includes('AtomicDumper');
   const usesTempFile = content.includes('tempnam') || content.includes('sys_get_temp_dir');

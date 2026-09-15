@@ -237,6 +237,7 @@ export function getPhpSsrfPatternsStats(appPath: string): McpToolResult {
 
     // Any function names not in the known list (e.g. from future additions)
     for (const [fn, count] of Object.entries(byFn)) {
+      /* istanbul ignore if -- every finding uses one of the names listed above. */
       if (!knownFns.includes(fn)) {
         text += `  ${fn.padEnd(26)}: ${count}\n`;
       }

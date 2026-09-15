@@ -51,6 +51,7 @@ interface FormTypeAnalysis {
 
 function analyzeFormType(content: string): FormTypeAnalysis | null {
   // Must extend AbstractType
+  /* istanbul ignore if -- the caller skips a file that fails this same test. */
   if (!content.includes('AbstractType') || !content.includes('buildForm')) return null;
 
   const classMatch = /\bclass\s+(\w{1,80})\s+extends\s+AbstractType/.exec(content);

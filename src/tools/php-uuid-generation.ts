@@ -82,6 +82,7 @@ function buildUuidGenerationInfos(appPath: string): UuidGenerationInfo[] {
     // ramsey/uuid patterns
     if (content.includes('Uuid::uuid4()') || content.includes('Uuid::uuid1()') || content.includes('Uuid::uuid6()')) {
       const match = /Uuid::(uuid\d)\(\)/.exec(content);
+      /* istanbul ignore next -- one of the three calls was found just above. */
       const ver = match ? match[1] : 'uuid4';
       results.push({
         file: path.relative(appPath, file),
@@ -94,6 +95,7 @@ function buildUuidGenerationInfos(appPath: string): UuidGenerationInfo[] {
     // symfony/uid patterns
     if (content.includes('Uuid::v4()') || content.includes('Uuid::v6()') || content.includes('Uuid::v7()')) {
       const match = /Uuid::(v\d)\(\)/.exec(content);
+      /* istanbul ignore next -- one of the three calls was found just above. */
       const ver = match ? match[1] : 'v4';
       results.push({
         file: path.relative(appPath, file),

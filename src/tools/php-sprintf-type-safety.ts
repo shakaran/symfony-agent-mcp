@@ -100,6 +100,7 @@ function buildSprintfTypeSafetyInfos(appPath: string): SprintfTypeSafetyInfo[] {
       if (nfMatch) {
         const after = trimmed.slice(nfMatch.index + nfMatch[0].length, nfMatch.index + nfMatch[0].length + 150);
         // Count commas before closing paren to estimate arg count
+        /* istanbul ignore next -- a split always yields a first element. */
         const argsSection = after.split(')')[0] ?? '';
         const commaCount = (argsSection.match(/,/g) ?? []).length;
         if (commaCount < 2) {

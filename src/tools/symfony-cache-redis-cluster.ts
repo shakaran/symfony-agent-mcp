@@ -33,6 +33,7 @@ function buildSymfonyCacheRedisClusterInfos(appPath: string): RedisCacheClusterI
     if (!content.includes('redis://') && !content.includes('rediss://') && !content.includes('redis+cluster://') && !content.includes('redis+sentinel://')) continue;
 
     if (content.includes('redis://') && !content.includes('redis+cluster://') && !content.includes('redis+sentinel://')) {
+      /* istanbul ignore next -- the scheme was found in this content above. */
       const hostCount = (content.match(/redis:\/\//g) ?? []).length;
       if (hostCount > 1) {
         results.push({ source, type: 'cluster', pattern: 'multiple redis:// DSNs', issues: ['Single Redis DSN for multi-host Redis — use redis+cluster:// for Cluster mode or redis+sentinel:// for Sentinel/HA mode'] });

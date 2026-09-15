@@ -137,6 +137,7 @@ function scanEventListeners(appPath: string): EventListener[] {
       kind = 'subscriber';
       for (const m of content.matchAll(/['"]([A-Za-z\\]+(?:Event|Created|Updated|Deleted))['"]/g)) {
         const parts = m[1].split('\\');
+        /* istanbul ignore next -- a split always yields a last element. */
         const short = parts[parts.length - 1] ?? m[1];
         if (!listensTo.includes(short)) listensTo.push(short);
       }

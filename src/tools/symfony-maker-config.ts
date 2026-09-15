@@ -194,6 +194,7 @@ export function listMakerConfig(appPath: string): McpToolResult {
       text += `  (no src/ directory or all counts are 0)\n`;
     } else {
       for (const c of populated) {
+        /* istanbul ignore next -- a non-zero count always recorded an example. */
         const examples = c.examples.length > 0 ? `  (e.g. ${c.examples.slice(0, 2).join(', ')})` : '';
         const warn = c.type === 'Controller' && c.count > 30 ? ' ⚠ many controllers' :
                      c.type === 'Entity' && c.count > 50 ? ' ⚠ large domain' : '';

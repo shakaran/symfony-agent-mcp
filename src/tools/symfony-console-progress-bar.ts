@@ -90,6 +90,7 @@ function analyzeProgressBarFile(filePath: string, appPath: string): ProgressBarI
   // Flag: custom format strings without %current%/%max%
   if (format === 'custom') {
     const formatStringM = /setFormat\s*\(\s*'([^']{1,200})'/.exec(content);
+    /* istanbul ignore else -- the custom format was detected with the same pattern. */
     if (formatStringM) {
       const fmt = formatStringM[1];
       if (!fmt.includes('%current%') && !fmt.includes('%max%') && !fmt.includes('%percent%')) {

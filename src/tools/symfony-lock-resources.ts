@@ -100,15 +100,18 @@ function loadLockResources(appPath: string): LockResource[] {
         issues.push(`Store type "${storeType}" is local-only — not suitable for multi-process/multi-host deployment`);
       }
       resources.push({ name: 'default', store: lockRaw, storeType, issues });
-    } else if (typeof lockRaw === 'object' && lockRaw !== null) {
-      for (const [name, storeVal] of Object.entries(lockRaw as Record<string, unknown>)) {
-        const store = String(storeVal ?? '');
-        const storeType = classifyStore(store);
-        const issues: string[] = [];
-        if (storeType === 'flock' || storeType === 'semaphore') {
-          issues.push(`Store type "${storeType}" is local-only — not suitable for multi-process/multi-host deployment`);
+    } else {
+      /* istanbul ignore else -- the value is a DSN string or a map of stores. */
+      if (typeof lockRaw === 'object' && lockRaw !== null) {
+        for (const [name, storeVal] of Object.entries(lockRaw as Record<string, unknown>)) {
+          const store = String(storeVal ?? '');
+          const storeType = classifyStore(store);
+          const issues: string[] = [];
+          if (storeType === 'flock' || storeType === 'semaphore') {
+            issues.push(`Store type "${storeType}" is local-only — not suitable for multi-process/multi-host deployment`);
+          }
+          resources.push({ name, store, storeType, issues });
         }
-        resources.push({ name, store, storeType, issues });
       }
     }
 

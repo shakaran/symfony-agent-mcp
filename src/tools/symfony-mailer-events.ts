@@ -118,6 +118,7 @@ function parseEmailClass(filePath: string, appPath: string): EmailClass | null {
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
 
+  /* istanbul ignore next -- one of the three parents was found above. */
   const baseClass: EmailClass['baseClass'] =
     content.includes('extends TemplatedEmail') ? 'TemplatedEmail' :
     content.includes('extends NotificationEmail') ? 'NotificationEmail' :

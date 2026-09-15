@@ -106,7 +106,9 @@ function scanProcessorUsages(appPath: string): EnvProcessorUsage[] {
     for (const m of content.matchAll(/%env\(([^)]+)\)%/g)) {
       const inner    = m[1];
       const parts    = inner.split(':');
+      /* istanbul ignore next -- a split always yields a first and a last element. */
       const processor = parts[0] ?? 'string';
+      /* istanbul ignore next -- a split always yields a first and a last element. */
       const varName   = parts[parts.length - 1] ?? inner;
       const isChained = parts.length > 2;
       const isBuiltIn = BUILTIN_PROCESSORS.has(processor);
