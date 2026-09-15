@@ -53010,3 +53010,504 @@ function fixture_password(): string
     expect((await runModule('fixtures.js', none, ['AppFixtures'])).length).toBeGreaterThan(0);
   });
 });
+
+describe('batch 199: OAuth scopes, health probes, locks and graph', () => {
+  test('Google OAuth with a broad scope that has no alternative, and an application with nothing to say', async () => {
+    const app = appWith('google-oauth-shapes', {
+      'composer.json': JSON.stringify({ require: { 'google/apiclient': '^2.15' } }, null, 2),
+      'src/Google/Client.php': `<?php
+
+namespace App\\Google;
+
+use Google\\Client;
+
+class GoogleClient
+{
+    public function scopes(): array
+    {
+        return [
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/quokka-everything',
+        ];
+    }
+}
+`,
+    });
+    const quiet = appWith('google-oauth-quiet', {
+      'composer.json': JSON.stringify({ require: { 'google/apiclient': '^2.15' } }, null, 2),
+    });
+
+    expect(await runModule('google-oauth-integration.js', app)).toContain('scope');
+    expect((await runModule('google-oauth-integration.js', quiet)).length).toBeGreaterThan(0);
+    expect((await runModule('microsoft-graph-integration.js', quiet)).length).toBeGreaterThan(0);
+  });
+
+  test('a Microsoft Graph registration with a real secret and one that is a placeholder', async () => {
+    const app = appWith('microsoft-graph-shapes', {
+      'composer.json': JSON.stringify({ require: { 'microsoft/microsoft-graph': '^2.0' } }, null, 2),
+      '.env': `AZURE_CLIENT_ID=00000000-1111-2222-3333-444444444444
+AZURE_CLIENT_SECRET=aRealLookingSecretValue
+AZURE_TENANT_ID=your_tenant_here
+`,
+      'src/Graph/Client.php': `<?php
+
+namespace App\\Graph;
+
+use Microsoft\\Graph\\Graph;
+
+class GraphClient
+{
+    public function me(Graph $graph): void
+    {
+        $graph->createRequest('GET', '/me')->execute();
+    }
+}
+`,
+    });
+
+    const text = await runModule('microsoft-graph-integration.js', app);
+
+    expect(text).toContain('AZURE');
+  });
+
+  test('health routes without a controller, and probes that cover only part of the set', async () => {
+    const app = appWith('health-checks-shapes', {
+      'config/routes/health.yaml': `livez:
+    path: /livez
+
+readyz:
+    path: /readyz
+    controller: App\\Controller\\HealthController::ready
+`,
+      'src/Controller/HealthController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class HealthController
+{
+    #[Route('/readyz', name: 'readyz')]
+    public function ready(): void
+    {
+    }
+}
+`,
+      'src/Health/DatabaseCheck.php': `<?php
+
+namespace App\\Health;
+
+class DatabaseCheck
+{
+    public function check(): bool
+    {
+        return $this->connection->executeQuery('SELECT 1')->fetchOne() === 1;
+    }
+}
+`,
+    });
+
+    const text = await runModule('health-checks.js', app);
+
+    expect(text).toContain('livez');
+  });
+
+  test('lock stores given as a string, as a map and as a list', async () => {
+    const app = appWith('lock-shapes', {
+      'config/packages/lock.yaml': `framework:
+    lock:
+        invoice: 'redis://localhost:6379'
+        report: 'rediss://localhost:6379'
+        legacy: 'flock'
+        listed:
+            - 'semaphore'
+            - 'pdo://default'
+`,
+    });
+    const single = appWith('lock-single', {
+      'config/packages/lock.yaml': `framework:
+    lock: 'flock'
+`,
+    });
+    const odd = appWith('lock-odd', {
+      'config/packages/lock.yaml': `framework:
+    lock: 42
+`,
+    });
+    const empty = appWith('lock-empty', {
+      'config/packages/lock.yaml': `framework:
+    lock: {}
+`,
+    });
+
+    expect(await runModule('lock.js', app)).toContain('Redis');
+    expect(await runModule('lock.js', single)).toContain('Flock');
+    expect((await runModule('lock.js', odd)).length).toBeGreaterThan(0);
+    expect((await runModule('lock.js', empty)).length).toBeGreaterThan(0);
+  });
+
+  test('an Intercom integration with an empty secret and a real one', async () => {
+    const app = appWith('intercom-shapes', {
+      'composer.json': JSON.stringify({ require: { 'intercom/intercom-php': '^4.4' } }, null, 2),
+      '.env': `INTERCOM_ACCESS_TOKEN=dG9rZW4tdmFsdWUtaGVyZQ==
+INTERCOM_APP_ID=
+`,
+      'src/Support/Intercom.php': `<?php
+
+namespace App\\Support;
+
+use Intercom\\IntercomClient;
+
+class Support
+{
+    public function client(): IntercomClient
+    {
+        return new IntercomClient(getenv('INTERCOM_ACCESS_TOKEN'), null);
+    }
+}
+`,
+    });
+
+    const text = await runModule('intercom-integration.js', app);
+
+    expect(text).toContain('Intercom');
+  });
+
+  test('migrations with a down that does nothing and one that drops a table', async () => {
+    const app = appWith('migrations-analysis-shapes', {
+      'migrations/Version20260101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE thing (id INT NOT NULL)');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->throwIrreversibleMigrationException();
+    }
+}
+`,
+      'migrations/Version20260202000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260202000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('DROP TABLE legacy');
+        $this->addSql('ALTER TABLE thing ADD COLUMN name VARCHAR(50) NOT NULL');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('CREATE TABLE legacy (id INT NOT NULL)');
+    }
+}
+`,
+    });
+
+    const text = await runModule('migrations-analysis.js', app);
+
+    expect(text).toContain('Version2026');
+  });
+
+  test('an OpenAPI document with paths that have no operation id and no responses', async () => {
+    const app = appWith('openapi-shapes', {
+      'public/openapi.yaml': `openapi: 3.0.0
+info:
+  title: Demo
+  version: 1.0.0
+paths:
+  /things:
+    get:
+      summary: List things
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create a thing
+  /things/{id}:
+    get:
+      operationId: getThing
+      parameters:
+        - name: id
+          in: path
+          required: true
+components:
+  schemas:
+    Thing:
+      type: object
+`,
+    });
+
+    const text = await runModule('openapi.js', app, ['/things']);
+
+    expect(text).toContain('OpenAPI');
+  });
+});
+
+describe('batch 200: dependency reports, fixers and uploads', () => {
+  test('a dependency-check report generated today, and workflows in both spellings', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const app = appWith('owasp-dependency-shapes', {
+      'dependency-check.xml': `<?xml version="1.0"?>
+<analysis>
+    <projectInfo>
+        <reportDate>${today}T10:00:00Z</reportDate>
+    </projectInfo>
+</analysis>
+`,
+      '.github/workflows/security.yaml': `name: Security
+on: [push]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dependency-check/Dependency-Check_Action@main
+`,
+      '.github/workflows/ci.yml': `name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: composer install
+`,
+    });
+    const noWorkflows = appWith('owasp-no-workflows', {
+      'composer.json': JSON.stringify({ require: {} }, null, 2),
+    });
+
+    expect(await runModule('owasp-dependency-check.js', app)).toContain('dependency');
+    expect((await runModule('owasp-dependency-check.js', noWorkflows)).length).toBeGreaterThan(0);
+  });
+
+  test('a redeclared constant marked with Override, and a PHP requirement with no lower bound', async () => {
+    const app = appWith('constant-visibility-shapes', {
+      'composer.json': JSON.stringify({ require: { php: '^8.3' } }, null, 2),
+      'src/Model/Base.php': `<?php
+
+namespace App\\Model;
+
+class Base
+{
+    public const STATUS = 'base';
+
+    protected const INTERNAL = 'internal';
+}
+`,
+      'src/Model/Child.php': `<?php
+
+namespace App\\Model;
+
+class Child extends Base
+{
+    #[Override]
+    public const STATUS = 'child';
+}
+`,
+    });
+
+    const text = await runModule('php-constant-visibility.js', app);
+
+    expect(text).toContain('STATUS');
+  });
+
+  test('a php-cs-fixer configuration whose finder walks an absolute path', async () => {
+    const app = appWith('php-cs-fixer-shapes', {
+      '.php-cs-fixer.dist.php': `<?php
+
+$finder = (new PhpCsFixer\\Finder())
+    ->in([__DIR__ . '/src', '/absolute/path', 'tests'])
+    ->exclude(['var']);
+
+return (new PhpCsFixer\\Config())
+    ->setRules([
+        '@Symfony' => true,
+        'strict_param' => true,
+        'yoda_style' => false,
+    ])
+    ->setFinder($finder);
+`,
+    });
+
+    const text = await runModule('php-cs-fixer.js', app);
+
+    expect(text).toContain('Symfony');
+  });
+
+  test('XPath queries built from variables and a document loaded without flags', async () => {
+    const app = appWith('dom-xpath-shapes', {
+      'src/Xml/Reader.php': `<?php
+
+namespace App\\Xml;
+
+class Reader
+{
+    public function read(string $xml, string $needle): array
+    {
+        $doc = new \\DOMDocument();
+        $doc->loadXML($xml);
+        $xpath = new \\DOMXPath($doc);
+
+        return iterator_to_array($xpath->query("//item[@id='" . $needle . "']"));
+    }
+
+    public function evaluate(string $xml): string
+    {
+        $doc = new \\DOMDocument();
+        $doc->loadHTML($xml, LIBXML_NOENT);
+        $xpath = new \\DOMXPath($doc);
+
+        return $xpath->evaluate('string(//title)');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-dom-xpath.js', app);
+
+    expect(text).toContain('Reader');
+  });
+
+  test('an upload handler that keeps the client file name and writes into public/', async () => {
+    const app = appWith('file-upload-shapes', {
+      'src/Upload/Handler.php': `<?php
+
+namespace App\\Upload;
+
+class Handler
+{
+    public function store($file): string
+    {
+        $name = $file->getClientOriginalName();
+        $file->move('/var/www/app/public/uploads', $name);
+
+        return $name;
+    }
+
+    public function storeSafely($file): string
+    {
+        $name = basename($file->getClientOriginalName());
+        $file->move('/var/www/app/var/uploads', uniqid() . '-' . $name);
+
+        return $name;
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-file-upload-validation.js', app);
+
+    expect(text).toContain('Handler');
+  });
+
+  test('GD calls with a literal and with a variable argument', async () => {
+    const app = appWith('gd-security-shapes', {
+      'src/Image/Thumbnailer.php': `<?php
+
+namespace App\\Image;
+
+class Thumbnailer
+{
+    public function fromUpload(string $path): void
+    {
+        $image = imagecreatefromjpeg($path);
+        $copy = imagecreatefrompng('/var/www/app/assets/logo.png');
+        imagejpeg($image, $path, 80);
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-gd-security.js', app);
+
+    expect(text).toContain('imagecreatefrom');
+  });
+
+  test('arithmetic on user input with and without a bcmath guard', async () => {
+    const app = appWith('integer-overflow-shapes', {
+      'src/Money/Calculator.php': `<?php
+
+namespace App\\Money;
+
+class Calculator
+{
+    public function unchecked(): int
+    {
+        $amount = $_GET['amount'];
+
+        return $amount * 1000000;
+    }
+
+    public function guarded(): string
+    {
+        $amount = $_GET['amount'];
+        if (!is_numeric($amount)) {
+            throw new \\InvalidArgumentException('not a number');
+        }
+
+        return bcmul($amount, '1000000');
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-integer-overflow.js', app);
+
+    expect(text).toContain('Calculator');
+  });
+
+  test('intersection types repeated in a file, and a file in a vendor namespace', async () => {
+    const app = appWith('intersection-types-shapes', {
+      'src/Service/Types.php': `<?php
+
+namespace App\\Service;
+
+class Types
+{
+    public function first(Countable&Traversable $items): void
+    {
+    }
+
+    public function second(Countable&Traversable $items): void
+    {
+    }
+
+    public function dnf((Countable&Traversable)|null $items): void
+    {
+    }
+
+    public function dnfAgain((Countable&Traversable)|null $items): void
+    {
+    }
+}
+`,
+      'src/Service/VendorLike.php': `<?php
+
+namespace Symfony\\Component\\Demo;
+
+class VendorLike
+{
+    public function first(Countable&Traversable $items): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-intersection-types.js', app);
+
+    expect(text).toContain('Types');
+  });
+});

@@ -41,8 +41,9 @@ interface LockUsage {
 // ─── Store type detection ───────────────────────────────────────────────────
 
 function detectStoreType(dsn: string): string {
-  if (dsn.startsWith('redis')) return 'Redis';
+  // rediss:// starts with redis://, so the TLS form has to be read first.
   if (dsn.startsWith('rediss')) return 'Redis TLS';
+  if (dsn.startsWith('redis')) return 'Redis';
   if (dsn.startsWith('flock')) return 'Flock (filesystem)';
   if (dsn.startsWith('pdo') || dsn.startsWith('mysql') || dsn.startsWith('postgresql')) return 'PDO (database)';
   if (dsn.startsWith('semaphore')) return 'Semaphore';
