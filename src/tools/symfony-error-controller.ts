@@ -69,8 +69,10 @@ function readErrorControllerConfig(appPath: string): string | undefined {
 
 function classFromController(controller: string): string {
   // Controller may be 'App\Controller\ErrorController::show' or 'App\Controller\ErrorController'
+  /* istanbul ignore next -- split never returns an empty array. */
   const withoutMethod = controller.split('::')[0] ?? controller;
   const parts = withoutMethod.split('\\');
+  /* istanbul ignore next -- split never returns an empty array. */
   return parts[parts.length - 1] ?? withoutMethod;
 }
 

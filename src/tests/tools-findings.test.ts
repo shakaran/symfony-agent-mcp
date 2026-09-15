@@ -51879,8 +51879,12 @@ spec:
               value: "$(DB_URL)"
             - name: EMPTY_VALUE
               value: ""
+            - name: NO_VALUE_AT_ALL
+            - valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: token
         - name: sidecar
-          image: demo/sidecar
 `,
     });
 
@@ -51910,6 +51914,8 @@ spec:
         other:
             ldap_login:
                 service: Symfony\\Component\\Ldap\\Ldap
+        plain:
+            pattern: ^/plain
 `,
     });
 
@@ -51933,10 +51939,235 @@ numprocs=1
       'docker/worker.conf': `[program:other]
 command=php /app/bin/console app:other
 `,
+      'supervisor/messenger-all.conf': `[program:messenger-all]
+command=php /app/bin/console messenger:consume --time-limit=3600
+numprocs=1
+`,
     });
 
     const text = await runModule('symfony-messenger-worker.js', app);
 
     expect(text).toContain('messenger');
+  });
+});
+
+describe('batch 195: push and SMS transports, throttling and stopwatch', () => {
+  test('a push notification config with the key in the open, and a handler that validates nothing', async () => {
+    const app = appWith('notifier-push-shapes', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            firebase: 'firebase://api_key=plaintext@default'
+            expo: '%env(EXPO_DSN)%'
+`,
+      'src/Notification/PushSender.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Message\\PushMessage;
+
+class PushSender
+{
+    public function send(string $title, string $body): void
+    {
+        $message = new PushMessage($title, $body);
+        $this->texter->send($message);
+    }
+}
+`,
+      'src/Notification/SafePushSender.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Message\\PushMessage;
+
+class SafePushSender
+{
+    public function send(string $title, string $body): void
+    {
+        if (!preg_match('/^[\\w ]+$/', $title)) {
+            return;
+        }
+
+        $message = new PushMessage(htmlspecialchars($title), strip_tags($body));
+        $this->texter->send($message);
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-notifier-push.js', app);
+
+    expect(text).toContain('push');
+  });
+
+  test('SMS transports with a literal DSN, no sender and one nobody recognises', async () => {
+    const app = appWith('notifier-sms-shapes', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        texter_transports:
+            twilio: 'twilio://SID:TOKEN@default?from=%2B34600000000'
+            plain: 'quokkasms://KEY@default'
+            referenced: '%env(SMS_DSN)%'
+`,
+    });
+
+    const text = await runModule('symfony-notifier-sms.js', app);
+
+    expect(text).toContain('sms');
+  });
+
+  test('login throttling with attempts per minute and per hour', async () => {
+    const app = appWith('login-throttle-shapes', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            login_throttling:
+                max_attempts: 5
+                interval: '15 minutes'
+        api:
+            login_throttling:
+                interval: '2 hours'
+        bare: ~
+        plain:
+            pattern: ^/plain
+`,
+    });
+
+    const text = await runModule('symfony-security-login-throttle.js', app);
+
+    expect(text).toContain('throttl');
+  });
+
+  test('OIDC through each of the bundles that provide it', async () => {
+    const hwi = appWith('oidc-hwi', {
+      'composer.json': JSON.stringify({ require: { 'hwi/oauth-bundle': '^2.0' } }, null, 2),
+      'config/packages/hwi_oauth.yaml': `hwi_oauth:
+    resource_owners:
+        keycloak:
+            type: openid_connect
+`,
+    });
+    const league = appWith('oidc-league', {
+      'composer.json': JSON.stringify({ require: { 'league/oauth2-client': '^2.7' } }, null, 2),
+    });
+    const native = appWith('oidc-native', {
+      'composer.json': JSON.stringify({ require: { 'symfony/security-bundle': '^7.0' } }, null, 2),
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            access_token:
+                token_handler:
+                    oidc:
+                        claim: sub
+                        audience: demo
+`,
+    });
+
+    expect((await runModule('symfony-security-oidc.js', hwi)).length).toBeGreaterThan(0);
+    expect((await runModule('symfony-security-oidc.js', league)).length).toBeGreaterThan(0);
+    expect((await runModule('symfony-security-oidc.js', native)).length).toBeGreaterThan(0);
+  });
+
+  test('a stateful service that resets itself, one tagged kernel.reset and one that clears nothing', async () => {
+    const app = appWith('service-reset-shapes', {
+      'composer.json': JSON.stringify({ require: { 'symfony/framework-bundle': '^7.0' } }, null, 2),
+      'config/services.yaml': `services:
+    App\\Service\\Registry:
+        tags:
+            - { name: kernel.reset, method: reset }
+    App\\Service\\Counter:
+        tags:
+            - { name: kernel.event_listener }
+`,
+      'src/Service/Registry.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Service\\ResetInterface;
+
+class Registry implements ResetInterface
+{
+    private array $items = [];
+
+    private array $index = [];
+
+    public function reset(): void
+    {
+        $this->items = [];
+    }
+}
+`,
+      'src/Service/Counter.php': `<?php
+
+namespace App\\Service;
+
+class Counter
+{
+    private int $count = 0;
+
+    public function increment(): void
+    {
+        ++$this->count;
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-service-reset.js', app);
+
+    expect(text).toContain('Registry');
+  });
+
+  test('a stopwatch with named sections, unbalanced start and stop, and the profiler enabled', async () => {
+    const app = appWith('stopwatch-shapes', {
+      'config/packages/framework.yaml': `framework:
+    stopwatch:
+        enabled: true
+`,
+      'src/Service/Timed.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Stopwatch\\Stopwatch;
+
+class Timed
+{
+    public function run(Stopwatch $stopwatch): void
+    {
+        $stopwatch->start('import', 'batch');
+        $stopwatch->start('parse');
+        $stopwatch->stop('import');
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-stopwatch.js', app);
+
+    expect(text).toContain('stopwatch');
+  });
+
+  test('translation providers with a DSN, without one, and read-only', async () => {
+    const app = appWith('translation-providers-shapes', {
+      'config/packages/translation.yaml': `framework:
+    translator:
+        providers:
+            crowdin:
+                dsn: '%env(CROWDIN_DSN)%'
+                domains: ['messages']
+                locales: ['en', 'es']
+            loco:
+                dsn: 'loco://API_KEY@default'
+            bare: ~
+`,
+      'config/packages/framework.yaml': `framework:
+    default_locale: en
+`,
+    });
+
+    const text = await runModule('symfony-translation-providers.js', app);
+
+    expect(text).toContain('crowdin');
   });
 });

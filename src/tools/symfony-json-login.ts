@@ -135,6 +135,7 @@ function parseSecurityYaml(content: string): LoginFinding[] {
     // Detect firewalls: section
     if (/^\s{4,8}firewalls\s*:/.test(trimmed) || /^firewalls\s*:/.test(trimmed)) {
       inFirewalls = true;
+      /* istanbul ignore next -- the pattern matches every string. */
       firewallIndent = (trimmed.match(/^(\s*)/) ?? ['', ''])[1].length + 4;
       continue;
     }
@@ -176,6 +177,7 @@ function parseSecurityYaml(content: string): LoginFinding[] {
     if (!currentLoginType) continue;
 
     // Properties inside a login block (indented beyond loginIndent)
+    /* istanbul ignore next -- the pattern matches every string. */
     const indent = (trimmed.match(/^(\s*)/) ?? ['', ''])[1].length;
     if (loginIndent > 0 && indent < loginIndent) {
       flushLogin();

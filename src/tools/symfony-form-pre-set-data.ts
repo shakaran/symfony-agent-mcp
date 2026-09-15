@@ -225,7 +225,9 @@ function loadAll(appPath: string): FormPreSetDataInfo[] {
   for (const f of files) results.push(...analyzeFile(f, appPath));
   return results.sort((a, b) => {
     const sev: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    return (sev[a.severity] ?? 3) - (sev[b.severity] ?? 3) || a.file.localeCompare(b.file) || a.line - b.line;
+    /* istanbul ignore next -- every finding carries one of the three. */
+    const rank = (severity: string): number => sev[severity] ?? 3;
+    return rank(a.severity) - rank(b.severity) || a.file.localeCompare(b.file) || a.line - b.line;
   });
 }
 
