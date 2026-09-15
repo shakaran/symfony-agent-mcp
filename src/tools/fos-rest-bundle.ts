@@ -134,7 +134,9 @@ function buildFosRestInfos(appPath: string): FosRestInfo[] {
       let issue: string | null = null;
 
       if (attrType === 'QueryParam') {
-        const requirementsMatch = /requirements\s*=\s*["']([^"']{1,200})["']/.exec(attrText);
+        // A PHP 8 attribute writes "requirements: '...'", and only the
+        // annotation spelling with "=" was being read.
+        const requirementsMatch = /requirements\s*[=:]\s*["']([^"']{1,200})["']/.exec(attrText);
         if (requirementsMatch) {
           const req = requirementsMatch[1];
           const hasDangerousQuantifier = /\.\+|\.\*|\([^)]{0,100}\)\+|\([^)]{0,100}\)\*/.test(req);
