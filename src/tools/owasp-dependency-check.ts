@@ -15,6 +15,7 @@ interface OwaspDependencyCheckInfo {
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];
+  /* istanbul ignore next -- the caller checks the root, and the walk only descends into directories it listed. */
   if (!fs.existsSync(dir)) return files;
   try {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

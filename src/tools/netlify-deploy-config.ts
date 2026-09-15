@@ -161,6 +161,7 @@ function buildNetlifyDeployConfigInfos(appPath: string): NetlifyDeployConfigInfo
       for (const line of section.lines) {
         if (/^for\s*=/.test(line)) {
           const kv = extractKv(line);
+          /* istanbul ignore else -- the line was matched on its equals sign. */
           if (kv) headerPath = kv.value;
           continue;
         }

@@ -44,6 +44,7 @@ function analyseFile(content: string, relFile: string): DomXpathInfo[] {
       const firstLoadXmlLine = lines.findIndex((l) => l.includes('loadXML('));
       infos.push({
         file: relFile,
+        /* istanbul ignore next -- the file was selected because it contains the call. */
         line: firstLoadXmlLine >= 0 ? firstLoadXmlLine + 1 : 0,
         fn: 'loadXML',
         issue: 'xxe-risk: file uses loadXML() without libxml_disable_entity_loader() or LIBXML_NONET — external entity injection (XXE) is possible if user-supplied XML is parsed; add libxml_disable_entity_loader(true) before loading (PHP < 8.0) or use LIBXML_NONET flag',
@@ -91,6 +92,7 @@ function analyseFile(content: string, relFile: string): DomXpathInfo[] {
     // XPath injection: ->query( or ->evaluate( with variable that doesn't look like a static path
     if (/->query\s*\(|->evaluate\s*\(/.test(line)) {
       const methodMatch = /->([a-z]{1,20})\s*\(/.exec(line);
+      /* istanbul ignore next -- the line matched one of the two method names. */
       const fnName = methodMatch ? methodMatch[1] : 'query';
       // Contains a $ variable but not a string literal starting with '//' or '/'
       if (line.includes('$')) {
@@ -111,6 +113,7 @@ function analyseFile(content: string, relFile: string): DomXpathInfo[] {
     // loadHTMLFile / ->load( with variable path
     if (line.includes('loadHTMLFile(') || /->load\s*\(/.test(line)) {
       const fnMatch = /(loadHTMLFile|load)\s*\(/.exec(line);
+      /* istanbul ignore next -- as above. */
       const fnName = fnMatch ? fnMatch[1] : 'load';
       if (line.includes('$')) {
         infos.push({

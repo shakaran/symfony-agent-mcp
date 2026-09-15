@@ -58604,3 +58604,258 @@ AZURE_TENANT_ID=change_me
     expect(text).not.toContain('Issues Summary');
   });
 });
+
+describe('batch 222: migrations, Netlify, JIT and threads', () => {
+  test('a truncate with no table read from it, a reserved table name in quotes and a destructive migration with no down()', async () => {
+    const app = appWith('migrations-destructive-shapes', {
+      'migrations/Version20260101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260101000000 extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('TRUNCATE session_store');
+    }
+
+    public function down($schema): void
+    {
+    }
+}
+`,
+      'migrations/Version20260301000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260301000000 extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('ALTER TABLE orders ADD COLUMN a INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN b INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN c INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN d INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN e INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN f INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN g INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN h INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN i INT');
+        $this->addSql('ALTER TABLE orders ADD COLUMN j INT');
+        $this->addSql('DROP TABLE orders_backup');
+    }
+
+    public function down($schema): void
+    {
+        $this->addSql('ALTER TABLE orders DROP COLUMN a');
+        $this->addSql('ALTER TABLE orders DROP COLUMN b');
+    }
+}
+`,
+      'migrations/Version20260201000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20260201000000 extends AbstractMigration
+{
+    public function up($schema): void
+    {
+        $this->addSql('CREATE TABLE \`key\` (id INT NOT NULL)');
+        $this->addSql('DROP TABLE legacy_key');
+    }
+
+    public function down($schema): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('migrations-analysis.js', app)).toContain('TRUNCATE');
+  });
+
+  test('a redirect to a nested index, a header rule with no path and a comment before the values', async () => {
+    const app = appWith('netlify-header-shapes', {
+      'netlify.toml': `[build]
+  publish = "public"
+
+[[redirects]]
+  from = "/*"
+  to = "/app/index.html"
+  status = "200"
+
+[[headers]]
+  force = true
+  for =
+  [headers.values]
+    X-Frame-Options = "DENY"
+`,
+    });
+
+    expect(await runModule('netlify-deploy-config.js', app)).toContain('redirects');
+  });
+
+  test('an empty workflow file and an empty dependency-check report', async () => {
+    const app = appWith('owasp-empty-files', {
+      '.github/workflows/security.yaml': '',
+      'dependency-check.xml': '',
+    });
+
+    expect(await runModule('owasp-dependency-check.js', app)).toContain('dependency');
+  });
+
+  test('a constructor whose default is an array, and an abstract constructor that promotes a property', async () => {
+    const app = appWith('constructor-promotion-shapes', {
+      'src/Service/Report.php': `<?php
+
+namespace App\\Service;
+
+class Report
+{
+    private string $name;
+
+    public function __construct(string $name, array $columns = ['id', 'total'])
+    {
+        $this->name = $name;
+    }
+}
+`,
+      'src/Service/BaseImporter.php': `<?php
+
+namespace App\\Service;
+
+abstract class BaseImporter
+{
+    abstract public function __construct(private string $source);
+}
+
+class CsvImporter extends BaseImporter
+{
+    public function __construct(private string $source, private int $batch = 100)
+    {
+        $this->source = $source;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-constructor-promotion.js', app)).toContain('promotion');
+  });
+
+  test('an XPath query built from a variable and a document loaded from one', async () => {
+    const app = appWith('dom-xpath-variables', {
+      'src/Xml/Reader.php': `<?php
+
+namespace App\\Xml;
+
+class Reader
+{
+    public function read(string $file, string $expr): array
+    {
+        $doc = new \\DOMDocument();
+        $doc->load($file);
+
+        $xpath = new \\DOMXPath($doc);
+
+        return iterator_to_array($xpath->query($expr));
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-dom-xpath.js', app)).toContain('xpath');
+  });
+
+  test('JIT switched on with no buffer, and an application with no ini at all', async () => {
+    const app = appWith('jit-on-without-buffer', {
+      'php.ini': `[opcache]
+opcache.enable=1
+opcache.jit=1
+`,
+    });
+
+    expect(await runModule('php-jit-config.js', app)).toContain('jit');
+
+    const bare = appWith('jit-no-ini', {});
+
+    expect(await runModule('php-jit-config.js', bare)).toContain('JIT mode');
+  });
+
+  test('a runtime created inside a try, a bootstrap with a literal path and a future with no shared state', async () => {
+    const app = appWith('parallel-guarded', {
+      'src/Thread/Worker.php': `<?php
+
+namespace App\\Thread;
+
+class Worker
+{
+    public function run(): void
+    {
+        parallel\\bootstrap('vendor/autoload.php');
+
+        try {
+            $runtime = new parallel\\Runtime();
+            $future = $runtime->run(static function (): int {
+                return 1;
+            });
+            $value = $future->value();
+        } catch (\\Throwable $e) {
+            return;
+        }
+    }
+
+    public function collect(parallel\\Future $future): int
+    {
+        return $future->value();
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-parallel-extension.js', app)).toContain('parallel');
+  });
+
+  test('a handle closed inside a finally, one closed without it, and a script that opens and closes at the top level', async () => {
+    const app = appWith('resource-handles', {
+      'src/Io/Writer.php': `<?php
+
+namespace App\\Io;
+
+class Writer
+{
+    public function guarded(string $path): void
+    {
+        $fp = fopen($path, 'w');
+
+        try {
+            fwrite($fp, 'x');
+        } finally {
+            fclose($fp);
+        }
+    }
+
+    public function plain(string $path): void
+    {
+        $fp = fopen($path, 'w');
+        fwrite($fp, 'x');
+        fclose($fp);
+    }
+}
+`,
+      'src/Io/bootstrap.php': `<?php
+
+$fp = fopen('/tmp/boot.log', 'a');
+fwrite($fp, "started\\n");
+fclose($fp);
+`,
+    });
+
+    expect(await runModule('php-resource-handle-leaks.js', app)).toContain('try-finally');
+  });
+});

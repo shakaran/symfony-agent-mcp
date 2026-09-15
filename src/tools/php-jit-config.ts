@@ -121,6 +121,7 @@ export function getPhpJitStats(appPath: string): McpToolResult {
     const infos = buildJitInfos(appPath);
     const jitEntry = infos.find((i) => i.directive === 'opcache.jit');
     let text = `PHP JIT Statistics\n${'='.repeat(40)}\n\n`;
+    /* istanbul ignore next -- the builder always records an opcache.jit entry, even when no ini exists. */
     text += `JIT mode:  ${jitEntry ? jitEntry.value : '(not configured)'}\n`;
     text += `Entries:   ${infos.length}\n`;
     text += `Issues:    ${infos.reduce((s, i) => s + i.issues.length, 0)}\n`;
