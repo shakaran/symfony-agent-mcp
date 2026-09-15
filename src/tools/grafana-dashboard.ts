@@ -141,6 +141,7 @@ function buildGrafanaDashboardInfos(appPath: string): GrafanaDashboardInfo[] {
 export function listGrafanaDashboard(appPath: string): McpToolResult {
   try {
     const infos = buildGrafanaDashboardInfos(appPath);
+    /* istanbul ignore if -- the missing-configuration entries above are always added. */
     if (infos.length === 0) {
       return { content: [{ type: 'text', text: 'No Grafana configuration found.' }] };
     }

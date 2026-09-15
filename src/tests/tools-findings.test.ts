@@ -61707,3 +61707,1340 @@ class Basket
     expect(await runModule('doctrine-orphan-removal.js', app)).toContain('persist');
   });
 });
+
+describe('batch 235: PostgreSQL, replicas, admin panels and GraphQL', () => {
+  test('a JSON column filtered with the arrow operator', async () => {
+    const app = appWith('postgres-json-arrow-filter', {
+      '.env': `DATABASE_URL=postgresql://app@localhost:5432/app
+`,
+      'src/Entity/Event.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Event
+{
+    public const SEARCH_DQL = "SELECT e FROM Event e WHERE e.payload->>'kind' = :kind";
+
+    #[ORM\\Column(type: 'json')]
+    private array $payload = [];
+}
+`,
+    });
+
+    expect(await runModule('doctrine-postgres-specific.js', app)).toContain('JSON');
+  });
+
+  test('one connection with a replica block and another with only a primary', async () => {
+    const app = appWith('read-replica-primary-only', {
+      'config/packages/doctrine.yaml': `doctrine:
+    dbal:
+        connections:
+            reader:
+                url: '%env(DATABASE_URL)%'
+                replica:
+                    replica_one:
+                        url: '%env(DATABASE_REPLICA_URL)%'
+            writer:
+                url: '%env(DATABASE_URL)%'
+                primary:
+                    url: '%env(DATABASE_URL)%'
+`,
+    });
+
+    expect(await runModule('doctrine-read-replica.js', app)).toContain('writer');
+  });
+
+  test('a fetch and persist pair inside a loop', async () => {
+    const app = appWith('upsert-fetch-persist-loop', {
+      'src/Service/TagImporter.php': `<?php
+
+namespace App\\Service;
+
+use Doctrine\\ORM\\EntityManagerInterface;
+
+class TagImporter
+{
+    public function __construct(private EntityManagerInterface $em)
+    {
+    }
+
+    public function import(array $names): void
+    {
+        foreach ($names as $name) {
+            $tag = $this->em->getRepository(Tag::class)->findOneBy(['name' => $name]);
+            if (null === $tag) {
+                $tag = new Tag($name);
+            }
+            $this->em->persist($tag);
+        }
+
+        $this->em->flush();
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-upsert-patterns.js', app)).toContain('loop');
+  });
+
+  test('a bundles file too large to scan, and an override that adds keys instead of replacing them', async () => {
+    const app = appWith('env-config-huge-bundles', {
+      'config/bundles.php': `<?php
+
+// ${'x'.repeat(530 * 1024)}
+
+return [];
+`,
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+`,
+      'config/packages/dev/monolog.yaml': `monolog:
+    channels: ['deprecation']
+`,
+      'config/packages/test/monolog.yaml': `# Logging in the test environment is left to the base configuration.
+`,
+    });
+
+    expect(await runModule('env-config-diff.js', app)).toContain('monolog');
+  });
+
+  test('an OAuth scope with no narrower alternative to suggest', async () => {
+    const app = appWith('google-oauth-admin-scope', {
+      'composer.json': JSON.stringify({
+        require: { 'google/apiclient': '^2.15' },
+        autoload: { 'psr-4': { 'App\\': 'src/' } },
+      }, null, 2),
+      'src/Service/DirectorySync.php': `<?php
+
+namespace App\\Service;
+
+class DirectorySync
+{
+    private const SCOPES = [
+        'https://www.googleapis.com/auth/admin',
+    ];
+
+    public function client(): \\Google\\Client
+    {
+        $client = new \\Google\\Client();
+        $client->setScopes(self::SCOPES);
+
+        return $client;
+    }
+}
+`,
+    });
+
+    expect(await runModule('google-oauth-integration.js', app)).toContain('admin');
+  });
+
+  test('a provisioning directory that holds no alert rule', async () => {
+    const app = appWith('grafana-alerting-empty', {
+      'grafana/provisioning/alerting/README.md': `Alert rules live in the shared Grafana instance.
+`,
+    });
+
+    expect(await runModule('grafana-dashboard.js', app)).toContain('No alert rules');
+  });
+
+  test('a GraphQL type of a kind the printer does not know about', async () => {
+    const app = appWith('graphql-custom-scalar-kind', {
+      'config/graphql/types/Money.types.yaml': `Money:
+    type: custom-scalar
+    config:
+        serialize: ['App\\GraphQL\\MoneyType', 'serialize']
+`,
+      'config/graphql/types/Query.types.yaml': `Query:
+    type: object
+    config:
+        fields:
+            balance:
+                type: 'Money'
+`,
+      'config/graphql/types/Currency.types.yaml': `Currency:
+    type: enum
+    config:
+        values:
+            EUR:
+                value: 'EUR'
+`,
+    });
+
+    expect(await runModule('graphql.js', app)).toContain('CUSTOM-SCALAR');
+  });
+});
+
+describe('batch 236: caching headers, uploads, live components and hubs', () => {
+  test('a cache header trait with no class, and a controller that varies on everything', async () => {
+    const app = appWith('http-cache-vary-star', {
+      'src/Controller/CacheHeadersTrait.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\Response;
+
+trait CacheHeadersTrait
+{
+    private function cacheFor(Response $response, int $seconds): Response
+    {
+        $response->setMaxAge($seconds);
+
+        return $response;
+    }
+}
+`,
+      'src/Controller/FeedController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+use Symfony\\Component\\HttpFoundation\\Response;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class FeedController extends AbstractController
+{
+    #[Route('/feed')]
+    public function feed(): Response
+    {
+        $response = new Response('feed');
+        $response->setMaxAge(60);
+        $response->headers->set('Vary', '*');
+
+        return $response;
+    }
+}
+`,
+    });
+
+    expect(await runModule('http-response-cache.js', app)).toContain('Vary');
+  });
+
+  test('a HubSpot fork with a long constraint and a secret read from the environment', async () => {
+    const app = appWith('hubspot-forked-constraint', {
+      'composer.json': JSON.stringify({
+        require: { 'hubspot/hubspot-php': 'dev-feature/retry-backoff as 4.0.x-dev' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Service/HubspotClient.php': `<?php
+
+namespace App\\Service;
+
+use HubSpot\\Factory;
+
+class HubspotClient
+{
+    public function create(): object
+    {
+        return Factory::createWithAccessToken(getenv('HUBSPOT_ACCESS_TOKEN'), [
+            'client_secret' => getenv('HUBSPOT_CLIENT_SECRET'),
+        ]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('hubspot-integration.js', app)).toContain('hubspot');
+  });
+
+  test('an upload that names two image extensions but not the third', async () => {
+    const app = appWith('image-upload-partial-extensions', {
+      'src/Controller/UploadController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\File\\UploadedFile;
+
+class UploadController
+{
+    public function upload(UploadedFile $file): string
+    {
+        $target = 'uploads/' . $file->getClientOriginalName();
+        if (!in_array($file->getClientOriginalExtension(), ['jpg', 'png'], true)) {
+            throw new \\RuntimeException('unsupported');
+        }
+        $file->move('uploads', $target);
+
+        return $target;
+    }
+}
+`,
+    });
+
+    expect(await runModule('image-processing.js', app)).toContain('upload');
+  });
+
+  test('an OAuth client with no provider package in composer', async () => {
+    const app = appWith('league-oauth-generic-provider', {
+      'composer.json': JSON.stringify({
+        require: { 'league/oauth2-client': '^2.7' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      '.env': `OAUTH_CLIENT_ID=abc
+OAUTH_CLIENT_SECRET=shhh
+`,
+      'src/Security/OauthClient.php': `<?php
+
+namespace App\\Security;
+
+use League\\OAuth2\\Client\\Provider\\GenericProvider;
+
+class OauthClient
+{
+    public function provider(): GenericProvider
+    {
+        return new GenericProvider([
+            'clientId' => getenv('OAUTH_CLIENT_ID'),
+            'redirectUri' => 'https://app.example.com/callback',
+        ]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('league-oauth2-client.js', app)).toContain('OAuth2');
+  });
+
+  test('a live component holding a token, with a guarded action', async () => {
+    const app = appWith('live-component-sensitive-prop', {
+      'src/Twig/Components/ResetForm.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\LiveComponent\\Attribute\\AsLiveComponent;
+use Symfony\\UX\\LiveComponent\\Attribute\\LiveAction;
+use Symfony\\UX\\LiveComponent\\Attribute\\LiveProp;
+
+#[AsLiveComponent('reset_form')]
+class ResetForm
+{
+    #[LiveProp(writable: true)]
+    public string $resetToken = '';
+
+    #[LiveAction]
+    public function submit(): void
+    {
+        $this->denyAccessUnlessGranted('ROLE_USER');
+    }
+}
+`,
+    });
+
+    expect(await runModule('live-components.js', app)).toContain('resetToken');
+  });
+
+  test('a signing transport and a null transport side by side', async () => {
+    const app = appWith('mailer-dkim-and-null', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        transports:
+            main: 'smtp://user:pass@smtp.example.com?dkim=1&return_path=bounces@example.com&local_domain=example.com'
+            test: 'null://null'
+`,
+    });
+
+    expect(await runModule('mailer-dkim-config.js', app)).toContain('DKIM');
+  });
+
+  test('a Memcached pool whose DSN carries SASL credentials', async () => {
+    const app = appWith('memcached-with-sasl', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/cache': '^7.0', 'ext-memcached': '*' },
+        autoload: { 'psr-4': { 'App\\': 'src/' } },
+      }, null, 2),
+      'config/packages/cache.yaml': `framework:
+    cache:
+        default_memcached_provider: 'memcached://app:hunter2@memcached:11211'
+        pools:
+            cache.app:
+                adapter: cache.adapter.memcached
+`,
+    });
+
+    expect(await runModule('memcached-integration.js', app)).toContain('memcached');
+  });
+
+  test('a named hub with no URL of its own', async () => {
+    const app = appWith('mercure-hub-without-url', {
+      'config/packages/mercure.yaml': `mercure:
+    hubs:
+        default:
+            jwt:
+                secret: '%env(MERCURE_JWT_SECRET)%'
+`,
+    });
+
+    expect(await runModule('mercure.js', app)).toContain('default');
+
+    const emptyHubs = appWith('mercure-hubs-empty', {
+      'config/packages/mercure.yaml': `mercure:
+    hubs: {}
+`,
+    });
+    expect(await runModule('mercure.js', emptyHubs)).toContain('Mercure');
+  });
+});
+
+describe('batch 237: messenger buses, tenancy, API docs and PDFs', () => {
+  test('middleware entries written as maps on both the default bus and a named one', async () => {
+    const app = appWith('messenger-middleware-maps', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        middleware:
+            - 'doctrine_transaction'
+            - validation: { enabled: true }
+        buses:
+            command.bus:
+                middleware:
+                    - doctrine_ping_connection
+                    - router_context: ~
+`,
+    });
+
+    expect(await runModule('messenger-middleware.js', app)).toContain('doctrine_transaction');
+  });
+
+  test('a messenger transport left on the native serializer', async () => {
+    const app = appWith('messenger-native-serializer', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+`,
+      'src/Message/SendInvoice.php': `<?php
+
+namespace App\\Message;
+
+class SendInvoice
+{
+    public function __construct(public readonly int $invoiceId)
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('messenger-serializer.js', app)).toContain('Native PHP: yes');
+
+    const symfony = appWith('messenger-symfony-serializer', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        serializer: 'messenger.transport.symfony_serializer'
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+`,
+      'src/Message/SendReceipt.php': `<?php
+
+namespace App\\Message;
+
+class SendReceipt
+{
+    public function __construct(public readonly int $receiptId)
+    {
+    }
+}
+`,
+    });
+    expect(await runModule('messenger-serializer.js', symfony)).toContain('Symfony: yes');
+  });
+
+  test('an entity contract and a tenant relation with no root entity', async () => {
+    const app = appWith('multi-tenancy-relation-only', {
+      'src/Entity/TenantAware.php': `<?php
+
+namespace App\\Entity;
+
+/**
+ * Marker for every #[ORM\\Entity] that carries a tenant column.
+ */
+interface TenantAware
+{
+    public function getTenantId(): ?int;
+}
+`,
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Invoice implements TenantAware
+{
+    #[ORM\\ManyToOne(targetEntity: Tenant::class)]
+    private ?Tenant $tenant = null;
+
+    public function getTenantId(): ?int
+    {
+        return $this->tenant?->getId();
+    }
+}
+`,
+    });
+
+    expect(await runModule('multi-tenancy.js', app)).toContain('Invoice');
+  });
+
+  test('two repository calls in the same loop, in a file with no class', async () => {
+    const app = appWith('n-plus-one-script-file', {
+      'src/legacy_report.php': `<?php
+
+foreach ($orderIds as $orderId) {
+    $order = $orderRepository->findOneBy(['id' => $orderId]);
+    $customer = $customerRepository->findOneBy(['id' => $order->customerId]);
+    echo $customer->name;
+}
+`,
+    });
+
+    expect(await runModule('n-plus-one-queries.js', app)).toContain('(file)');
+  });
+
+  test('documented endpoints in a trait, with the documentation cache enabled', async () => {
+    const app = appWith('nelmio-doc-cache-enabled', {
+      'composer.json': JSON.stringify({
+        require: { 'nelmio/api-doc-bundle': '^4.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    documentation:
+        info:
+            title: 'Billing API'
+            version: '1.0.0'
+    cache:
+        enabled: true
+`,
+      'src/Controller/DocumentedEndpointsTrait.php': `<?php
+
+namespace App\\Controller;
+
+use OpenApi\\Attributes as OA;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+trait DocumentedEndpointsTrait
+{
+    #[Route('/ping')]
+    #[OA\\Response(response: 200, description: 'pong')]
+    public function ping(): array
+    {
+        return ['pong'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('nelmio-api-doc.js', app)).toContain('Cache enabled:       yes');
+  });
+
+  test('a security section separated by a blank line', async () => {
+    const app = appWith('nelmio-security-blank-line', {
+      'config/packages/nelmio_security.yaml': `nelmio_security:
+    clickjacking:
+        paths:
+            '^/.*': DENY
+
+    forced_ssl:
+        hsts_max_age: 31536000
+        hsts_subdomains: true
+
+        enabled: true
+`,
+    });
+
+    expect(await runModule('nelmio-security-bundle.js', app)).toContain('CONTENT_SECURITY_POLICY');
+  });
+
+  test('a PayPal secret read from the shell and a capture that verifies the order', async () => {
+    const app = appWith('paypal-verified-capture', {
+      '.env': `PAYPAL_CLIENT_ID=\${PAYPAL_CLIENT_ID}
+PAYPAL_CLIENT_SECRET=\${PAYPAL_CLIENT_SECRET}
+`,
+      'src/Service/PaypalCheckout.php': `<?php
+
+namespace App\\Service;
+
+class PaypalCheckout
+{
+    public function capture(string $orderId, $client): array
+    {
+        $order = $client->getOrder($orderId);
+        if ('APPROVED' !== $order['status']) {
+            throw new \\RuntimeException('not approved');
+        }
+
+        return $client->captureOrder($orderId);
+    }
+}
+`,
+    });
+
+    expect(await runModule('paypal-integration.js', app)).toContain('PayPal');
+  });
+
+  test('applications built on mPDF and on Snappy', async () => {
+    const mpdf = appWith('pdf-library-mpdf', {
+      'composer.json': JSON.stringify({
+        require: { 'mpdf/mpdf': '^8.2' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+    expect(await runModule('pdf-generation.js', mpdf)).toContain('mpdf');
+
+    const snappy = appWith('pdf-library-snappy', {
+      'composer.json': JSON.stringify({
+        require: { 'knplabs/knp-snappy-bundle': '^1.10' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+    expect(await runModule('pdf-generation.js', snappy)).toContain('snappy');
+  });
+});
+
+describe('batch 238: PHP version rules, enums and static analysis config', () => {
+  test('a composer file with no usable PHP constraint, and one pinned to 8.4', async () => {
+    const loose = appWith('array-find-loose-constraint', {
+      'composer.json': JSON.stringify({
+        require: { php: '*' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Service/Finder.php': `<?php
+
+namespace App\\Service;
+
+class Finder
+{
+    public function first(array $rows, string $needle): ?array
+    {
+        $matches = array_filter($rows, fn (array $row) => $row['name'] === $needle);
+
+        return reset($matches) ?: null;
+    }
+}
+`,
+    });
+    expect(await runModule('php-array-find-functions.js', loose)).toContain('array_filter');
+
+    const modern = appWith('array-find-php84', {
+      'composer.json': JSON.stringify({
+        require: { php: '^8.4' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Service/Finder.php': `<?php
+
+namespace App\\Service;
+
+class Finder
+{
+    public function first(array $rows, string $needle): ?array
+    {
+        $matches = array_filter($rows, fn (array $row) => $row['name'] === $needle);
+
+        return reset($matches) ?: null;
+    }
+}
+`,
+    });
+    expect(await runModule('php-array-find-functions.js', modern)).toContain('array_find()');
+  });
+
+  test('a guarded from() call and a unit enum read through value', async () => {
+    const app = appWith('backed-enum-unit-value', {
+      'src/Enum/Status.php': `<?php
+
+namespace App\\Enum;
+
+enum Status: string
+{
+    case Draft = 'draft';
+    case Sent = 'sent';
+
+    public static function tryParse(string $raw): ?self
+    {
+        try {
+            return Status::from($raw);
+        } catch (\\ValueError $e) {
+            return null;
+        }
+    }
+}
+`,
+      'src/Enum/Phase.php': `<?php
+
+namespace App\\Enum;
+
+enum Phase
+{
+    case Start;
+    case End;
+
+    public function label(): string
+    {
+        return $this->value;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-backed-enum-patterns.js', app)).toContain('Status');
+  });
+
+  test('a debug call left in a test that lives under src', async () => {
+    const app = appWith('backtrace-debug-in-test', {
+      'src/Tests/InvoiceRendererTest.php': `<?php
+
+namespace App\\Tests;
+
+use PHPUnit\\Framework\\TestCase;
+
+class InvoiceRendererTest extends TestCase
+{
+    public function testRender(): void
+    {
+        $result = ['total' => 10];
+        var_dump($result);
+        $this->assertSame(10, $result['total']);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-backtrace-debug.js', app)).toContain('test context');
+  });
+
+  test('a CodeSniffer configuration that already excludes vendor', async () => {
+    const app = appWith('codesniffer-excludes-vendor', {
+      'phpcs.xml': `<?xml version="1.0"?>
+<ruleset name="App">
+    <rule ref="PSR12"/>
+    <file>src</file>
+    <exclude-pattern>vendor/*</exclude-pattern>
+</ruleset>
+`,
+    });
+    expect(await runModule('php-codesniffer-config.js', app)).toContain('No PHP_CodeSniffer configuration found');
+  });
+
+  test('a caret PHP constraint and a constant redeclared with the Override attribute', async () => {
+    const app = appWith('constant-visibility-override', {
+      'composer.json': JSON.stringify({
+        require: { php: '^8.1' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Model/Reports.php': `<?php
+
+namespace App\\Model;
+
+class BaseReport
+{
+    public const FORMAT = 'csv';
+}
+
+class PdfReport extends BaseReport
+{
+    #[Override]
+    public const FORMAT = 'pdf';
+}
+`,
+      'src/Model/HasFormat.php': `<?php
+
+namespace App\\Model;
+
+trait HasFormat
+{
+    private const DEFAULT_FORMAT = 'csv';
+
+    public function format(): string
+    {
+        return self::DEFAULT_FORMAT;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-constant-visibility.js', app)).toContain('private const');
+  });
+
+  test('a duplicated method shared with two classes declared in one file', async () => {
+    const app = appWith('copy-paste-two-classes-one-file', {
+      'src/Handler/OrderHandler.php': `<?php
+
+namespace App\\Handler;
+
+class OrderHandler
+{
+    public function handle(array $payload): array
+    {
+        $normalized = array_change_key_case($payload, CASE_LOWER);
+        $normalized['received_at'] = date('c');
+        $normalized['source'] = 'webhook';
+        $normalized['attempts'] = 0;
+        unset($normalized['signature']);
+        unset($normalized['nonce']);
+        ksort($normalized);
+        if ([] === $normalized) {
+            throw new \\RuntimeException('empty payload');
+        }
+
+        return $normalized;
+    }
+}
+`,
+      'src/Handler/LegacyHandlers.php': `<?php
+
+namespace App\\Handler;
+
+class InvoiceHandler
+{
+    public function handle(array $payload): array
+    {
+        $normalized = array_change_key_case($payload, CASE_LOWER);
+        $normalized['received_at'] = date('c');
+        $normalized['source'] = 'webhook';
+        $normalized['attempts'] = 0;
+        unset($normalized['signature']);
+        unset($normalized['nonce']);
+        ksort($normalized);
+        if ([] === $normalized) {
+            throw new \\RuntimeException('empty payload');
+        }
+
+        return $normalized;
+    }
+}
+
+class ReceiptHandler
+{
+    public function handle(array $payload): array
+    {
+        $normalized = array_change_key_case($payload, CASE_LOWER);
+        $normalized['received_at'] = date('c');
+        $normalized['source'] = 'webhook';
+        $normalized['attempts'] = 0;
+        unset($normalized['signature']);
+        unset($normalized['nonce']);
+        ksort($normalized);
+        if ([] === $normalized) {
+            throw new \\RuntimeException('empty payload');
+        }
+
+        return $normalized;
+    }
+}
+`,
+      'src/Handler/NoteHandler.php': `<?php
+
+namespace App\\Handler;
+
+class NoteHandler
+{
+    public function handle(array $payload): array
+    {
+        $normalized = array_change_key_case($payload, CASE_LOWER);
+        $normalized['received_at'] = date('c');
+        $normalized['source'] = 'webhook';
+        $normalized['attempts'] = 0;
+        unset($normalized['signature']);
+        $normalized['channel'] = 'notes';
+        $normalized['priority'] = 'low';
+        $normalized['retries'] = 3;
+        ksort($normalized);
+
+        return $normalized;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-copy-paste-detector.js', app)).toContain('handle');
+  });
+
+  test('a child narrowing the return type of a parent that declares none', async () => {
+    const app = appWith('covariance-untyped-parent', {
+      'src/Repository/AbstractLoader.php': `<?php
+
+namespace App\\Repository;
+
+class AbstractLoader
+{
+    public function load()
+    {
+        return null;
+    }
+}
+`,
+      'src/Repository/UserLoader.php': `<?php
+
+namespace App\\Repository;
+
+class UserLoader extends AbstractLoader
+{
+    public function load(): ?object
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-covariance.js', app)).toContain('(none)');
+  });
+
+  test('a fixer finder with a trailing comma and both directories excluded', async () => {
+    const app = appWith('cs-fixer-trailing-comma', {
+      '.php-cs-fixer.dist.php': `<?php
+
+$finder = PhpCsFixer\\Finder::create()
+    ->in([
+        __DIR__ . '/src',
+        __DIR__ . '/tests',
+        ,
+    ])
+    ->exclude('vendor')
+    ->exclude('var');
+
+return (new PhpCsFixer\\Config())
+    ->setRules(['@PSR12' => true])
+    ->setFinder($finder);
+`,
+    });
+
+    expect(await runModule('php-cs-fixer.js', app)).toContain('Excluded');
+  });
+});
+
+describe('batch 239: deprecations, enums, FFI and native extensions', () => {
+  test('a deprecation annotation with no explanation', async () => {
+    const app = appWith('deprecations-bare-annotation', {
+      'src/Service/LegacyExporter.php': `<?php
+
+namespace App\\Service;
+
+class LegacyExporter
+{
+    /**
+     * @deprecated
+     */
+    public function exportAll(): array
+    {
+        return [];
+    }
+
+    /** @deprecated*/
+    public function exportOne(int $id): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-deprecations.js', app)).toContain('annotation');
+  });
+
+  test('a switch over an enum, and an application with no src directory', async () => {
+    const app = appWith('enums-switch-statement', {
+      'src/Enum/Priority.php': `<?php
+
+namespace App\\Enum;
+
+enum Priority: string
+{
+    case Low = 'low';
+    case High = 'high';
+
+    public function label(): string
+    {
+        switch ($this) {
+            case Priority::Low:
+                return 'Low';
+            case Priority::High:
+                return 'High';
+        }
+
+        return '';
+    }
+}
+`,
+    });
+    expect(await runModule('php-enums.js', app)).toContain('match()');
+
+    const bare = appWith('enums-no-src', {});
+    expect(await runModule('php-enums.js', bare)).toContain('enum');
+  });
+
+  test('an FFI scope attribute with preloading enforced in php.ini', async () => {
+    const app = appWith('ffi-scope-attribute', {
+      'php.ini': `ffi.enable=preload
+opcache.preload=/app/config/preload.php
+`,
+      'src/Native/Crypto.php': `<?php
+
+namespace App\\Native;
+
+#[FFI\\Attr('crypto')]
+class Crypto
+{
+    public function hash(string $value): string
+    {
+        return $value;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-ffi.js', app)).toContain('preload');
+  });
+
+  test('a file with more first-class callables than the printer shows', async () => {
+    const app = appWith('first-class-callables-many', {
+      'src/Service/Pipeline.php': `<?php
+
+namespace App\\Service;
+
+class Pipeline
+{
+    public function steps(): array
+    {
+        return [
+            $this->trim(...),
+            $this->lower(...),
+            $this->slug(...),
+            $this->hash(...),
+            $this->store(...),
+            $this->notify(...),
+            $this->audit(...),
+        ];
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-first-class-callables.js', app)).toContain('first-class');
+  });
+
+  test('a Flysystem SFTP adapter next to an FTP password', async () => {
+    const app = appWith('ftp-sftp-adapter', {
+      '.env': `SFTP_PASSWORD=hunter2
+`,
+      'src/Storage/RemoteStorage.php': `<?php
+
+namespace App\\Storage;
+
+use League\\Flysystem\\PhpseclibV3\\SftpAdapter;
+
+class RemoteStorage
+{
+    public function adapter(): SftpAdapter
+    {
+        return new SftpAdapter($this->connectionProvider(), '/upload');
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-ftp-sftp-patterns.js', app)).toContain('SFTP');
+  });
+
+  test('an Imagick instance built from a variable, among many other findings', async () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 55; i++) {
+      lines.push(`        $image${i} = imagecreatefromjpeg($path);`);
+    }
+    const app = appWith('gd-imagick-variable-path', {
+      'src/Image/Thumbnailer.php': `<?php
+
+namespace App\\Image;
+
+class Thumbnailer
+{
+    public function build(string $path): void
+    {
+${lines.join('\n')}
+        $vector = new \\Imagick($path);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-gd-security.js', app)).toContain('more issues');
+  });
+
+  test('an email body and an attachment that are both sanitized', async () => {
+    const app = appWith('imap-sanitized-body', {
+      'src/Mail/InboxReader.php': `<?php
+
+namespace App\\Mail;
+
+class InboxReader
+{
+    public function read($mailbox, int $messageNumber): array
+    {
+        $body = imap_body($mailbox, $messageNumber);
+        $safeBody = htmlspecialchars($body, ENT_QUOTES, 'UTF-8');
+
+        $attachment = base64_decode(imap_fetchbody($mailbox, $messageNumber, '2'));
+        $safeName = strip_tags($attachment);
+
+        return [$safeBody, $safeName];
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-imap-patterns.js', app)).toContain('No IMAP/POP3 security patterns found');
+  });
+
+  test('large-number arithmetic guarded by bcmath and by a range check', async () => {
+    const app = appWith('integer-overflow-guarded', {
+      'src/Service/Totals.php': `<?php
+
+namespace App\\Service;
+
+class Totals
+{
+    public function add(int $left, int $right): string
+    {
+        if ($left > PHP_INT_MAX - $right) {
+            return bcadd((string) $left, (string) $right);
+        }
+
+        return (string) ($left + $right);
+    }
+
+    public function page(): int
+    {
+        if (!isset($_GET['page']) || !is_numeric($_GET['page'])) {
+            return 1;
+        }
+        return intval($_GET['page']);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-integer-overflow.js', app)).toContain('No integer overflow patterns found');
+  });
+});
+
+describe('batch 240: interfaces, JSON flags, redirects and readonly', () => {
+  test('an interface extending four others, next to a file that only mentions one', async () => {
+    const app = appWith('interface-segregation-wide', {
+      'src/Contract/Everything.php': `<?php
+
+namespace App\\Contract;
+
+interface Everything extends Readable, Writable, Countable, Serializable
+{
+    public function all(): array;
+}
+`,
+      'src/Contract/Removed.php': `<?php
+
+namespace App\\Contract;
+
+// The interface Legacy was removed in 3.0; this file is kept for the changelog.
+`,
+    });
+
+    expect(await runModule('php-interface-segregation.js', app)).toContain('Everything');
+  });
+
+  test('many unguarded json_decode calls and one that throws', async () => {
+    const decodes: string[] = [];
+    for (let i = 0; i < 55; i++) {
+      decodes.push(`        $row${i} = json_decode($payload, true);`);
+    }
+    const app = appWith('json-decode-many-calls', {
+      'src/Service/PayloadReader.php': `<?php
+
+namespace App\\Service;
+
+class PayloadReader
+{
+    public function read(string $payload): array
+    {
+${decodes.join('\n')}
+        $strict = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+
+        return [$strict];
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-json-encode-flags.js', app)).toContain('more issues');
+  });
+
+  test('a PHPMetrics configuration asking for JSON and excluding vendor', async () => {
+    const app = appWith('phpmetrics-json-report', {
+      'phpmetrics.xml': `<?xml version="1.0"?>
+<phpmetrics>
+    <report format = "json" file="var/metrics.json"/>
+    <exclude = "vendor,var,tests"/>
+</phpmetrics>
+`,
+    });
+
+    expect(await runModule('php-metrics-config.js', app)).toContain('json');
+
+    const bare = appWith('phpmetrics-empty-config', {
+      'phpmetrics.xml': `<?xml version="1.0"?>
+<phpmetrics>
+</phpmetrics>
+`,
+    });
+    expect(await runModule('php-metrics-config.js', bare)).toContain('phpmetrics.xml');
+  });
+
+  test('named arguments used inside a PHPUnit namespace', async () => {
+    const app = appWith('named-arguments-phpunit-namespace', {
+      'src/Testing/ArrayExtension.php': `<?php
+
+namespace PHPUnit\\Extension;
+
+class ArrayExtension
+{
+    public function build(): array
+    {
+        return array_slice(array: [1, 2, 3], offset: 1, length: 2);
+    }
+}
+`,
+      'src/Service/Slugger.php': `<?php
+
+namespace App\\Service;
+
+class Slugger
+{
+    public function slug(string $value): string
+    {
+        return str_replace(search: ' ', replace: '-', subject: $value);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-named-arguments.js', app)).toContain('Slugger');
+  });
+
+  test('a Drupal redirect with no validation in sight', async () => {
+    const app = appWith('open-redirect-drupal-goto', {
+      'src/Legacy/Bridge.php': `<?php
+
+namespace App\\Legacy;
+
+class Bridge
+{
+    public function leave(string $target): void
+    {
+        drupal_goto($target);
+    }
+
+    public function back($response, string $target): void
+    {
+        $response->redirect($target);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-open-redirect.js', app)).toContain('drupal_goto()');
+  });
+
+  test('a backtrack limit raised far too high and another one switched off', async () => {
+    const app = appWith('pcre-backtrack-limits', {
+      'src/Service/HugeMatcher.php': `<?php
+
+namespace App\\Service;
+
+class HugeMatcher
+{
+    public function boot(): void
+    {
+        ini_set('pcre.backtrack_limit', '100000000');
+    }
+
+    public function matches(string $value): bool
+    {
+        return 1 === preg_match('/^[a-z]+$/', $value);
+    }
+}
+`,
+      'src/Service/UnlimitedMatcher.php': `<?php
+
+namespace App\\Service;
+
+class UnlimitedMatcher
+{
+    public function boot(): void
+    {
+        ini_set('pcre.backtrack_limit', '0');
+    }
+
+    public function matches(string $value): bool
+    {
+        return 1 === preg_match('/^[0-9]+$/', $value);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-pcre-security.js', app)).toContain('backtrack_limit');
+  });
+
+  test('a readonly class that also declares serialization hooks', async () => {
+    const app = appWith('readonly-class-with-serialize', {
+      'src/Dto/Money.php': `<?php
+
+namespace App\\Dto;
+
+readonly class Money
+{
+    public function __construct(
+        public int $amount,
+        public string $currency,
+    ) {
+    }
+
+    public function __serialize(): array
+    {
+        return ['amount' => $this->amount, 'currency' => $this->currency];
+    }
+
+    public function __unserialize(array $data): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-readonly.js', app)).toContain('unserialize');
+  });
+
+  test('a file read whose path is never stripped of null bytes', async () => {
+    const app = appWith('null-byte-unstripped-path', {
+      'src/Storage/Reader.php': `<?php
+
+namespace App\\Storage;
+
+class Reader
+{
+    public function read(string $name): string
+    {
+        $path = '/var/data/' . $_GET['name'];
+
+        return file_get_contents($path);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-null-byte-injection.js', app)).toContain('null byte');
+  });
+});

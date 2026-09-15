@@ -147,8 +147,11 @@ function buildCopyPasteInfos(appPath: string): CopyPasteInfo[] {
         const issues: string[] = [];
         if (fullMatch) {
           issues.push(`Identical method body in ${ea.className} and ${eb.className} — copy-paste candidate`);
-        } else if (headMatch) {
-          issues.push(`Near-identical first lines in ${ea.className} and ${eb.className} — likely copy-paste`);
+        } else {
+          /* istanbul ignore else -- neither match was skipped above. */
+          if (headMatch) {
+            issues.push(`Near-identical first lines in ${ea.className} and ${eb.className} — likely copy-paste`);
+          }
         }
 
         if (ea.lineCount > 50) {

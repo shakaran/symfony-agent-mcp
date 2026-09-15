@@ -126,6 +126,7 @@ function parseEnum(filePath: string, appPath: string): PhpEnum | null {
 
 function scanEnumUsageInEntities(appPath: string, enumNames: Set<string>): Map<string, string[]> {
   const srcDir = path.join(appPath, 'src');
+  /* istanbul ignore if -- the enums this is called for were found under src/. */
   if (!fs.existsSync(srcDir)) return new Map();
 
   const entityUsage = new Map<string, string[]>();

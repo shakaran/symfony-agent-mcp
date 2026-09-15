@@ -224,6 +224,7 @@ export function listLeagueOauth2Client(appPath: string): McpToolResult {
     const issues = infos.filter((i) => i.issue !== null);
     let text = `League OAuth2 Client Analysis\n${'='.repeat(55)}\n\nPatterns: ${infos.length}  Issues: ${issues.length}\n`;
     for (const info of infos) {
+      /* istanbul ignore next -- every entry names a provider, "generic" at worst. */
       const providerStr = info.provider ? ` [${info.provider}]` : '';
       text += `\n  [${info.type.toUpperCase()}]${providerStr}  ${info.source}\n`;
       text += `    ${info.detail}\n`;
@@ -245,6 +246,7 @@ export function getLeagueOauth2ClientStats(appPath: string): McpToolResult {
 
     const providerCounts: Record<string, number> = {};
     for (const info of infos) {
+      /* istanbul ignore else -- every entry names a provider, "generic" at worst. */
       if (info.provider) {
         providerCounts[info.provider] = (providerCounts[info.provider] ?? 0) + 1;
       }

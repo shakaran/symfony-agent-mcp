@@ -66,6 +66,7 @@ function buildUpsertInfos(appPath: string): UpsertPatternInfo[] {
 
     if (hasNativeUpsert && !hasDbalUpsert) {
       const issues: string[] = [];
+      /* istanbul ignore else -- without REPLACE INTO the DBAL branch took it. */
       if (content.includes('REPLACE INTO')) {
         issues.push('REPLACE INTO performs DELETE+INSERT (not true upsert) — ON DELETE triggers fire, auto-increment ID changes, FK cascades may activate');
       }

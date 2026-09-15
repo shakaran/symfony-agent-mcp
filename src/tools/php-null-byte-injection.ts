@@ -100,6 +100,7 @@ function analyzeLine(
       }
     }
     if (!hasStrip) {
+      /* istanbul ignore next -- one of the functions was found on this line above. */
       const funcName = FILE_FUNCS.find((fn) => trimmed.includes(fn)) ?? 'file-access';
       return {
         file: relFile,
@@ -209,6 +210,7 @@ export function getPhpNullByteInjectionStats(appPath: string): McpToolResult {
     };
 
     for (const i of infos) {
+      /* istanbul ignore next -- the severities are seeded above. */
       stats.bySeverity[i.severity] = (stats.bySeverity[i.severity] ?? 0) + 1;
       stats.byPattern[i.pattern] = (stats.byPattern[i.pattern] ?? 0) + 1;
     }

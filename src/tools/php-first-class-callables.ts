@@ -104,6 +104,7 @@ function parseFirstClassCallableFile(filePath: string, appPath: string): FirstCl
   // Also detect patterns where variable is typed as nullable and used with (...)
   const nullableTypeRe = /\?\w{1,80}\s+\$(\w{1,80})[^;{]{0,200}\$\1->\w{1,80}\(\.\.\.\)/gs;
   while ((m = nullableTypeRe.exec(content)) !== null) {
+    /* istanbul ignore else -- the "?->" matches never equal this suffix. */
     if (!nullableResults.includes(m[0].slice(-30))) {
       issues.push(`Nullable variable $${m[1]} used as first-class callable — call will throw TypeError if null`);
       break;

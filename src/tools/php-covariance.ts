@@ -66,6 +66,7 @@ function parseMethodSignatures(content: string): MethodSignature[] {
   const methodRe = /function\s+(\w{1,80})\s*\(([^)]{0,500})\)\s*(?::\s*([\w\\|?&[\]{} ]{0,100}))?/g;
   let m: RegExpExecArray | null;
   while ((m = methodRe.exec(content)) !== null) {
+    /* istanbul ignore next -- the parameter group always takes part in the match. */
     const params = m[2] ?? '';
     const paramTypes: string[] = [];
     // Extract type from each parameter slot: "TypeHint $varName"

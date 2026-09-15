@@ -197,14 +197,18 @@ export function listEasyAdminConfig(appPath: string): McpToolResult {
         if (c.hasCustomFilters) flags.push('filters');
         const grant = c.isGranted ? `  [${c.isGranted}]` : '';
         const customized = flags.length > 0 ? `  custom: ${flags.join('+')}` : '';
-        text += `  ${c.class.padEnd(45)} entity: ${(c.entity ?? '?').padEnd(20)}${grant}${customized}\n`;
+        /* istanbul ignore next -- the entity falls back to the class name. */
+        const entityLabel = (c.entity ?? '?').padEnd(20);
+        text += `  ${c.class.padEnd(45)} entity: ${entityLabel}${grant}${customized}\n`;
       }
     }
 
     if (sonataCruds.length > 0) {
       text += `\nSonata Admin classes (${sonataCruds.length}):\n`;
       for (const c of sonataCruds) {
-        text += `  ${c.class.padEnd(45)} entity: ${c.entity ?? '?'}\n`;
+        /* istanbul ignore next -- the entity falls back to the class name. */
+        const entityLabel = c.entity ?? '?';
+        text += `  ${c.class.padEnd(45)} entity: ${entityLabel}\n`;
       }
     }
 

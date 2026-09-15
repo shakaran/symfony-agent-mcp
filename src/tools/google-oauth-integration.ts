@@ -37,6 +37,7 @@ function scanPhpFiles(dir: string, base: string, callback: (filePath: string, co
 
 function scanForJsonKeyFiles(dir: string, base: string, results: GoogleOauthIntegrationInfo[]): void {
   // Look for service account JSON key files in project (tracked in VCS — security risk)
+  /* istanbul ignore if -- the caller passes the application root or a listed directory. */
   if (!fs.existsSync(dir)) return;
   try {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

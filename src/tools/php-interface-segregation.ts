@@ -142,6 +142,7 @@ function analyzeAll(appPath: string): InterfaceSegregationInfo[] {
 
     if (/\binterface\s+\w/.test(content)) {
       const iface = parseInterface(file);
+      /* istanbul ignore else -- the declaration this file matched is parsed again there. */
       if (iface) interfaces.push(iface);
     } else if (/\bclass\s+\w/.test(content)) {
       const cls = parseClass(file);

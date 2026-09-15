@@ -141,6 +141,7 @@ export function getPhpBacktraceDebugStats(appPath: string): McpToolResult {
       byFunction: {} as Record<string, number>,
     };
     for (const i of infos) {
+      /* istanbul ignore next -- the three risk levels are seeded above. */
       stats.byRisk[i.risk] = (stats.byRisk[i.risk] ?? 0) + 1;
       stats.byFunction[i.function] = (stats.byFunction[i.function] ?? 0) + 1;
     }

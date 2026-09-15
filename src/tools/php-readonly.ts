@@ -108,6 +108,7 @@ function parseReadonlyInfo(filePath: string, appPath: string): ReadonlyInfo | nu
   }
   if (readonlyProps > 0 && totalProps > 0 && readonlyProps < totalProps && !isReadonlyClass) {
     const mutableCount = totalProps - readonlyProps;
+    /* istanbul ignore else -- readonlyProps is below totalProps here. */
     if (mutableCount > 0) {
       issues.push(`Mixed design: ${readonlyProps} readonly + ${mutableCount} mutable properties — consider full DTO or full entity`);
     }

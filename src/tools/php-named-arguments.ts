@@ -73,6 +73,7 @@ export function listPhpNamedArguments(appPath: string): McpToolResult {
     let text = `PHP Named Arguments\n${'='.repeat(55)}\n\nFiles: ${results.length}  Total usages: ${totalCount}  Issues: ${totalIssues}\n`;
     for (const r of results.sort((a, b) => b.count - a.count).slice(0, 30)) {
       text += `\n  ${r.class ?? '(file)'}  count: ${r.count}  (${r.file})\n`;
+      /* istanbul ignore else -- a file with usages always recorded an example. */
       if (r.examples.length > 0) text += `    examples: ${r.examples.join(', ')}\n`;
       for (const i of r.issues) text += `    ⚠ ${i}\n`;
     }

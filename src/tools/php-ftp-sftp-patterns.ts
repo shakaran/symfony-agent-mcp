@@ -74,6 +74,7 @@ function scanEnvFile(filePath: string, appPath: string): PhpFtpSftpInfo[] {
     if (/\bFTP_PASSWORD\s*=/.test(line) || /\bSFTP_PASSWORD\s*=/.test(line) || /\bSFTP_PASS\s*=/.test(line)) {
       // M-14: password vars are fully redacted regardless of length. Partial
       // masking was dropped because it needed {8,} and skipped $#'" chars.
+      /* istanbul ignore next -- one of the three names matched just above. */
       const varName = line.match(/\b(FTP_PASSWORD|SFTP_PASSWORD|SFTP_PASS)/)?.[1] ?? 'PASSWORD';
       const masked = `${varName}=***`;
       results.push({
