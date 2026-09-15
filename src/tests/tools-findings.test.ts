@@ -50745,3 +50745,978 @@ class LegacyPost
     expect(text).toContain('Post');
   });
 });
+
+describe('batch 191: trees, timestamps, charts and handlers', () => {
+  test('a closure tree with no closure class, and a materialized path with no source', async () => {
+    const app = appWith('gedmo-tree-shapes', {
+      'src/Entity/Category.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+#[Gedmo\\Tree(type: 'closure')]
+#[Gedmo\\TreeClosure(class: CategoryClosure::class)]
+class Category
+{
+    #[Gedmo\\TreeLeft]
+    private $lft;
+}
+`,
+      'src/Entity/Menu.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Mapping\\Annotation as Gedmo;
+
+#[ORM\\Entity]
+#[Gedmo\\Tree(type: 'materializedPath')]
+class Menu
+{
+    #[Gedmo\\TreeParent]
+    private $parent;
+
+    #[Gedmo\\TreePath]
+    private $path;
+
+    #[Gedmo\\TreePathSource]
+    private $title;
+}
+
+#[Gedmo\\Tree(type: 'materializedPath')]
+class BareMenu
+{
+    #[Gedmo\\TreeParent]
+    private $parent;
+}
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+use Stof\\DoctrineExtensionsBundle\\StofDoctrineExtensionsBundle;
+
+class Kernel
+{
+}
+`,
+    });
+
+    const text = await runModule('doctrine-gedmo-tree.js', app);
+
+    expect(text).toContain('Category');
+  });
+
+  test('ORM mappings given by prefix, filters with no class, and a driver nobody knows', async () => {
+    const app = appWith('doctrine-orm-config-shapes', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        entity_managers:
+            default:
+                mappings:
+                    App:
+                        type: quokka
+                        prefix: 'App\\Entity'
+                    Bare:
+                        type: attribute
+                filters:
+                    soft_delete:
+                        class: App\\Filter\\SoftDeleteFilter
+                        enabled: true
+                    bare_filter:
+                        enabled: false
+`,
+    });
+
+    const text = await runModule('doctrine-orm-config.js', app);
+
+    expect(text).toContain('default');
+  });
+
+  test('entities that mix timestamp styles, including the Gedmo trait', async () => {
+    const app = appWith('doctrine-timestamps-shapes', {
+      'src/Entity/Article.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Gedmo\\Timestampable\\Traits\\TimestampableEntity;
+
+#[ORM\\Entity]
+class Article
+{
+    use TimestampableEntity;
+}
+`,
+      'src/Entity/Comment.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\HasLifecycleCallbacks]
+class Comment
+{
+    #[ORM\\Column(type: 'datetime_immutable')]
+    private $createdAt;
+
+    #[ORM\\PrePersist]
+    public function onPrePersist(): void
+    {
+        $this->createdAt = new \\DateTimeImmutable();
+    }
+}
+`,
+      'src/Entity/Plain.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class Plain
+{
+    #[ORM\\Column(type: 'datetime')]
+    private $createdAt;
+
+    #[ORM\\Column(type: 'datetime')]
+    private $updatedAt;
+}
+`,
+    });
+
+    const text = await runModule('doctrine-timestamps.js', app);
+
+    expect(text).toContain('Timestampable');
+  });
+
+  test('EasyAdmin controllers with custom actions, filters and a grant', async () => {
+    const app = appWith('easyadmin-shapes', {
+      'src/Controller/Admin/UserCrudController.php': `<?php
+
+namespace App\\Controller\\Admin;
+
+use EasyCorp\\Bundle\\EasyAdminBundle\\Controller\\AbstractCrudController;
+use Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;
+
+#[IsGranted('ROLE_ADMIN')]
+class UserCrudController extends AbstractCrudController
+{
+    public static function getEntityFqcn(): string
+    {
+        return User::class;
+    }
+
+    public function configureActions(Actions $actions): Actions
+    {
+        return $actions->add(Crud::PAGE_INDEX, Action::DETAIL);
+    }
+
+    public function configureFilters(Filters $filters): Filters
+    {
+        return $filters->add('email');
+    }
+}
+`,
+      'src/Controller/Admin/PlainCrudController.php': `<?php
+
+namespace App\\Controller\\Admin;
+
+use EasyCorp\\Bundle\\EasyAdminBundle\\Controller\\AbstractCrudController;
+
+class PlainCrudController extends AbstractCrudController
+{
+    public static function getEntityFqcn(): string
+    {
+        return Plain::class;
+    }
+}
+`,
+    });
+
+    const text = await runModule('easyadmin.js', app, ['UserCrudController']);
+
+    expect(text).toContain('UserCrudController');
+  });
+
+  test('a GrumPHP configuration with a pre-push preset and one with a short task list', async () => {
+    const app = appWith('grumphp-shapes', {
+      'composer.json': JSON.stringify({
+        'require-dev': { 'phpro/grumphp': '^2.5' },
+        extra: { grumphp: { 'hooks-preset': 'pre-push' } },
+      }, null, 2),
+      'grumphp.yml': `grumphp:
+    tasks:
+        phpcs: ~
+        phpunit: ~
+`,
+    });
+    const full = appWith('grumphp-full', {
+      'composer.json': JSON.stringify({
+        'require-dev': { 'phpro/grumphp': '^2.5' },
+        extra: { grumphp: { 'hooks-dir': '.githooks-push' } },
+      }, null, 2),
+      'grumphp.yml': `grumphp:
+    tasks:
+        phpstan: ~
+        git_commit_message:
+            max_subject_width: 72
+`,
+      '.git/hooks/pre-push': '#!/bin/sh\nexit 0\n',
+    });
+
+    expect((await runModule('grumphp-config.js', app)).length).toBeGreaterThan(0);
+    expect((await runModule('grumphp-config.js', full)).length).toBeGreaterThan(0);
+  });
+
+  test('a Helm chart with resource limits and one with none', async () => {
+    const app = appWith('helm-chart-shapes', {
+      'helm/Chart.yaml': `apiVersion: v2
+name: demo
+version: 0.1.0
+`,
+      'helm/values.yaml': `replicaCount: 2
+image:
+  repository: demo
+  tag: latest
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+`,
+      'helm/templates/deployment.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+`,
+      'charts/other/Chart.yaml': `apiVersion: v2
+name: other
+version: 0.2.0
+`,
+      'charts/other/values.yaml': `replicaCount: 1
+resources:
+  limits:
+    memory: 256Mi
+`,
+      'charts/other/templates/service.yaml': `apiVersion: v1
+kind: Service
+`,
+      'k8s/Chart.yaml': `# a chart file with nothing in it
+`,
+    });
+
+    const text = await runModule('helm-charts-config.js', app);
+
+    expect(text).toContain('demo');
+  });
+
+  test('messenger handlers with a priority, a transport and a typed parameter', async () => {
+    const app = appWith('messenger-handler-shapes', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        failure_transport: failed
+        transports:
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                failure_transport: async_failed
+            plain: 'in-memory://'
+        routing:
+            'App\\Message\\SendEmail': async
+`,
+      'src/MessageHandler/SendEmailHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use App\\Message\\SendEmail;
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler(priority: 10, fromTransport: 'async')]
+class SendEmailHandler
+{
+    public function __invoke(SendEmail $message): void
+    {
+    }
+}
+`,
+      'src/MessageHandler/PlainHandler.php': `<?php
+
+namespace App\\MessageHandler;
+
+use Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler;
+
+#[AsMessageHandler]
+class PlainHandler
+{
+    public function __invoke($message): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('messenger-handlers.js', app, ['SendEmail']);
+
+    expect(text).toContain('SendEmailHandler');
+  });
+
+  test('a NelmioApiDoc configuration with areas, and a controller with no documented response', async () => {
+    const app = appWith('nelmio-api-doc-shapes', {
+      'composer.json': JSON.stringify({ require: { 'nelmio/api-doc-bundle': '^4.0' } }, null, 2),
+      'config/packages/nelmio_api_doc.yaml': `nelmio_api_doc:
+    documentation:
+        info:
+            title: Demo
+    areas:
+        default:
+            path_patterns: ['^/api']
+        internal: ~
+    cache:
+        pool: cache.app
+`,
+      'src/Controller/Api/ThingController.php': `<?php
+
+namespace App\\Controller\\Api;
+
+use OpenApi\\Attributes as OA;
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class ThingController
+{
+    #[Route('/api/things', methods: ['GET'])]
+    public function list(): void
+    {
+    }
+}
+`,
+    });
+    const noConfig = appWith('nelmio-api-doc-none', {
+      'composer.json': JSON.stringify({ require: { 'nelmio/api-doc-bundle': '^4.0' } }, null, 2),
+    });
+
+    expect(await runModule('nelmio-api-doc.js', app)).toContain('Nelmio');
+    expect((await runModule('nelmio-api-doc.js', noConfig)).length).toBeGreaterThan(0);
+  });
+});
+
+describe('batch 192: deploy redirects, JIT, benchmarks and naming', () => {
+  test('netlify redirects of each kind, including a SPA fallback and a forced one', async () => {
+    const app = appWith('netlify-redirect-shapes', {
+      'netlify.toml': `[build]
+  command = "composer install"
+  publish = "public"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/login"
+  to = "/auth/login"
+  status = 301
+  force = false
+
+[[redirects]]
+  from = "/incomplete"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+`,
+    });
+
+    const text = await runModule('netlify-deploy-config.js', app);
+
+    expect(text).toContain('redirect');
+  });
+
+  test('contract tests for an interface, with an abstract case that nobody extends', async () => {
+    const app = appWith('contract-tests-shapes', {
+      'src/Contract/PaymentGatewayInterface.php': `<?php
+
+namespace App\\Contract;
+
+interface PaymentGatewayInterface
+{
+    public function charge(int $amount): bool;
+
+    public function refund(string $reference): bool;
+}
+`,
+      'src/Payment/StripeGateway.php': `<?php
+
+namespace App\\Payment;
+
+use App\\Contract\\PaymentGatewayInterface;
+
+class StripeGateway implements PaymentGatewayInterface
+{
+    public function charge(int $amount): bool
+    {
+        return true;
+    }
+
+    public function refund(string $reference): bool
+    {
+        return true;
+    }
+}
+`,
+      'src/Payment/PaypalGateway.php': `<?php
+
+namespace App\\Payment;
+
+use App\\Contract\\PaymentGatewayInterface;
+
+class PaypalGateway implements PaymentGatewayInterface
+{
+    public function charge(int $amount): bool
+    {
+        return true;
+    }
+
+    public function refund(string $reference): bool
+    {
+        return true;
+    }
+}
+`,
+      'tests/Contract/PaymentGatewayTestCase.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use PHPUnit\\Framework\\TestCase;
+
+abstract class PaymentGatewayTestCase extends TestCase
+{
+    public function testCharge(): void
+    {
+    }
+}
+`,
+      'tests/Contract/StripeGatewayTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+class StripeGatewayTest extends PaymentGatewayTestCase
+{
+    public function testCharge(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('php-contract-tests.js', app);
+
+    expect(text).toContain('PaymentGateway');
+  });
+
+  test('JIT configured in each spelling, including one that is off and one nobody recognises', async () => {
+    const app = appWith('php-jit-shapes', {
+      'config/php.ini': `opcache.enable=1
+opcache.jit=tracing
+opcache.jit_buffer_size=128M
+`,
+      'docker/php/conf.d/jit.ini': `opcache.jit=quokka
+opcache.jit_buffer_size=0
+`,
+      'docker/php/conf.d/opcache.ini': `opcache.enable=1
+opcache.jit=off
+`,
+    });
+
+    const text = await runModule('php-jit-config.js', app);
+
+    expect(text).toContain('jit');
+  });
+
+  test('a phpmetrics configuration reporting JSON and excluding nothing', async () => {
+    const app = appWith('php-metrics-shapes', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpmetrics/phpmetrics': '^2.8' } }, null, 2),
+      'phpmetrics.json': JSON.stringify({ report: { json: 'var/metrics.json' } }, null, 2),
+    });
+    const xmlOnly = appWith('php-metrics-xml', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpmetrics/phpmetrics': '^2.8' } }, null, 2),
+      'phpmetrics.xml': `<?xml version="1.0"?>
+<phpmetrics>
+    <report format="json" type="file" />
+    <exclude="tests,build" />
+</phpmetrics>
+`,
+    });
+    const htmlOnly = appWith('php-metrics-html', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpmetrics/phpmetrics': '^2.8' } }, null, 2),
+      'phpmetrics.xml': `<?xml version="1.0"?>
+<phpmetrics>
+    <report format="html" type="file" />
+    <exclude="vendor,tests" />
+</phpmetrics>
+`,
+    });
+
+    const text = await runModule('php-metrics-config.js', app);
+
+    expect((await runModule('php-metrics-config.js', xmlOnly)).length).toBeGreaterThan(0);
+    expect((await runModule('php-metrics-config.js', htmlOnly)).length).toBeGreaterThan(0);
+    expect(text).toContain('Metrics');
+  });
+
+  test('a phpbench configuration with iterations, revolutions and an xdebug runner', async () => {
+    const app = appWith('phpbench-shapes', {
+      'phpbench.xml': `<?xml version="1.0"?>
+<phpbench bootstrap="vendor/autoload.php" iterations="5" revolutions="1000">
+    <executor name="microtime" />
+    <extension>xdebug</extension>
+</phpbench>
+`,
+      'benchmarks/HashBench.php': `<?php
+
+namespace App\\Benchmarks;
+
+class HashBench
+{
+    /**
+     * @Subject
+     * @Revs(1000)
+     * @Iterations(5)
+     */
+    public function benchHash(): void
+    {
+        $start = microtime(true);
+        xdebug_start_trace();
+        hash('sha256', 'demo');
+    }
+}
+`,
+    });
+
+    const minimal = appWith('phpbench-minimal', {
+      'composer.json': JSON.stringify({ 'require-dev': { 'phpbench/phpbench': '^1.2' } }, null, 2),
+      'phpbench.xml': `<?xml version="1.0"?>
+<phpbench bootstrap="vendor/autoload.php" />
+`,
+    });
+
+    const text = await runModule('phpbench-config.js', app);
+
+    expect((await runModule('phpbench-config.js', minimal)).length).toBeGreaterThan(0);
+    expect(text).toContain('Bench');
+  });
+
+  test('test methods named by annotation, by prefix and in BDD style', async () => {
+    const app = appWith('phpunit-naming-shapes', {
+      'tests/Unit/NamingTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\TestCase;
+
+class NamingTest extends TestCase
+{
+    /**
+     * @test
+     */
+    protected function annotatedButProtected(): void
+    {
+    }
+
+    public function itDoesSomething(): void
+    {
+    }
+
+    /**
+     * @test
+     */
+    public function publicAnnotated(): void
+    {
+    }
+
+    public function testPlain(): void
+    {
+    }
+}
+`,
+      'tests/Unit/CoveredTest.php': `<?php
+
+namespace App\\Tests\\Unit;
+
+use PHPUnit\\Framework\\Attributes\\CoversClass;
+use PHPUnit\\Framework\\TestCase;
+
+#[CoversClass(Something::class)]
+class CoveredTest extends TestCase
+{
+    /**
+     * @test
+     */
+    public function itIsCovered(): void
+    {
+    }
+}
+`,
+    });
+
+    const text = await runModule('phpunit-test-naming.js', app);
+
+    expect(text).toContain('NamingTest');
+  });
+
+  test('a Pusher client built from the environment and one with the key in the code', async () => {
+    const app = appWith('pusher-shapes', {
+      'composer.json': JSON.stringify({ require: { 'pusher/pusher-php-server': '^7.2' } }, null, 2),
+      '.env': `PUSHER_DSN=pusher://key:secret@api.pusherapp.com/apps/123
+`,
+      'src/Realtime/Broadcaster.php': `<?php
+
+namespace App\\Realtime;
+
+use Pusher\\Pusher;
+
+class Broadcaster
+{
+    public function hardcoded(): Pusher
+    {
+        return new Pusher('app-key', 'app-secret', '123', ['cluster' => 'eu']);
+    }
+
+    public function fromEnv(): Pusher
+    {
+        return new Pusher(getenv('PUSHER_KEY'), getenv('PUSHER_SECRET'), getenv('PUSHER_APP_ID'));
+    }
+
+    public function webhook($request): bool
+    {
+        return hash_hmac('sha256', $request->getContent(), $this->secret) === $request->headers->get('X-Pusher-Signature');
+    }
+}
+`,
+      'src/Realtime/OpenWebhook.php': `<?php
+
+namespace App\\Realtime;
+
+use Pusher\\Pusher;
+
+class OpenWebhook
+{
+    public function handle($request, Pusher $pusher): bool
+    {
+        return true;
+    }
+}
+`,
+    });
+
+    const text = await runModule('pusher-integration.js', app);
+
+    expect(text).toContain('Pusher');
+  });
+
+  test('rate limiters with a policy nobody knows and a rate with no amount', async () => {
+    const app = appWith('rate-limiter-policy-shapes', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        unknown_policy:
+            policy: 'quokka_window'
+            limit: 10
+        bare_rate:
+            policy: 'token_bucket'
+            rate: {}
+        no_policy:
+            limit: 5
+`,
+    });
+
+    const text = await runModule('rate-limiter.js', app);
+
+    expect(text).toContain('limiter');
+  });
+});
+
+describe('batch 193: analytics, decorators, sentinels and environments', () => {
+  test('Segment events named in each style, and a file that initialises nothing', async () => {
+    const app = appWith('segment-analytics-shapes', {
+      'composer.json': JSON.stringify({ require: { 'segmentio/analytics-php': '^3.0' } }, null, 2),
+      'src/Analytics/Tracker.php': `<?php
+
+namespace App\\Analytics;
+
+use Segment\\Segment;
+
+class Tracker
+{
+    public function boot(): void
+    {
+        Segment::init('write-key');
+    }
+
+    public function track(): void
+    {
+        Segment::track(['event' => 'Order Completed']);
+        Segment::track(['event' => 'orderShipped']);
+        Segment::track(['event' => 'order refunded']);
+    }
+}
+`,
+      'src/Analytics/Silent.php': `<?php
+
+namespace App\\Analytics;
+
+use Segment\\Segment;
+
+class Silent
+{
+    public function track(): void
+    {
+        Segment::track(['event' => 'Page Viewed']);
+    }
+}
+`,
+    });
+
+    const text = await runModule('segment-analytics.js', app);
+
+    expect(text).toContain('Segment');
+  });
+
+  test('service decorators with an inner name, a priority and a chain', async () => {
+    const app = appWith('service-decorator-shapes', {
+      'config/services.yaml': `services:
+    App\\Cache\\LoggingCache:
+        decorates: App\\Cache\\Cache
+        decoration_inner_name: App\\Cache\\LoggingCache.inner
+        decoration_priority: 10
+    App\\Cache\\CountingCache:
+        decorates: App\\Cache\\LoggingCache
+    App\\Cache\\PlainDecorator:
+        decorates: App\\Cache\\Cache
+`,
+      'src/Cache/LoggingCache.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AsDecorator;
+
+#[AsDecorator(decorates: Cache::class, priority: 5)]
+class LoggingCache
+{
+}
+`,
+      'src/Cache/AttributeDecorator.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AsDecorator;
+
+#[AsDecorator(decorates: Cache::class)]
+class AttributeDecorator
+{
+}
+`,
+    });
+
+    const text = await runModule('service-decorators.js', app);
+
+    expect(text).toContain('decorat');
+  });
+
+  test('Shopify credentials hardcoded in one file and taken from the environment in another', async () => {
+    const app = appWith('shopify-shapes', {
+      'composer.json': JSON.stringify({ require: { 'shopify/shopify-api': '^5.0' } }, null, 2),
+      '.env': `SHOPIFY_API_KEY=abc123hardcodedvalue
+SHOPIFY_API_SECRET=%env(SECRET)%
+SHOPIFY_SHOP_DOMAIN=demo.myshopify.com
+`,
+      'src/Shopify/OauthClient.php': `<?php
+
+namespace App\\Shopify;
+
+class OauthClient
+{
+    public function authorize(): string
+    {
+        return 'https://demo.myshopify.com/admin/oauth/authorize';
+    }
+}
+`,
+      'src/Shopify/WebhookHandler.php': `<?php
+
+namespace App\\Shopify;
+
+class WebhookHandler
+{
+    public function handle($request): bool
+    {
+        return hash_hmac('sha256', $request->getContent(), getenv('SHOPIFY_API_SECRET')) === $request->headers->get('X-Shopify-Hmac-Sha256');
+    }
+}
+`,
+    });
+
+    const text = await runModule('shopify-integration.js', app);
+
+    expect(text).toContain('Shopify');
+  });
+
+  test('a Redis cache behind Sentinel, with and without a timeout', async () => {
+    const app = appWith('redis-sentinel-shapes', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        default_redis_provider: 'redis:?host[sentinel-1:26379]&host[sentinel-2:26379]&redis_sentinel=mymaster'
+        pools:
+            cache.app:
+                adapter: cache.adapter.redis
+`,
+      '.env': `REDIS_URL=redis://sentinel-1:26379/0?redis_sentinel=mymaster&timeout=5
+REDIS_PLAIN=redis://sentinel-2:26379?redis_sentinel=mymaster
+`,
+    });
+
+    const text = await runModule('symfony-cache-redis-sentinel.js', app);
+
+    expect(text).toContain('sentinel');
+  });
+
+  test('cache pools with a beta factor and very short lifetimes', async () => {
+    const app = appWith('cache-stampede-shapes', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app.cache:
+                adapter: cache.adapter.redis
+                default_lifetime: 20
+            bare.cache: ~
+`,
+      'src/Cache/Warmer.php': `<?php
+
+namespace App\\Cache;
+
+use Symfony\\Contracts\\Cache\\ItemInterface;
+
+class Warmer
+{
+    public function get(): string
+    {
+        return $this->cache->get('key', function (ItemInterface $item) {
+            $item->expiresAfter(15);
+
+            return 'value';
+        }, 1.0);
+    }
+
+    public function plain(): string
+    {
+        return $this->cache->get('other', function (ItemInterface $item) {
+            $item->expiresAfter(3600);
+
+            return 'value';
+        });
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-cache-stampede.js', app);
+
+    expect(text).toContain('cache');
+  });
+
+  test('per-environment configuration overrides, including one that has no base file', async () => {
+    const app = appWith('config-environments-shapes', {
+      'config/packages/framework.yaml': `framework:
+    secret: '%env(APP_SECRET)%'
+`,
+      'config/packages/dev/framework.yaml': `framework:
+    profiler:
+        only_exceptions: false
+`,
+      'config/packages/prod/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: fingers_crossed
+`,
+      'config/packages/test/framework.yml': `framework:
+    test: true
+`,
+    });
+
+    const text = await runModule('symfony-config-environments.js', app);
+
+    expect(text).toContain('dev');
+  });
+
+  test('custom constraints with a validator, without one, and a validator with no instanceof check', async () => {
+    const app = appWith('custom-constraint-shapes', {
+      'src/Validator/IsValidOrder.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class IsValidOrder extends Constraint
+{
+    public string $message = 'Invalid order';
+
+    public function validatedBy(): string
+    {
+        return IsValidOrderValidator::class;
+    }
+}
+`,
+      'src/Validator/IsValidOrderValidator.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+use Symfony\\Component\\Validator\\ConstraintValidator;
+
+class IsValidOrderValidator extends ConstraintValidator
+{
+    public function validate($value, Constraint $constraint): void
+    {
+        if (!$constraint instanceof IsValidOrder) {
+            throw new UnexpectedTypeException($constraint, IsValidOrder::class);
+        }
+    }
+}
+`,
+      'src/Validator/LonelyConstraint.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class LonelyConstraint extends Constraint
+{
+    public string $message = 'Nobody validates this';
+}
+`,
+      'src/Validator/LooseValidator.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+use Symfony\\Component\\Validator\\ConstraintValidator;
+
+class LooseValidator extends ConstraintValidator
+{
+    public function validate($value, Constraint $constraint): void
+    {
+        $this->context->buildViolation($constraint->message)->addViolation();
+    }
+}
+`,
+    });
+
+    const text = await runModule('symfony-custom-constraints.js', app);
+
+    expect(text).toContain('IsValidOrder');
+  });
+});
