@@ -74,8 +74,10 @@ function detectPassType(content: string): PassType {
 }
 
 function detectPriority(content: string, className: string): number {
-  // Look for addCompilerPass(new ClassName(), PassConfig::X, PRIORITY)
-  const re = new RegExp(`addCompilerPass\\s*\\(\\s*new\\s+${className}[^,)]*(?:,[^,)]*,\\s*(-?\\d+))?`);
+  // Look for addCompilerPass(new ClassName(), PassConfig::X, PRIORITY). The
+  // constructor call is written with its parentheses, and a pattern that could
+  // not cross them never reached the priority argument.
+  const re = new RegExp(`addCompilerPass\\s*\\(\\s*new\\s+${className}\\s*(?:\\([^)]{0,200}\\))?\\s*(?:,[^,)]{0,100},\\s*(-?\\d+))?`);
   const m = re.exec(content);
   return m?.[1] ? parseInt(m[1], 10) : 0;
 }
