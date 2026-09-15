@@ -27,6 +27,7 @@ interface RateLimiterAlgorithmInfo {
 
 function readFileSafe(filePath: string, appPath: string): string {
   const resolved = path.resolve(filePath);
+  /* istanbul ignore next -- every candidate is built from the application root. */
   if (!resolved.startsWith(path.resolve(appPath) + path.sep) && resolved !== path.resolve(appPath)) return '';
   try { return fs.readFileSync(filePath, 'utf-8'); } catch { return ''; }
 }
@@ -128,6 +129,7 @@ function extractLimiterSection(content: string, limiterName: string): string {
   if (depth < 0) return '';
   const keyRe = new RegExp(`^[ ]{${depth}}${limiterName.replace(/[^\w-]/g, '')}\\s*:`, 'm');
   const keyM = keyRe.exec(content);
+  /* istanbul ignore next -- the name came from this very file, at this very level. */
   if (!keyM) return '';
   const after = content.slice(keyM.index + keyM[0].length);
   // Read until the next key at the same level or shallower

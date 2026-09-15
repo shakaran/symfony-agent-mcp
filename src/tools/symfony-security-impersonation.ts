@@ -43,6 +43,7 @@ function scanSrcForImpersonation(appPath: string): { hasAuditListener: boolean; 
 
     if (content.includes('ROLE_ALLOWED_TO_SWITCH')) {
       const roleMatch = /ROLE_ALLOWED_TO_SWITCH/.exec(content);
+      /* istanbul ignore else -- the same text was just found in the file. */
       if (roleMatch) switchUserRoles.push(path.basename(file));
     }
   }

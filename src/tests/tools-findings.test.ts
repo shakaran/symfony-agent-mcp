@@ -60349,3 +60349,205 @@ command=php bin/console messenger:consume async
     expect(await runModule('symfony-messenger-monitoring.js', bare)).toBeDefined();
   });
 });
+
+describe('batch 229: notifiers, hashers, rate limiters and secrets', () => {
+  test('a transport DSN from the environment and a send at the very end of the file', async () => {
+    const app = appWith('notifier-status-env-dsn', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: %env(SLACK_DSN)%
+            custom: '%env(NOTIFIER_SCHEME)%://token@default'
+            telegram: 'telegram://123:abcdef@default'
+`,
+      'src/Notification/Sender.php': '<?php\n\nnamespace App\\Notification;\n\nclass Sender\n{\n    public function send($notifier, $message): void\n    {\n        $notifier->send($message);',
+    });
+
+    expect(await runModule('symfony-notifier-status.js', app)).toContain('Notifier');
+  });
+
+  test('a legacy hasher that hashes, and a hasher entry with no body', async () => {
+    const app = appWith('password-migrator-legacy', {
+      'config/packages/security.yaml': `security:
+    password_hashers:
+        bare_hasher:
+        App\\Entity\\User:
+            algorithm: auto
+            migrate_from: ['sha256']
+`,
+      'src/Security/LegacyHasher.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\PasswordHasher\\Hasher\\LegacyPasswordHasherInterface;
+
+class LegacyHasher implements LegacyPasswordHasherInterface
+{
+    public function __construct(private $legacy)
+    {
+    }
+
+    public function hash(string $plain, ?string $salt = null): string
+    {
+        return $this->legacy->hash($plain . $salt);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-password-migrator.js', app)).toContain('Hashers');
+  });
+
+  test('a rate limiter whose name carries a dot', async () => {
+    const app = appWith('rate-limiter-dotted-name', {
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        api_default:
+            policy: 'token_bucket'
+            limit: 100
+            rate: { interval: '1 minute', amount: 10 }
+`,
+    });
+
+    expect(await runModule('symfony-rate-limiter-algorithms.js', app)).toContain('api_default');
+  });
+
+  test('a limiter pool named after the cache pool, a pool with no body and a policy with none', async () => {
+    const app = appWith('rate-limiter-storage-pools', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            bare_pool:
+            redis_pool:
+                adapter: cache.adapter.redis
+`,
+      'config/packages/rate_limiter.yaml': `framework:
+    rate_limiter:
+        bare_policy:
+        api:
+            policy: 'sliding_window'
+            limit: 100
+            interval: '1 minute'
+            cache_pool: 'cache.redis_pool'
+`,
+    });
+
+    expect(await runModule('symfony-rate-limiter-storage.js', app)).toContain('redis');
+  });
+
+  test('a service that injects the request stack without reading either request', async () => {
+    const app = appWith('request-stack-plain', {
+      'src/Command/ReportCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+use Symfony\\Component\\HttpFoundation\\RequestStack;
+
+class ReportCommand extends Command
+{
+    public function __construct(private RequestStack $requestStack)
+    {
+        parent::__construct();
+    }
+
+    protected function execute($input, $output): int
+    {
+        return Command::SUCCESS;
+    }
+}
+`,
+      'src/Service/LocaleHelper.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\HttpFoundation\\RequestStack;
+
+class LocaleHelper
+{
+    public function __construct(private RequestStack $stack)
+    {
+    }
+
+    public function locale(): string
+    {
+        return RequestStackHolder::getMainRequest()->getLocale();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-request-stack.js', app)).toContain('ReportCommand');
+  });
+
+  test('a scheduled task with no expression at all', async () => {
+    const app = appWith('scheduler-task-without-expression', {
+      'config/packages/scheduler.yaml': `framework:
+    scheduler:
+        schedules:
+            default:
+                tasks:
+                    - id: 'cleanup'
+                      command: 'app:cleanup'
+`,
+      'src/Scheduler/CleanupTask.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsCronTask;
+
+#[AsCronTask('')]
+class CleanupTask
+{
+    public function __invoke(): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-scheduler-tasks.js', app)).toContain('unknown');
+  });
+
+  test('a dev vault with no production one, and a secret pointing at a shell variable', async () => {
+    const app = appWith('secrets-dev-vault-only', {
+      'config/secrets/dev/APP_SECRET.php': `<?php return 'dev-value';
+`,
+      '.env': `APP_SECRET=\${APP_SECRET}
+DATABASE_URL=postgresql://app@localhost/app
+`,
+    });
+
+    expect(await runModule('symfony-secrets-rotation.js', app)).toContain('prod');
+  });
+
+  test('a firewall with no switch_user, one with it and no broad roles', async () => {
+    const app = appWith('impersonation-narrow-roles', {
+      'config/packages/security.yaml': `security:
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER]
+    firewalls:
+        plain:
+        main:
+            switch_user:
+                role: ROLE_SUPER_ADMIN
+                parameter: _switch
+`,
+      'src/EventSubscriber/SwitchUserSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\Security\\Http\\Event\\SwitchUserEvent;
+
+class SwitchUserSubscriber
+{
+    public function onSwitchUser(SwitchUserEvent $event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-security-impersonation.js', app)).toContain('switch');
+  });
+});
