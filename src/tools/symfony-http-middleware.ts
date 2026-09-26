@@ -98,6 +98,15 @@ function parseSubscribedEvents(body: string): SubscriptionEntry[] {
       continue;
     }
 
+    // Nested form: [['method', priority], ...] registers several listeners for
+    // one event, and reading only the first pair hid the others.
+    if (/^\[\s*\[/.test(rhs.trim())) {
+      for (const pm of rhs.matchAll(/\[\s*['"]([a-zA-Z_][a-zA-Z0-9_]{0,80})['"]\s*(?:,\s*(-?\d+))?\s*\]/g)) {
+        entries.push({ event: eventName, method: pm[1], priority: pm[2] !== undefined ? parseInt(pm[2], 10) : null });
+      }
+      continue;
+    }
+
     // Array form: ['method', priority]
     const arrayMethodMatch = /\[\s*['"]([a-zA-Z_][a-zA-Z0-9_]{0,80})['"]\s*,\s*(-?\d+)/.exec(rhs);
     if (arrayMethodMatch) {
