@@ -67616,3 +67616,261 @@ class ProblemJsonRenderer implements ErrorRendererInterface
     expect(await runModule('symfony-error-renderer.js', app)).toContain('json');
   });
 });
+
+describe('batch 263: expressions, flashes and form details', () => {
+  test('an access rule written with condition instead of allow_if', async () => {
+    const app = appWith('expression-language-condition-rule', {
+      'config/packages/security.yaml': `security:
+    access_control:
+        - path: ^/admin
+          condition: "is_granted('ROLE_ADMIN') and request.getClientIp() == '10.0.0.1'"
+`,
+    });
+
+    expect(await runModule('symfony-expression-language.js', app)).toContain('access_control');
+  });
+
+  test('a vendored copy of the Finder component', async () => {
+    const app = appWith('finder-vendored-copy', {
+      'src/Vendor/Finder.php': `<?php
+
+namespace Symfony\\Component\\Finder;
+
+class Finder
+{
+    public static function create(): static
+    {
+        return new Finder();
+    }
+}
+`,
+      'src/Service/FileScanner.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Finder\\Finder;
+
+class FileScanner
+{
+    public function scan(string $dir): array
+    {
+        $finder = new Finder();
+        $finder->in($dir)->name('*.php')->depth('< 3');
+
+        return iterator_to_array($finder);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-finder.js', app)).toContain('FileScanner');
+  });
+
+  test('one controller with a standard flash category and another with a custom one', async () => {
+    const app = appWith('flash-standard-and-custom', {
+      'src/Controller/AaaController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class AaaController extends AbstractController
+{
+    public function save(): void
+    {
+        $this->addFlash('success', 'Saved');
+    }
+}
+`,
+      'src/Controller/ZzzController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class ZzzController extends AbstractController
+{
+    public function archive(): void
+    {
+        $this->addFlash('archive_notice', 'Archived');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-flash-messages.js', app)).toContain('archive_notice');
+  });
+
+  test('two submit buttons distinguished with isClicked', async () => {
+    const app = appWith('form-buttons-with-isclicked', {
+      'src/Form/DraftType.php': `<?php
+
+namespace App\\Form;
+
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\SubmitType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class DraftType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder
+            ->add('save', SubmitType::class)
+            ->add('publish', SubmitType::class);
+    }
+
+    public function decide($form): string
+    {
+        return $form->get('publish')->isClicked() ? 'publish' : 'save';
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-button.js', app)).toContain('DraftType');
+  });
+
+  test('a choice_value callback that hands back an object', async () => {
+    const app = appWith('form-choice-value-object', {
+      'src/Form/OwnerType.php': `<?php
+
+namespace App\\Form;
+
+use App\\Entity\\User;
+use Symfony\\Bridge\\Doctrine\\Form\\Type\\EntityType;
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+
+class OwnerType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('owner', EntityType::class, [
+            'class' => User::class,
+            'choice_value' => function (?User $user) {
+                return $user->getProfile();
+            },
+        ]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-choice-value.js', app)).toContain('scalar');
+  });
+
+  test('an entity data class with fields left unmapped', async () => {
+    const app = appWith('form-data-class-mapped-false', {
+      'src/Form/ProfileType.php': `<?php
+
+namespace App\\Form;
+
+use App\\Entity\\User;
+use Symfony\\Component\\Form\\AbstractType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\CheckboxType;
+use Symfony\\Component\\Form\\FormBuilderInterface;
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class ProfileType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $builder->add('agreeTerms', CheckboxType::class, ['mapped' => false]);
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults(['data_class' => User::class, 'empty_data' => null]);
+    }
+}
+`,
+      'src/Entity/User.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+class User
+{
+    private ?int $id = null;
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-data-class.js', app)).toContain('mapped');
+  });
+
+  test('a repeated field declared outside any class', async () => {
+    const app = appWith('form-repeated-without-class', {
+      'src/Form/repeated_password.php': `<?php
+
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\PasswordType;
+use Symfony\\Component\\Form\\Extension\\Core\\Type\\RepeatedType;
+
+$builder->add('plainPassword', RepeatedType::class, [
+    'type' => PasswordType::class,
+    'first_options' => ['label' => 'Password'],
+    'second_options' => ['label' => 'Repeat'],
+]);
+
+if (!hash_equals($data['password'], $data['password_confirm'])) {
+    throw new \\RuntimeException('passwords differ');
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-repeated.js', app)).toContain('repeated_password');
+  });
+
+  test('a transformer that reports invalid input', async () => {
+    const app = appWith('form-transformer-throws', {
+      'src/Form/DataTransformer/IsbnTransformer.php': `<?php
+
+namespace App\\Form\\DataTransformer;
+
+use Symfony\\Component\\Form\\DataTransformerInterface;
+use Symfony\\Component\\Form\\Exception\\TransformationFailedException;
+
+class IsbnTransformer implements DataTransformerInterface
+{
+    public function transform(mixed $value): string
+    {
+        return (string) $value;
+    }
+
+    public function reverseTransform(mixed $value): string
+    {
+        if (!preg_match('/^\\d{13}$/', (string) $value)) {
+            throw new TransformationFailedException('not an ISBN');
+        }
+
+        return (string) $value;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-transformers.js', app)).toContain('IsbnTransformer');
+  });
+
+  test('a type guesser whose guessType is only declared', async () => {
+    const app = appWith('form-type-guesser-declaration-only', {
+      'src/Form/Guesser/AbstractColumnGuesser.php': `<?php
+
+namespace App\\Form\\Guesser;
+
+use Symfony\\Component\\Form\\FormTypeGuesserInterface;
+use Symfony\\Component\\Form\\Guess\\TypeGuess;
+
+abstract class AbstractColumnGuesser implements FormTypeGuesserInterface
+{
+    abstract public function guessType(string $class, string $property): ?TypeGuess;
+}
+`,
+    });
+
+    expect(await runModule('symfony-form-type-guesser.js', app)).toContain('AbstractColumnGuesser');
+  });
+});
