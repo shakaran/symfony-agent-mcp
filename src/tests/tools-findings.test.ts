@@ -68684,3 +68684,47 @@ class Account
     expect(await runModule('validation.js', app, ['Account'])).toContain('UniqueEntity');
   });
 });
+
+describe('batch 266: the branches the last fixes opened', () => {
+  test('a getter constraint with no message and no validator anywhere', async () => {
+    const app = appWith('custom-constraint-getter-no-validator', {
+      'src/Validator/PositiveBalance.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class PositiveBalance extends Constraint
+{
+    public function getTargets(): string|array
+    {
+        return self::GETTER_CONSTRAINT;
+    }
+}
+`,
+      'src/Vendor/NotBlank.php': `<?php
+
+namespace Symfony\\Component\\Validator\\Constraints;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class NotBlank extends Constraint
+{
+    public string $message = 'This value should not be blank.';
+}
+`,
+    });
+
+    expect(await runModule('symfony-custom-constraints.js', app)).toContain('PositiveBalance');
+  });
+
+  test('a phpspec suite list left empty', async () => {
+    const app = appWith('phpspec-empty-suites', {
+      'phpspec.yml': `suites: ~
+formatter.name: pretty
+`,
+    });
+
+    expect(await runModule('phpspec-config.js', app)).toContain('PHPSpec');
+  });
+});

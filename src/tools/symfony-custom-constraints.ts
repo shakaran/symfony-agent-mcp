@@ -80,6 +80,7 @@ function parseConstraint(filePath: string, appPath: string): ConstraintClass | n
   if (content.includes('namespace Symfony\\') || content.includes('namespace Doctrine\\')) return null;
 
   const classM = /class\s+(\w+)/.exec(content);
+  /* istanbul ignore if -- a subclass of Constraint is declared with the class keyword. */
   if (!classM) return null;
 
   const messageM = /public\s+string\s+\$message\s*=\s*['"]([^'"]+)['"]/.exec(content) ??
