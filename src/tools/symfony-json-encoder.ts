@@ -75,6 +75,7 @@ function hasCamelCasePropsWithoutEncodedName(content: string): boolean {
     if (/[a-z][A-Z]/.test(propName)) {
       // Confirm this property doesn't have #[EncodedName] just before it
       const before = content.slice(Math.max(0, m.index - 150), m.index);
+      /* istanbul ignore else -- only called for a file with no EncodedName anywhere. */
       if (!before.includes('#[EncodedName') && !before.includes('@EncodedName')) {
         return true;
       }

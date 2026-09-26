@@ -106,6 +106,7 @@ function parseUxComponent(filePath: string): UxComponent | null {
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
 
+  /* istanbul ignore next -- one of the two attributes was found above. */
   const type: UxComponentType = isLive ? 'live' : isTwig ? 'twig' : 'unknown';
 
   // Extract component name from attribute

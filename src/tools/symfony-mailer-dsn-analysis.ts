@@ -51,7 +51,9 @@ function detectTransportType(dsn: string): {
     }
   }
 
-  return { transport: dsn.split('://')[0] ?? 'unknown', isFailover: false, isRoundRobin: false, isNull: false, isApi: false };
+  /* istanbul ignore next -- a split always yields a first element. */
+  const transport = dsn.split('://')[0] ?? 'unknown';
+  return { transport, isFailover: false, isRoundRobin: false, isNull: false, isApi: false };
 }
 
 function hasHardcodedCredentials(dsn: string): boolean {

@@ -15,6 +15,7 @@ interface TraefikConfigInfo {
 
 function scanDirRecursive(dir: string, ext: string): string[] {
   const files: string[] = [];
+  /* istanbul ignore if -- the callers check the directory, and sub-directories come from a listing. */
   if (!fs.existsSync(dir)) return files;
   try {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

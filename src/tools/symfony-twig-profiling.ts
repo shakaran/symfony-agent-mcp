@@ -65,6 +65,7 @@ function buildTwigProfilingInfos(appPath: string): TwigProfilingInfo[] {
     if (content.includes('.count()') || content.includes('|length') || content.includes('.length')) {
       const forBlocks = content.matchAll(/{%\s*for[^%]{1,100}%}([\s\S]{1,2000}?){%\s*endfor\s*%}/g);
       for (const block of forBlocks) {
+        /* istanbul ignore next -- the loop body group always takes part in the match. */
         const inner = block[1] ?? '';
         if ((inner.includes('.count()') || inner.includes('|length')) && (inner.includes('repository') || inner.includes('->find') || inner.includes('getAll'))) {
           results.push({ file: relFile, type: 'n-plus-one', pattern: 'count/length inside for-loop touching repository', issues: ['Potential N+1 in Twig: size/count call inside loop may trigger additional DB queries — eager-load collections or pass counts pre-computed from controller'] });

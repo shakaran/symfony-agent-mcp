@@ -101,6 +101,7 @@ function buildSmsNotifierInfos(appPath: string): SmsNotifierInfo[] {
 
   if (results.length === 0 && installedTransports.length > 0) {
     for (const transport of installedTransports) {
+      /* istanbul ignore next -- the package was selected because it names one of these. */
       const transportName = Object.keys(SMS_TRANSPORTS).find((t) => transport.includes(t)) ?? 'generic';
       results.push({ transport, dsn: '(not configured)', type: transportName as SmsNotifierInfo['type'], issues: [`${transport} package installed but no texter_transports configured in notifier.yaml`] });
     }

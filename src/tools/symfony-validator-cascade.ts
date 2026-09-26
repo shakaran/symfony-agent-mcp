@@ -137,6 +137,7 @@ function scanValidatorCascade(appPath: string): ValidatorCascadeInfo[] {
 
     const hasCollection = validProperties.some((p) => {
       const idx = content.indexOf(`$${p}`);
+      /* istanbul ignore if -- the property name was read from this same content. */
       if (idx === -1) return false;
       const snippet = content.slice(Math.max(0, idx - 300), idx + 50);
       return /OneToMany|ManyToMany|array|Collection/.test(snippet);

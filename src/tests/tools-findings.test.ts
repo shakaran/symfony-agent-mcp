@@ -67874,3 +67874,813 @@ abstract class AbstractColumnGuesser implements FormTypeGuesserInterface
     expect(await runModule('symfony-form-type-guesser.js', app)).toContain('AbstractColumnGuesser');
   });
 });
+
+describe('batch 264: HTTP clients, kernels and mailers', () => {
+  test('a vendored copy of the HttpClient component', async () => {
+    const app = appWith('http-client-concurrent-vendored', {
+      'src/Vendor/NativeHttpClient.php': `<?php
+
+namespace Symfony\\Component\\HttpClient;
+
+class NativeHttpClient implements HttpClientInterface
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-http-client-concurrent.js', app)).toContain('HTTP');
+  });
+
+  test('a mock response factory with no decorator in sight', async () => {
+    const app = appWith('http-client-mock-factory-only', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        mock_response_factory: App\\Tests\\MockClientCallback
+`,
+      'src/Kernel.php': `<?php
+
+namespace App;
+
+class Kernel
+{
+}
+`,
+    });
+
+    expect(await runModule('symfony-http-client-events.js', app)).toContain('mock_response_factory');
+  });
+
+  test('a mocked client used in a file with no class', async () => {
+    const app = appWith('http-client-mock-without-class', {
+      'tests/bootstrap_http.php': `<?php
+
+use Symfony\\Component\\HttpClient\\MockHttpClient;
+use Symfony\\Component\\HttpClient\\Response\\MockResponse;
+
+$client = new MockHttpClient([new MockResponse('{}')]);
+`,
+    });
+
+    expect(await runModule('symfony-http-client-mock.js', app)).toContain('bootstrap_http');
+  });
+
+  test('a subscriber listening twice to the same event at the same priority', async () => {
+    const app = appWith('http-middleware-same-priority', {
+      'src/EventSubscriber/RequestSubscriber.php': `<?php
+
+namespace App\\EventSubscriber;
+
+use Symfony\\Component\\EventDispatcher\\EventSubscriberInterface;
+use Symfony\\Component\\HttpKernel\\KernelEvents;
+
+class RequestSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            KernelEvents::REQUEST => [['setLocale', 10], ['setTimezone', 10]],
+            KernelEvents::RESPONSE => [['addHeaders'], ['logResponse', 5]],
+        ];
+    }
+
+    public function setLocale($event): void
+    {
+    }
+
+    public function setTimezone($event): void
+    {
+    }
+
+    public function addHeaders($event): void
+    {
+    }
+
+    public function logResponse($event): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-http-middleware.js', app)).toContain('same priority');
+  });
+
+  test('a preload link added from a variable', async () => {
+    const app = appWith('http2-push-dynamic-link', {
+      'src/Controller/HomeController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController;
+
+class HomeController extends AbstractController
+{
+    public function index($request): Response
+    {
+        $this->addLink($request, $this->stylesheetLink()); // rel="preload"
+
+        return $this->render('home.html.twig');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-http2-push.js', app)).toContain('dynamic');
+  });
+
+  test('a camelCase property that already names its encoded key', async () => {
+    const app = appWith('json-encoder-encoded-name', {
+      'src/Dto/Customer.php': `<?php
+
+namespace App\\Dto;
+
+use Symfony\\Component\\JsonEncoder\\Attribute\\EncodedName;
+use Symfony\\Component\\JsonEncoder\\JsonEncoder;
+
+class Customer
+{
+    #[EncodedName('first_name')]
+    public string $firstName = '';
+
+    public function encode(JsonEncoder $encoder): string
+    {
+        return (string) $encoder->encode($this);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-json-encoder.js', app)).toContain('Customer');
+  });
+
+  test('a form login and an LDAP JSON login sharing a check path', async () => {
+    const app = appWith('json-login-two-form-logins', {
+      'config/packages/security.yaml': `security:
+    firewalls:
+        main:
+            form_login:
+                check_path: /login
+            json_login_ldap:
+                check_path: /login
+                service: Symfony\\Component\\Ldap\\Ldap
+`,
+    });
+
+    expect(await runModule('symfony-json-login.js', app)).toContain('form_login');
+  });
+
+  test('a kernel with more bundles than is comfortable', async () => {
+    const bundles: string[] = ['    Symfony\\Bundle\\FrameworkBundle\\FrameworkBundle::class => [\'all\' => true],'];
+    for (let i = 0; i < 31; i++) {
+      bundles.push(`    Acme\\Bundle${i}\\Acme${i}Bundle::class => ['all' => true],`);
+    }
+    const app = appWith('kernel-boot-many-bundles', {
+      'config/bundles.php': `<?php
+
+return [
+${bundles.join('\n')}
+];
+`,
+    });
+
+    expect(await runModule('symfony-kernel-boot.js', app)).toContain('bundles registered');
+  });
+
+  test('a terminate listener with no try/catch', async () => {
+    const app = appWith('kernel-terminate-no-try', {
+      'src/EventListener/FlushLogsListener.php': `<?php
+
+namespace App\\EventListener;
+
+class FlushLogsListener
+{
+    public function onKernelTerminate($event): void
+    {
+        $this->logger->flush();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-kernel-terminate.js', app)).toContain('try/catch');
+  });
+
+  test('an attachment read from a checked, typed path', async () => {
+    const app = appWith('mailer-attachment-checked', {
+      'src/Mail/ReportMailer.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Email;
+
+class ReportMailer
+{
+    public function build(): Email
+    {
+        $email = new Email();
+        if (file_exists('/srv/reports/monthly.pdf')) {
+            $email->attachFromPath('/srv/reports/monthly.pdf', 'monthly.pdf', 'application/pdf');
+        }
+
+        return $email;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-mailer-attachments.js', app)).toContain('ReportMailer');
+  });
+
+  test('the HTML to Markdown converter installed', async () => {
+    const app = appWith('mailer-html-to-markdown-installed', {
+      'composer.json': JSON.stringify({
+        require: { 'league/html-to-markdown': '^5.1' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'src/Mail/Newsletter.php': `<?php
+
+namespace App\\Mail;
+
+use Symfony\\Component\\Mime\\Email;
+
+class Newsletter
+{
+    public function build(): Email
+    {
+        return (new Email())->html('<p>Hello</p>');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-mailer-html-to-text.js', app)).toContain('league/html-to-markdown: installed');
+  });
+
+  test('a mailer that sends nothing at all', async () => {
+    const app = appWith('mailer-queuing-null-transport', {
+      'config/packages/mailer.yaml': `framework:
+    mailer:
+        dsn: 'null://null'
+`,
+    });
+
+    expect(await runModule('symfony-mailer-queuing.js', app)).toContain('null/log transport');
+  });
+
+  test('a message bus declared with no body', async () => {
+    const app = appWith('message-bus-empty-body', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        default_bus: command.bus
+        buses:
+            command.bus:
+            query.bus:
+                middleware:
+                    - validation
+`,
+    });
+
+    expect(await runModule('symfony-message-buses.js', app)).toContain('command.bus');
+  });
+
+  test('a handled stamp checked for null', async () => {
+    const app = appWith('messenger-envelope-null-check', {
+      'src/Bus/QueryBus.php': `<?php
+
+namespace App\\Bus;
+
+use Symfony\\Component\\Messenger\\Stamp\\HandledStamp;
+
+class QueryBus
+{
+    public function ask(object $query): mixed
+    {
+        $envelope = $this->bus->dispatch($query);
+        $handled = $envelope->last(HandledStamp::class);
+
+        return $handled?->getResult();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-messenger-envelope.js', app)).toContain('QueryBus');
+  });
+
+  test('a delay longer than a day', async () => {
+    const app = appWith('messenger-stamps-long-delay', {
+      'src/Service/ReminderScheduler.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\Messenger\\Stamp\\DelayStamp;
+
+class ReminderScheduler
+{
+    public function schedule(object $message): void
+    {
+        $this->bus->dispatch($message, [new DelayStamp(172800000)]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-messenger-stamps.js', app)).toContain('Scheduler');
+  });
+
+  test('a formatter configured in YAML with no formatter class of our own', async () => {
+    const app = appWith('monolog-formatter-yaml-only', {
+      'config/packages/monolog.yaml': `monolog:
+    handlers:
+        main:
+            type: stream
+            path: '%kernel.logs_dir%/%kernel.environment%.log'
+            formatter: monolog.formatter.json
+`,
+    });
+
+    expect(await runModule('symfony-monolog-formatter.js', app)).toContain('monolog.formatter.json');
+  });
+});
+
+describe('batch 265: notifiers, routing, UX and Twig', () => {
+  test('a notification with channels and no importance', async () => {
+    const app = appWith('notifier-admin-channels-only', {
+      'src/Notification/InvoiceNotification.php': `<?php
+
+namespace App\\Notification;
+
+use Symfony\\Component\\Notifier\\Notification\\Notification;
+
+class InvoiceNotification extends Notification
+{
+    public function getChannels($recipient): array
+    {
+        return ['email', 'admin'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-notifier-admin.js', app)).toContain('getImportance');
+  });
+
+  test('a chat transport whose token comes from the environment', async () => {
+    const app = appWith('notifier-chat-env-token', {
+      'config/packages/notifier.yaml': `framework:
+    notifier:
+        chatter_transports:
+            slack: slack://%env(SLACK_TOKEN)%@default?channel=ops
+`,
+    });
+
+    expect(await runModule('symfony-notifier-chat.js', app)).toContain('slack');
+  });
+
+  test('a normalizer on an option with no type constraint', async () => {
+    const app = appWith('options-resolver-untyped-normalizer', {
+      'src/Service/ExportOptions.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\OptionsResolver\\OptionsResolver;
+
+class ExportOptions
+{
+    public function resolve(array $options): array
+    {
+        $resolver = new OptionsResolver();
+        $resolver->setRequired('format');
+        $resolver->setNormalizer('format', fn ($o, $v) => strtolower($v));
+
+        return $resolver->resolve($options);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-options-resolver.js', app)).toContain('Normalizer without setAllowedTypes');
+  });
+
+  test('a messenger transport left empty next to a Doctrine one', async () => {
+    const app = appWith('outbox-empty-transport', {
+      'config/packages/messenger.yaml': `framework:
+    messenger:
+        transports:
+            placeholder: ~
+            outbox: 'doctrine://default?queue_name=outbox'
+`,
+    });
+
+    expect(await runModule('symfony-outbox-pattern.js', app)).toContain('outbox');
+  });
+
+  test('a Doctrine paginator told not to fetch-join', async () => {
+    const app = appWith('paginator-fetch-join-false', {
+      'src/Repository/OrderRepository.php': `<?php
+
+namespace App\\Repository;
+
+use Doctrine\\ORM\\Tools\\Pagination\\Paginator;
+
+class OrderRepository
+{
+    public function page(int $page): Paginator
+    {
+        $query = $this->createQueryBuilder('o')->setFirstResult(($page - 1) * 20)->setMaxResults(20)->getQuery();
+
+        return new Paginator($query, fetchJoinCollection: false);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-paginator.js', app)).toContain('OrderRepository');
+  });
+
+  test('the profiler enabled through the framework section', async () => {
+    const app = appWith('profiler-enabled-in-framework', {
+      'config/packages/prod/framework.yaml': `framework:
+    profiler:
+        enabled: true
+        collect: false
+`,
+    });
+
+    expect(await runModule('symfony-profiler-storage.js', app)).toContain('rofiler');
+  });
+
+  test('a property extractor registered with its tag', async () => {
+    const app = appWith('property-info-tagged-extractor', {
+      'src/PropertyInfo/MoneyTypeExtractor.php': `<?php
+
+namespace App\\PropertyInfo;
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\AutoconfigureTag;
+use Symfony\\Component\\PropertyInfo\\PropertyTypeExtractorInterface;
+
+#[AutoconfigureTag('property_info.type_extractor')]
+class MoneyTypeExtractor implements PropertyTypeExtractorInterface
+{
+    public function getTypes(string $class, string $property, array $context = []): ?array
+    {
+        return null;
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-property-info.js', app)).toContain('MoneyTypeExtractor');
+  });
+
+  test('a JSON error response that sets its status code', async () => {
+    const app = appWith('response-types-catch-with-status', {
+      'src/Controller/ApiController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\HttpFoundation\\JsonResponse;
+
+class ApiController
+{
+    public function show(): JsonResponse
+    {
+        try {
+            return new JsonResponse(['ok' => true], 200);
+        } catch (\\Throwable $e) {
+            return new JsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-response-types.js', app)).toContain('ApiController');
+  });
+
+  test('a route parameter that is neither an id nor a slug', async () => {
+    const app = appWith('routing-requirements-page-param', {
+      'src/Controller/BlogController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\Component\\Routing\\Attribute\\Route;
+
+class BlogController
+{
+    #[Route('/blog/{page}', name: 'blog_list')]
+    public function list(int $page = 1): Response
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-routing-requirements.js', app)).toContain('1 routes, 0 with requirements');
+  });
+
+  test('an authenticator relying only on built-in badges', async () => {
+    const app = appWith('security-passport-builtin-badges', {
+      'src/Security/ApiTokenAuthenticator.php': `<?php
+
+namespace App\\Security;
+
+use Symfony\\Component\\Security\\Http\\Authenticator\\AbstractAuthenticator;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Badge\\UserBadge;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\Passport;
+use Symfony\\Component\\Security\\Http\\Authenticator\\Passport\\SelfValidatingPassport;
+
+class ApiTokenAuthenticator extends AbstractAuthenticator
+{
+    public function authenticate($request): Passport
+    {
+        return new SelfValidatingPassport(new UserBadge($request->headers->get('X-Token')));
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-security-passport.js', app)).toContain('ApiTokenAuthenticator');
+  });
+
+  test('a deprecated service alias', async () => {
+    const app = appWith('service-alias-deprecated', {
+      'config/services.yaml': `services:
+    app.exporter:
+        alias: App\\Export\\CsvExporter
+
+    app.mailer:
+        alias: App\\Mail\\Mailer
+        deprecated:
+            package: 'app'
+            version: '2.0'
+            message: 'use App\\Mail\\Mailer instead'
+`,
+    });
+
+    expect(await runModule('symfony-service-aliases.js', app)).toContain('Deprecated alias');
+  });
+
+  test('a byte string converted with an explicit encoding', async () => {
+    const app = appWith('string-encoding-explicit', {
+      'src/Service/Decoder.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\String\\ByteString;
+
+class Decoder
+{
+    public function decode(string $raw): string
+    {
+        return (string) (new ByteString($raw))->toUnicodeString('ISO-8859-1');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-string-encoding.js', app)).toContain('ByteString');
+  });
+
+  test('a string normalised to NFC', async () => {
+    const app = appWith('string-normalization-nfc', {
+      'src/Service/Decomposer.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\String\\UnicodeString;
+
+class Decomposer
+{
+    public function split(string $value): string
+    {
+        return (string) (new UnicodeString($value))->normalize(UnicodeString::NFD);
+    }
+}
+`,
+      'src/Service/Slugger.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\String\\UnicodeString;
+
+class Slugger
+{
+    public function clean(string $value): string
+    {
+        return (string) (new UnicodeString($value))->normalize(UnicodeString::NFC);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-string-normalization.js', app)).toContain('[NFC]');
+  });
+
+  test('a Twig loop with no sub-request inside, and one outside it', async () => {
+    const app = appWith('subrequest-loop-without-render', {
+      'templates/page.html.twig': `{% for item in items %}
+    <li>{{ item.name }}</li>
+{% endfor %}
+{{ render(controller('App\\\\Controller\\\\SidebarController::show')) }}
+`,
+    });
+
+    expect(await runModule('symfony-subrequest.js', app)).toContain('page.html.twig');
+  });
+
+  test('trusted proxies written as a list', async () => {
+    const app = appWith('trusted-proxies-list', {
+      'config/packages/framework.yaml': `framework:
+    trusted_proxies: ['10.0.0.0/8', '192.168.0.0/16']
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-proto']
+`,
+    });
+
+    expect(await runModule('symfony-trusted-proxies.js', app)).toContain('10.0.0.0/8');
+  });
+
+  test('a Turbo Stream form endpoint with no CSRF check', async () => {
+    const app = appWith('turbo-stream-post-no-csrf', {
+      'src/Controller/CommentController.php': `<?php
+
+namespace App\\Controller;
+
+use Symfony\\UX\\Turbo\\TurboBundle;
+use Symfony\\UX\\Turbo\\TurboStreamResponse;
+
+class CommentController
+{
+    public function add($request): Response
+    {
+        if ('POST' === $request->getMethod()) {
+            $request->setRequestFormat(TurboBundle::STREAM_FORMAT);
+
+            return $this->render('comment/added.stream.html.twig');
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-turbo-streams.js', app)).toContain('CSRF');
+  });
+
+  test('a block name used both at the top and inside an embed', async () => {
+    const app = appWith('twig-embed-block-collision', {
+      'templates/layout.html.twig': `{% block title %}Page{% endblock %}
+{% embed 'card.html.twig' with {} only %}
+    {% block title %}Card{% endblock %}
+{% endembed %}
+`,
+    });
+
+    expect(await runModule('symfony-twig-embed.js', app)).toContain('title');
+  });
+
+  test('the TypeInfo component imported without any listed API', async () => {
+    const app = appWith('type-info-import-only', {
+      'src/Service/TypeReader.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Component\\TypeInfo\\Type;
+
+class TypeReader
+{
+    public function intType(): Type
+    {
+        return Type::int();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-type-info.js', app)).toContain('TypeReader');
+  });
+
+  test('a live component letting the client change the amount', async () => {
+    const app = appWith('live-component-writable-amount', {
+      'src/Twig/Components/Checkout.php': `<?php
+
+namespace App\\Twig\\Components;
+
+use Symfony\\UX\\LiveComponent\\Attribute\\AsLiveComponent;
+use Symfony\\UX\\LiveComponent\\Attribute\\LiveProp;
+
+#[AsLiveComponent]
+class Checkout
+{
+    #[LiveProp(writable: true)]
+    public int $amount = 0;
+}
+`,
+    });
+
+    expect(await runModule('symfony-ux-livecomponent-security.js', app)).toContain('amount');
+  });
+
+  test('a Mercure hub declared only in the environment', async () => {
+    const app = appWith('ux-notify-env-mercure', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/ux-notify': '^2.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      '.env': `MERCURE_URL=https://mercure.example.com/.well-known/mercure
+`,
+    });
+
+    expect(await runModule('symfony-ux-notify.js', app)).toContain('Mercure');
+  });
+
+  test('a Turbo frame that carries its id', async () => {
+    const app = appWith('turbo-frame-with-id', {
+      'templates/cart.html.twig': `<turbo-frame id="cart">
+    {{ include('cart/_lines.html.twig') }}
+</turbo-frame>
+`,
+    });
+
+    expect(await runModule('symfony-ux-turbo-frame.js', app)).toContain('cart.html.twig');
+  });
+
+  test('a typed animation with strings and no loop', async () => {
+    const app = appWith('ux-typed-without-loop', {
+      'templates/hero.html.twig': `<span data-controller="symfony--ux-typed--typed"
+      data-symfony--ux-typed--typed-strings-value='["Hello", "Hola"]'
+      data-symfony--ux-typed--typed-type-speed-value="50"></span>
+`,
+    });
+
+    expect(await runModule('symfony-ux-typed.js', app)).toContain('loop');
+  });
+
+  test('a helper script next to the Vue controllers', async () => {
+    const app = appWith('ux-vue-helper-script', {
+      'assets/vue/controllers/Hello.vue': `<template><p>{{ name }}</p></template>
+<script setup>
+defineProps(['name']);
+</script>
+`,
+      'assets/vue/controllers/format.js': `export const format = (v) => v.trim();
+`,
+    });
+
+    expect(await runModule('symfony-ux-vue.js', app)).toContain('Vue');
+  });
+
+  test('a translation file named without a locale', async () => {
+    const app = appWith('translation-domains-no-locale', {
+      'translations/messages.yaml': `hello: 'Hello'
+`,
+      'translations/validators.en.yaml': `required: 'Required'
+`,
+    });
+
+    expect(await runModule('translation-domains.js', app)).toContain('validators');
+  });
+
+  test('a Twig global pointing at a service', async () => {
+    const app = appWith('twig-global-service', {
+      'config/packages/twig.yaml': `twig:
+    globals:
+        app_settings: '@App\\Service\\Settings'
+        app_name: '%app.name%'
+`,
+    });
+
+    expect(await runModule('twig-globals.js', app)).toContain('[service]');
+  });
+
+  test('Twig paths given as a plain list', async () => {
+    const app = appWith('twig-paths-as-list', {
+      'config/packages/twig.yaml': `twig:
+    paths:
+        - '%kernel.project_dir%/templates/shared'
+`,
+    });
+
+    expect(await runModule('twig-namespace-paths.js', app)).toContain('__main__');
+  });
+
+  test('a unique entity constraint with no options', async () => {
+    const app = appWith('validation-unique-entity-empty', {
+      'src/Entity/Account.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+use Symfony\\Bridge\\Doctrine\\Validator\\Constraints\\UniqueEntity;
+
+#[ORM\\Entity]
+#[UniqueEntity()]
+class Account
+{
+    private ?string $email = null;
+}
+`,
+    });
+
+    expect(await runModule('validation.js', app, ['Account'])).toContain('UniqueEntity');
+  });
+});

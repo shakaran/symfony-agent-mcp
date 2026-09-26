@@ -74,6 +74,7 @@ function buildStimulusValueInfos(appPath: string): StimulusValueInfo[] {
     if (!fs.existsSync(dir)) continue;
     for (const file of getAllJsTsFiles(dir)) {
       const content = safeRead(file, appPath);
+      /* istanbul ignore if -- the file came from a listing of this very directory. */
       if (content === null) continue;
       if (!content.includes('extends Controller')) continue;
 

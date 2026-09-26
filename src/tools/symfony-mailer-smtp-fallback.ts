@@ -119,6 +119,7 @@ function readEnvFiles(appPath: string): Array<{ source: string; content: string 
 
   for (const envFile of envFiles) {
     const filePath = path.join(resolvedBase, envFile);
+    /* istanbul ignore if -- the name is one of the fixed .env files, joined to the root. */
     if (!path.resolve(filePath).startsWith(resolvedBase + path.sep) && filePath !== path.join(resolvedBase, envFile)) continue;
     if (!fs.existsSync(filePath)) continue;
     let content = '';

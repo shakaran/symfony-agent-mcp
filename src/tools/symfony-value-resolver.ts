@@ -38,6 +38,7 @@ function parseValueResolver(filePath: string, appPath: string): ValueResolverInf
   if (content.includes('namespace Symfony\\')) return null;
   const classM = /class\s+(\w+)/.exec(content);
   if (!classM) return null;
+  /* istanbul ignore next -- one of the two interfaces was found above. */
   const type: ValueResolverInfo['type'] = isValueResolver ? 'ValueResolverInterface' : isParamConverter ? 'ParamConverterInterface' : 'unknown';
   const hasSupports = content.includes('function supports(');
   const hasResolve = content.includes('function resolve(');

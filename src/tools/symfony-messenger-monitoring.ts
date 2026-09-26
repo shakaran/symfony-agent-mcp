@@ -30,8 +30,7 @@ function findSupervisorConfig(appPath: string): boolean {
       if (stat.isFile()) {
         const content = readFileSafe(p);
         if (content.includes('messenger:consume') || content.includes('messenger')) return true;
-      /* istanbul ignore else -- a path on disk is either a file or a directory. */
-      } else if (stat.isDirectory()) {
+      } else /* istanbul ignore else -- a path on disk is either a file or a directory. */ if (stat.isDirectory()) {
         const files = fs.readdirSync(p);
         for (const f of files) {
           const fStat = fs.lstatSync(path.join(p, f));

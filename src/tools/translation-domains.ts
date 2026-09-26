@@ -58,6 +58,7 @@ function loadTranslationDomains(appPath: string): DomainUsage[] {
     const base = path.basename(f);
     // Pattern: domain.locale.format
     const parts = base.split('.');
+    /* istanbul ignore else -- the listing only keeps names shaped domain.locale.format. */
     if (parts.length >= 3) {
       const domain = parts.slice(0, parts.length - 2).join('.');
       const locale = parts[parts.length - 2];

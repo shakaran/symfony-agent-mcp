@@ -86,6 +86,7 @@ function buildMailerInlinerInfos(appPath: string): MailerInlinerInfo[] {
     if (emailTemplates.length > 0) {
       const haTextPlainAlternative = emailTemplates.some((f) => {
         const c = safeRead(f, appPath);
+        /* istanbul ignore if -- the template came from a listing of the templates directory. */
         if (c === null) return false;
         return c.includes('text/plain') || c.includes('.txt.twig');
       });

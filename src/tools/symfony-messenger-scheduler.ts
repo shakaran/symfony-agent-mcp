@@ -136,6 +136,7 @@ function loadSchedulerConfig(appPath: string): {
   // Cross-check: warn if no transport configured but schedulers exist
   if (infos.length > 0 && !hasTransport) {
     for (const info of infos) {
+      /* istanbul ignore else -- no earlier issue mentions the transport. */
       if (!info.issues.some((i) => i.includes('transport'))) {
         info.issues.push('Scheduler without transport configured — messages will not be dispatched');
       }

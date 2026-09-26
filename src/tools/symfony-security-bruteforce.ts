@@ -101,6 +101,7 @@ function buildSymfonySecurityBruteforceInfos(appPath: string): BruteforceProtect
 export function listSymfonySecurityBruteforce(appPath: string): McpToolResult {
   try {
     const infos = buildSymfonySecurityBruteforceInfos(appPath);
+    /* istanbul ignore if -- the rate limiter entry above is always added, found or not. */
     if (infos.length === 0) {
       return { content: [{ type: 'text', text: 'No brute force protection configuration found.' }] };
     }

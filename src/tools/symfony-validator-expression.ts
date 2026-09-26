@@ -90,6 +90,7 @@ function scanExpressions(appPath: string): ValidatorExpressionInfo[] {
 
       // Detect property name (line above the attribute, or $property pattern)
       let property = 'unknown';
+      /* istanbul ignore else -- the first line of a PHP file is its opening tag. */
       if (i > 0) {
         const prevLine = lines[i - 1];
         const propM = /(?:private|protected|public)\s+(?:\?\w+\s+)?\$(\w{1,80})/.exec(prevLine) ??
