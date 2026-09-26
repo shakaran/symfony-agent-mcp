@@ -77,7 +77,10 @@ function buildOutboxInfos(appPath: string): OutboxPatternInfo[] {
       const transports = (messenger['transports'] ?? {}) as Record<string, unknown>;
 
       for (const [tName, tCfg] of Object.entries(transports)) {
-        const dsnStr = String((tCfg as Record<string, unknown>)['dsn'] ?? tCfg ?? '');
+        // A transport is a map with a "dsn" key, a bare DSN string, or left
+        // empty ("~"); reading "dsn" off an empty one threw and hid the rest.
+        const dsnValue = tCfg !== null && typeof tCfg === 'object' ? (tCfg as Record<string, unknown>)['dsn'] : tCfg;
+        const dsnStr = String(dsnValue ?? '');
         if (dsnStr.startsWith('doctrine://')) {
           const issues: string[] = [];
           issues.push(`Transport "${tName}" uses Doctrine DSN (doctrine outbox pattern) — ensure messages table has cleanup job to prevent unbounded growth`);
