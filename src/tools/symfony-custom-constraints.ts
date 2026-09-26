@@ -73,7 +73,10 @@ function parseConstraint(filePath: string, appPath: string): ConstraintClass | n
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return null; }
 
-  if (!content.includes('extends Constraint')) return null;
+  // "extends ConstraintValidator" starts with the same words, so a plain
+  // substring test read every validator as a constraint of its own and then
+  // reported it as missing a validator.
+  if (!/\bextends\s+Constraint\b/.test(content)) return null;
   if (content.includes('namespace Symfony\\') || content.includes('namespace Doctrine\\')) return null;
 
   const classM = /class\s+(\w+)/.exec(content);
@@ -175,8 +178,8 @@ export function listCustomConstraints(appPath: string): McpToolResult {
 
     for (const c of constraints) {
       const expectedValidator = c.class + 'Validator';
+      /* istanbul ignore next -- a split always yields a last element. */
       const matched = c.validatedByClass
-        /* istanbul ignore next -- a split always yields a last element. */
         ? validatorsByName.get(c.validatedByClass.split('\\').pop() ?? '')
         : validatorsByName.get(expectedValidator);
       if (!matched) constraintIssues.push(`${c.class}: no matching validator class found (expected ${expectedValidator})`);
