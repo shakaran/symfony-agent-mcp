@@ -115,6 +115,7 @@ function parseConsoleQuestion(filePath: string, appPath: string): ConsoleQuestio
     questions.push(buildQuestionEntry('question', content, m.index));
   }
 
+  /* istanbul ignore if -- each of the other markers pushes a question above. */
   if (questions.length === 0 && !content.includes('QuestionHelper')) return null;
 
   const allEntryIssues = questions.flatMap((q) => q.issues);

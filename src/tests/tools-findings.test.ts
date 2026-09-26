@@ -67310,3 +67310,166 @@ SLACK_SIGNING_SECRET=\${SLACK_SIGNING_SECRET}
     expect(await runModule('slack-webhook-integration.js', app)).toContain('Slack');
   });
 });
+
+describe('batch 261: Swoole, caches, clocks and console questions', () => {
+  test('a PDO connection in a file that never mentions Swoole', async () => {
+    const app = appWith('swoole-plain-pdo', {
+      'src/Server/Http.php': `<?php
+
+namespace App\\Server;
+
+class Http
+{
+    public function boot(): void
+    {
+        $server = new Swoole\\Http\\Server('0.0.0.0', 9501);
+        $server->set(['worker_num' => 4]);
+        $server->start();
+    }
+}
+`,
+      'src/Storage/Connection.php': `<?php
+
+namespace App\\Storage;
+
+class Connection
+{
+    public function connect(): \\PDO
+    {
+        return new PDO('mysql:host=db;dbname=app', 'app', 'app');
+    }
+}
+`,
+    });
+
+    expect(await runModule('swoole-openswoole.js', app)).toContain('Swoole');
+  });
+
+  test('an import map whose CDN entries carry an integrity hash', async () => {
+    const app = appWith('asset-mapper-with-integrity', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/asset-mapper': '^7.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'assets/importmap.php': `<?php
+
+return [
+    'stimulus' => [
+        'version' => '3.2.2',
+        'url' => 'https://cdn.jsdelivr.net/npm/@hotwired/stimulus@3.2.2/dist/stimulus.js',
+        'integrity' => 'sha384-abc123',
+    ],
+];
+`,
+    });
+
+    expect(await runModule('symfony-asset-mapper-ext.js', app)).toContain('importmap');
+  });
+
+  test('a Symfony cache read with the callback it expects', async () => {
+    const app = appWith('cache-psr16-with-callback', {
+      'src/Service/RateCache.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Cache\\CacheInterface;
+
+class RateCache
+{
+    public function __construct(private CacheInterface $cache)
+    {
+    }
+
+    public function rate(string $pair): float
+    {
+        return $this->cache->get($pair, fn() => 1.0);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-cache-psr16.js', app)).toContain('RateCache');
+  });
+
+  test('a cache pool used with no short lifetime anywhere', async () => {
+    const app = appWith('cache-stampede-long-ttl-only', {
+      'config/packages/cache.yaml': `framework:
+    cache:
+        pools:
+            app.catalogue:
+                adapter: cache.adapter.redis
+                default_lifetime: 3600
+`,
+      'src/Service/CatalogueCache.php': `<?php
+
+namespace App\\Service;
+
+use Symfony\\Contracts\\Cache\\ItemInterface;
+
+class CatalogueCache
+{
+    public function __construct(private $pool)
+    {
+    }
+
+    public function all(): array
+    {
+        return $this->pool->get('app.catalogue.all', function (ItemInterface $item) {
+            $item->expiresAfter(3600);
+
+            return [];
+        });
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-cache-stampede.js', app)).toContain('app.catalogue');
+  });
+
+  test('a file with more clock anti-patterns than the report lists', async () => {
+    const calls: string[] = [];
+    for (let i = 0; i < 22; i++) {
+      calls.push(`        $stamp${i} = time();`);
+    }
+    const app = appWith('clock-many-anti-patterns', {
+      'src/Service/Stamper.php': `<?php
+
+namespace App\\Service;
+
+class Stamper
+{
+    public function stamps(): array
+    {
+${calls.join('\n')}
+
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-clock.js', app)).toContain('more');
+  });
+
+  test('time helpers used in a test file with no class', async () => {
+    const app = appWith('clock-test-without-class', {
+      'tests/bootstrap_time.php': `<?php
+
+date_default_timezone_set('UTC');
+$now = time();
+sleep(1);
+`,
+    });
+
+    expect(await runModule('symfony-clock-test.js', app)).toContain('bootstrap_time');
+  });
+
+  test('a daemon scan of an application whose src is a file', async () => {
+    const app = appWith('daemon-src-is-a-file', {
+      src: "<?php\n// The classes live in lib/ in this application.\n",
+    });
+
+    expect(await runModule('symfony-console-daemon.js', app)).toContain('daemon');
+  });
+});

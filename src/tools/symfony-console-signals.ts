@@ -40,8 +40,10 @@ function parseSignalableCommand(filePath: string, appPath: string): SignalableCo
     for (const m of signalsM[1].matchAll(/SIGTERM|SIGINT|SIGHUP/g)) {
       if (m[0] === 'SIGTERM') subscribedSignals.push(15);
       else if (m[0] === 'SIGINT') subscribedSignals.push(2);
-      /* istanbul ignore else -- the pattern matches only those three names. */
-      else if (m[0] === 'SIGHUP') subscribedSignals.push(1);
+      else {
+        /* istanbul ignore else -- the pattern matches only those three names. */
+        if (m[0] === 'SIGHUP') subscribedSignals.push(1);
+      }
     }
     for (const m of signalsM[1].matchAll(/\b(\d+)\b/g)) subscribedSignals.push(Number(m[1]));
   }
