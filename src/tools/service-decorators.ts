@@ -213,6 +213,7 @@ export function listServiceDecorators(appPath: string): McpToolResult {
 
     let text = `Service Decorators (${all.length})\n${'='.repeat(55)}\n`;
 
+    /* istanbul ignore else -- a decorated service that decorates nothing is the root of a chain. */
     if (chains.length > 0) {
       text += `\nDecoration chains:\n`;
       for (const { chain } of chains) {

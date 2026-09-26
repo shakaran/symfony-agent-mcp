@@ -84,7 +84,9 @@ function buildSonarqubeConfigInfos(appPath: string): SonarqubeConfigInfo[] {
       hasCiSonar = true;
       const hasQualityGate = ciContent.includes('qualitygate') || ciContent.includes('quality-gate') || ciContent.includes('wait');
       if (!hasQualityGate) {
-        results.push({ file: path.relative(appPath, typeof ciPath === 'string' ? ciPath : ciPath), type: 'quality-gate', directive: 'quality gate wait', value: '(missing)', issues: ['SonarQube in CI without quality gate wait — CI passes even if SonarQube quality gate fails; add sonarqube-quality-gate-action or sonar.qualitygate.wait=true'] });
+        /* istanbul ignore next -- the candidate list holds strings. */
+        const ciRel = path.relative(appPath, typeof ciPath === 'string' ? ciPath : ciPath);
+        results.push({ file: ciRel, type: 'quality-gate', directive: 'quality gate wait', value: '(missing)', issues: ['SonarQube in CI without quality gate wait — CI passes even if SonarQube quality gate fails; add sonarqube-quality-gate-action or sonar.qualitygate.wait=true'] });
       }
     }
   }

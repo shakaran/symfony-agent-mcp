@@ -67152,3 +67152,161 @@ $third = $this->getMockBuilder(\\App\\Service\\Importer::class)->getMock();
     expect(await runModule('profiler.js', app)).toContain('EXC');
   });
 });
+
+describe('batch 260: metrics, SAML, search engines and webhooks', () => {
+  test('a Prometheus client declared in an application with no src', async () => {
+    const app = appWith('prometheus-lib-without-src', {
+      'composer.json': JSON.stringify({
+        require: { 'promphp/prometheus_client_php': '^2.10' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+
+    expect(await runModule('prometheus-metrics.js', app)).toContain('Prometheus');
+  });
+
+  test('a Rector rule with nothing to flag', async () => {
+    const app = appWith('rector-rule-complete', {
+      'rector.php': `<?php
+
+use App\\Rector\\AddDeclareStrictTypesRector;
+use Rector\\Config\\RectorConfig;
+
+return static function (RectorConfig $config): void {
+    $config->rule(AddDeclareStrictTypesRector::class);
+};
+`,
+      'src/Rector/AddDeclareStrictTypesRector.php': `<?php
+
+namespace App\\Rector;
+
+use PhpParser\\Node;
+use PhpParser\\Node\\Stmt\\Class_;
+use Rector\\Rector\\AbstractRector;
+use Symplify\\RuleDocGenerator\\ValueObject\\CodeSample\\CodeSample;
+use Symplify\\RuleDocGenerator\\ValueObject\\RuleDefinition;
+
+class AddDeclareStrictTypesRector extends AbstractRector
+{
+    public function getRuleDefinition(): RuleDefinition
+    {
+        return new RuleDefinition('Adds a strict types declaration', [new CodeSample('<?php', '<?php declare(strict_types=1);')]);
+    }
+
+    public function getNodeTypes(): array
+    {
+        return [Class_::class];
+    }
+
+    public function refactor(Node $node): ?Node
+    {
+        return $node;
+    }
+}
+`,
+      'tests/Rector/AddDeclareStrictTypesRectorTest.php': `<?php
+
+namespace App\\Tests\\Rector;
+
+use PHPUnit\\Framework\\TestCase;
+
+class AddDeclareStrictTypesRectorTest extends TestCase
+{
+    public function testRefactor(): void
+    {
+        $this->assertTrue(true);
+    }
+}
+`,
+    });
+
+    expect(await runModule('rector-custom-rules.js', app)).toContain('No issues detected');
+  });
+
+  test('a SAML certificate that is only readable by its owner', async () => {
+    const app = appWith('saml-cert-locked-down', {
+      'config/packages/saml.yaml': `hslavich_onelogin_saml:
+    idp:
+        entityId: 'https://idp.example.com'
+    sp:
+        entityId: 'https://app.example.com'
+        privateKey: '%kernel.project_dir%/config/certs/saml.key'
+`,
+      'config/certs/saml.crt': `-----BEGIN CERTIFICATE-----
+MIIBkTCB+wIJAKHHIG
+-----END CERTIFICATE-----
+`,
+    });
+    fs.chmodSync(path.join(app, 'config/certs/saml.crt'), 0o600);
+
+    expect(await runModule('saml-auth.js', app)).toContain('SAML');
+  });
+
+  test('a cron task that spreads its start with jitter', async () => {
+    const app = appWith('scheduler-task-with-jitter', {
+      'src/Scheduler/ReportTask.php': `<?php
+
+namespace App\\Scheduler;
+
+use Symfony\\Component\\Scheduler\\Attribute\\AsCronTask;
+
+class ReportTask
+{
+    #[AsCronTask(expression: '0 3 * * *', timezone: 'Europe/Madrid', jitter: 60)]
+    public function send(): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('scheduler.js', app)).toContain('0 3 * * *');
+  });
+
+  test('a search engine installed with no bundle configuration', async () => {
+    const app = appWith('search-engine-without-config', {
+      'composer.json': JSON.stringify({
+        require: { 'meilisearch/meilisearch-php': '^1.8' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+    });
+
+    expect(await runModule('search-integration.js', app)).toContain('Detected engines');
+  });
+
+  test('a Shopify client that only handles the OAuth dance', async () => {
+    const app = appWith('shopify-oauth-client', {
+      'src/Shopify/OAuthClient.php': `<?php
+
+namespace App\\Shopify;
+
+use Shopify\\Auth\\OAuth;
+
+class OAuthClient
+{
+    public function authorizeUrl(string $shop): string
+    {
+        return 'https://' . $shop . '.myshopify.com/admin/oauth/authorize?client_id=' . getenv('SHOPIFY_API_KEY');
+    }
+
+    public function exchange(string $code): string
+    {
+        return $this->http->request('POST', '/admin/oauth/access_token', ['json' => ['code' => $code]])->toArray()['access_token'];
+    }
+}
+`,
+    });
+
+    expect(await runModule('shopify-integration.js', app)).toContain('oauth');
+  });
+
+  test('Slack credentials with the signing secret present', async () => {
+    const app = appWith('slack-with-signing-secret', {
+      '.env': `SLACK_WEBHOOK_URL=https://hooks.slack.com\x2fservices/T000/B000/xxxx
+SLACK_SIGNING_SECRET=\${SLACK_SIGNING_SECRET}
+`,
+    });
+
+    expect(await runModule('slack-webhook-integration.js', app)).toContain('Slack');
+  });
+});
