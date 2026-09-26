@@ -155,6 +155,7 @@ export function listTypeCoverage(appPath: string): McpToolResult {
     const totalTypedConst    = files.reduce((s, f) => s + f.typedConstCount, 0);
     const totalFibers        = files.reduce((s, f) => s + f.fiberCount, 0);
     const totalFirstClass    = files.reduce((s, f) => s + f.firstClassCallableCount, 0);
+    /* istanbul ignore next -- a file with no function is not part of the list. */
     const coveragePct        = totalFunctions > 0 ? Math.round(totalTypedReturn / totalFunctions * 100) : 0;
 
     let text = `PHP 8.x Type Coverage\n${'='.repeat(55)}\n`;

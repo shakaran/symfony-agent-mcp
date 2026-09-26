@@ -85,6 +85,7 @@ function parseStaticMethods(filePath: string, appPath: string): StaticMethodClas
     // Only flag if a known static method name appears after $this->
     for (const sm of staticMethods) {
       const nameM = /\bfunction\s+(\w{1,80})\s*\(/.exec(sm);
+      /* istanbul ignore else -- the declaration was matched with the same pattern. */
       if (nameM) {
         const methodName = nameM[1];
         if (new RegExp(`\\$this->${methodName}\\s*\\(`).test(content)) {

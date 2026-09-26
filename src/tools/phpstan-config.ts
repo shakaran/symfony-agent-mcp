@@ -171,6 +171,7 @@ function readBaselineSize(appPath: string, baselineFile: string | undefined): nu
   const fullPath = path.join(appPath, baselineFile);
   if (!fs.existsSync(fullPath)) return 0;
   const content = safeRead(fullPath, appPath);
+  /* istanbul ignore if -- the file was just found on disk. */
   if (content === null) return 0;
   return (content.match(/^\s*-\s+message:/mg) ?? []).length ||
          (content.match(/message:/g) ?? []).length;

@@ -35,6 +35,7 @@ function countBenchmarkFiles(appPath: string): number {
     for (const file of getAllPhpFiles(dir)) {
       if (!file.endsWith('Bench.php') && !file.endsWith('Benchmark.php')) continue;
       const content = safeRead(file, appPath);
+      /* istanbul ignore if -- the file came from a listing of this very directory. */
       if (content === null) continue;
       if (content.includes('@Bench') || content.includes('#[Bench]') || content.includes('@Subject') || content.includes('#[Subject]')) {
         count++;

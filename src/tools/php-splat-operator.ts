@@ -110,12 +110,13 @@ function findCallSpreads(content: string): SplatMatch[] {
     if (/[[]$/.test(before)) continue;
     const contextBefore = content.slice(Math.max(0, m.index - 200), m.index);
     const methodM = /function\s+(\w{1,80})\s*\(/.exec(contextBefore);
+    /* istanbul ignore next -- the pattern requires the variable name. */
+    const paramList = m[2] ?? '';
     matches.push({
       type: 'call-spread',
       method: methodM ? methodM[1] : '(global)',
       snippet: m[0],
-      /* istanbul ignore next -- the pattern requires the variable name. */
-      paramList: m[2] ?? '',
+      paramList,
     });
   }
   return matches;

@@ -66927,3 +66927,228 @@ enum Channel: string
     expect(await runModule('php-backed-enum-patterns.js', app)).toContain('Channel');
   });
 });
+
+describe('batch 258: randomness, signals, types and tooling config', () => {
+  test('a token built from a wide rand range', async () => {
+    const app = appWith('random-wide-rand-range', {
+      'src/Service/TokenFactory.php': `<?php
+
+namespace App\\Service;
+
+class TokenFactory
+{
+    public function token(): string
+    {
+        return 'tok_' . rand(0, 999999999);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-random-security.js', app)).toContain('rand');
+  });
+
+  test('a signal dispatch called from inside the worker loop', async () => {
+    const app = appWith('signal-dispatch-in-loop', {
+      'src/Command/WorkerCommand.php': `<?php
+
+namespace App\\Command;
+
+use Symfony\\Component\\Console\\Command\\Command;
+
+class WorkerCommand extends Command
+{
+    protected function execute($input, $output): int
+    {
+        pcntl_signal(SIGTERM, fn () => exit(0));
+
+        while (true) {
+            $this->handleOne();
+            pcntl_signal_dispatch();
+        }
+
+        return Command::SUCCESS;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-signal-handling.js', app)).toContain('pcntl_signal_dispatch');
+  });
+
+  test('a password compared with strcmp', async () => {
+    const app = appWith('type-juggling-strcmp-password', {
+      'src/Security/LegacyChecker.php': `<?php
+
+namespace App\\Security;
+
+class LegacyChecker
+{
+    public function check(string $given, string $password): bool
+    {
+        return 0 === strcmp($given, $password);
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-type-juggling.js', app)).toContain('strcmp');
+  });
+
+  test('a WeakMap used to track observers', async () => {
+    const app = appWith('weak-map-for-tracking', {
+      'src/Event/ObserverRegistry.php': `<?php
+
+namespace App\\Event;
+
+class ObserverRegistry
+{
+    private \\WeakMap $observers;
+
+    public function __construct()
+    {
+        $this->observers = new WeakMap();
+    }
+
+    public function attach(object $subject, callable $listener): void
+    {
+        $this->observers[$subject] = $listener;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-weak-map.js', app)).toContain('tracking');
+  });
+
+  test('an xdebug log directive switched off', async () => {
+    const app = appWith('xdebug-log-disabled', {
+      'xdebug.ini': `zend_extension=xdebug
+xdebug.mode=debug
+xdebug.client_host=127.0.0.1
+xdebug.log=0
+`,
+    });
+
+    expect(await runModule('php-xdebug-config.js', app)).toContain('xdebug');
+  });
+
+  test('an architecture rule written as a path constraint', async () => {
+    const app = appWith('phparkitect-path-rule', {
+      'phparkitect.php': `<?php
+
+use Arkitect\\ClassSet;
+use Arkitect\\CLI\\Config;
+use Arkitect\\Expression\\ForClasses\\ResideInOneOfTheseNamespaces;
+use Arkitect\\Rules\\Rule;
+
+return static function (Config $config): void {
+    $rule = Rule::allClasses()
+        ->that(new ResideInAPath('src/Domain'))
+        ->should(new ResideInOneOfTheseNamespaces('App\\Domain'))
+        ->because('the domain layer must stay in its namespace');
+
+    $config->add(ClassSet::fromDir(__DIR__ . '/src'), $rule);
+};
+`,
+    });
+
+    expect(await runModule('phparkitect-config.js', app)).toContain('namespace-rule');
+  });
+});
+
+describe('batch 259: quality tooling and the profiler listing', () => {
+  test('a PHPMD ruleset that already excludes vendor', async () => {
+    const app = appWith('phpmd-excludes-vendor', {
+      'composer.json': JSON.stringify({
+        'require-dev': { 'phpmd/phpmd': '^2.15' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'phpmd.xml': `<?xml version="1.0"?>
+<ruleset name="App">
+    <rule ref="rulesets/unusedcode.xml"/>
+    <rule ref="rulesets/cleancode.xml"/>
+    <exclude-pattern>vendor/*</exclude-pattern>
+</ruleset>
+`,
+    });
+
+    expect(await runModule('phpmd-config.js', app)).toContain('PHPMD');
+  });
+
+  test('a phpspec suite list indented four spaces', async () => {
+    const app = appWith('phpspec-four-space-suites', {
+      'phpspec.yml': `suites:
+    app_suite:
+        namespace: App
+        psr4_prefix: App
+        src_path: src
+        spec_path: spec
+formatter.name: pretty
+`,
+    });
+
+    expect(await runModule('phpspec-config.js', app)).toContain('app_suite');
+  });
+
+  test('a PHPStan bootstrap given as an absolute path', async () => {
+    const app = appWith('phpstan-absolute-bootstrap', {
+      'phpstan.neon': `parameters:
+    level: 8
+    paths:
+        - src
+    bootstrapFiles:
+        - /srv/app/tests/bootstrap.php
+`,
+    });
+
+    expect(await runModule('phpstan-custom-rules.js', app)).toContain('Bootstrap file');
+  });
+
+  test('exception assertions and mocks in files with no class', async () => {
+    const app = appWith('phpunit-assertions-without-class', {
+      'tests/helpers/expectations.php': `<?php
+
+use PHPUnit\\Framework\\TestCase;
+
+$test->expectException(\\RuntimeException::class);
+$mock = $this->createMock(\\App\\Service\\Mailer::class);
+$first = $this->getMockBuilder(\\App\\Service\\Mailer::class)->getMock();
+$second = $this->getMockBuilder(\\App\\Service\\Exporter::class)->getMock();
+$third = $this->getMockBuilder(\\App\\Service\\Importer::class)->getMock();
+`,
+    });
+
+    expect(await runModule('phpunit-expect-exception.js', app)).toContain('exception');
+    expect(await runModule('phpunit-mocks.js', app)).toContain('(file)');
+  });
+
+  test('mutation testing configured without a parallel runner', async () => {
+    const app = appWith('phpunit-infection-without-paratest', {
+      'composer.json': JSON.stringify({
+        'require-dev': { 'infection/infection': '^0.29', 'phpunit/phpunit': '^11.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'infection.json5': `{
+    "source": { "directories": ["src"] },
+    "minMsi": 70
+}
+`,
+    });
+
+    expect(await runModule('phpunit-parallel.js', app)).toContain('paratest');
+  });
+
+  test('a profiled request that ended in an exception', async () => {
+    const app = appWith('profiler-request-with-exception', {
+      'var/cache/dev/profiler/index.csv': `f1a2b3,127.0.0.1,GET,http://localhost/checkout,1767225600,,500,request\n`,
+      'var/cache/dev/profiler/b3/a2/f1a2b3': JSON.stringify({
+        time: { duration: 84.5, initTime: 6 },
+        exception: { exception: true, class: 'RuntimeException', message: 'Payment gateway timeout' },
+        request: { status_code: 500 },
+      }),
+    });
+
+    expect(await runModule('profiler.js', app)).toContain('EXC');
+  });
+});
