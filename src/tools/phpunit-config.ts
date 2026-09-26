@@ -251,8 +251,8 @@ export function listPhpUnitConfig(appPath: string): McpToolResult {
     }
 
     return { content: [{ type: 'text', text }] };
-  /* istanbul ignore next -- the reader swallows its own failure, so nothing reaches here. */
   } catch (error) {
+    /* istanbul ignore next -- the reader swallows its own failure, so nothing reaches here. */
     return {
       content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
       isError: true,
@@ -287,8 +287,8 @@ export function getPhpUnitStats(appPath: string): McpToolResult {
     text += `Test env vars:  ${Object.keys(config.envVars).length}\n`;
 
     return { content: [{ type: 'text', text }] };
-  /* istanbul ignore next -- the reader swallows its own failure, so nothing reaches here. */
   } catch (error) {
+    /* istanbul ignore next -- the reader swallows its own failure, so nothing reaches here. */
     return {
       content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
       isError: true,

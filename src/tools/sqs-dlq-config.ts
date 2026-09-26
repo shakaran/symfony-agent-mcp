@@ -48,12 +48,14 @@ function scanInfraFiles(dir: string, base: string, callback: (filePath: string, 
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         scanInfraFiles(full, base, callback);
-      /* istanbul ignore else -- a directory entry is either a directory or a file here. */
-      } else if (entry.isFile()) {
-        const ext = path.extname(entry.name);
-        if (ext === '.tf' || ext === '.json') {
-          const content = safeRead(full, base);
-          if (content !== null) callback(full, content, ext);
+      } else {
+        /* istanbul ignore else -- a directory entry is either a directory or a file here. */
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name);
+          if (ext === '.tf' || ext === '.json') {
+            const content = safeRead(full, base);
+            if (content !== null) callback(full, content, ext);
+          }
         }
       }
     }

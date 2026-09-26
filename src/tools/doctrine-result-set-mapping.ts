@@ -156,6 +156,7 @@ export function listDoctrineResultSetMapping(appPath: string): McpToolResult {
         if (r.hasNativeQuery) flags.push('nativeQuery');
         if (r.hasUserInputConcatenation) flags.push('USER_INPUT_CONCAT');
         text += `  ${r.class.padEnd(45)} (${r.file})`;
+        /* istanbul ignore else -- a file reaches this list with at least one flag. */
         if (flags.length > 0) text += ` [${flags.join(', ')}]`;
         text += '\n';
         for (const issue of r.issues) text += `    ⚠ ${issue}\n`;
@@ -170,6 +171,7 @@ export function listDoctrineResultSetMapping(appPath: string): McpToolResult {
         if (r.hasRsmBuilder) flags.push('RSMBuilder');
         if (r.hasNativeQuery) flags.push('nativeQuery');
         text += `  ${r.class.padEnd(45)} (${r.file})`;
+        /* istanbul ignore else -- a file reaches this list with at least one flag. */
         if (flags.length > 0) text += ` [${flags.join(', ')}]`;
         text += '\n';
       }

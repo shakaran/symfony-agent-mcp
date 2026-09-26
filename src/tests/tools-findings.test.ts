@@ -66631,3 +66631,178 @@ class Person
     expect(await runModule('php-property-hooks.js', app)).toContain('Person');
   });
 });
+
+describe('batch 256: contract tests, Graph, SQS and custom constraints', () => {
+  test('a contract test that covers every method of its interface', async () => {
+    const app = appWith('contract-test-full-coverage', {
+      'src/Contract/PaymentGatewayInterface.php': `<?php
+
+namespace App\\Contract;
+
+interface PaymentGatewayInterface
+{
+    public function charge(int $amount): bool;
+
+    public function refund(string $reference): bool;
+}
+`,
+      'src/Gateway/StripeGateway.php': `<?php
+
+namespace App\\Gateway;
+
+use App\\Contract\\PaymentGatewayInterface;
+
+class StripeGateway implements PaymentGatewayInterface
+{
+    public function charge(int $amount): bool
+    {
+        return true;
+    }
+
+    public function refund(string $reference): bool
+    {
+        return true;
+    }
+}
+`,
+      'tests/Contract/PaymentGatewayInterfaceTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use App\\Contract\\PaymentGatewayInterface;
+use PHPUnit\\Framework\\TestCase;
+
+abstract class PaymentGatewayInterfaceTest extends TestCase
+{
+    abstract protected function gateway(): PaymentGatewayInterface;
+
+    public function testInterfaceCharge(): void
+    {
+        $this->assertTrue($this->gateway()->charge(100));
+    }
+
+    public function testCharge(): void
+    {
+        $this->assertTrue($this->gateway()->charge(1));
+    }
+
+    public function testRefund(): void
+    {
+        $this->assertTrue($this->gateway()->refund('ref'));
+    }
+}
+`,
+      'tests/Contract/StripeGatewayTest.php': `<?php
+
+namespace App\\Tests\\Contract;
+
+use App\\Contract\\PaymentGatewayInterface;
+use App\\Gateway\\StripeGateway;
+
+class StripeGatewayTest extends PaymentGatewayInterfaceTest
+{
+    protected function gateway(): PaymentGatewayInterface
+    {
+        return new StripeGateway();
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-contract-tests.js', app)).toContain('PaymentGatewayInterface');
+  });
+
+  test('Graph credentials taken from the environment, in an application with no src', async () => {
+    const app = appWith('graph-placeholder-secret', {
+      'composer.json': JSON.stringify({
+        require: { 'microsoft/microsoft-graph': '^2.0' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      '.env': `AZURE_CLIENT_ID=\${AZURE_CLIENT_ID}
+AZURE_CLIENT_SECRET=\${AZURE_CLIENT_SECRET}
+AZURE_TENANT_ID=\${AZURE_TENANT_ID}
+`,
+    });
+
+    expect(await runModule('microsoft-graph-integration.js', app)).toContain('AZURE');
+  });
+
+  test('a redrive policy with a sensible retry count', async () => {
+    const app = appWith('sqs-dlq-sensible-retries', {
+      'infra/sqs.tf': `resource "aws_sqs_queue" "orders" {
+  name = "orders"
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.orders_dlq.arn
+    maxReceiveCount     = 5
+  })
+}
+
+resource "aws_sqs_queue" "orders_dlq" {
+  name = "orders-dlq"
+}
+`,
+    });
+
+    expect(await runModule('sqs-dlq-config.js', app)).toContain('maxReceiveCount');
+  });
+
+  test('a constraint whose validator is named by validatedBy', async () => {
+    const app = appWith('custom-constraint-validated-by', {
+      'src/Validator/Iban.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+
+class Iban extends Constraint
+{
+    public string $message = 'app.iban.invalid';
+
+    public function validatedBy(): string
+    {
+        return IbanChecker::class;
+    }
+}
+`,
+      'src/Validator/IbanChecker.php': `<?php
+
+namespace App\\Validator;
+
+use Symfony\\Component\\Validator\\Constraint;
+use Symfony\\Component\\Validator\\ConstraintValidator;
+
+class IbanChecker extends ConstraintValidator
+{
+    public function validate(mixed $value, Constraint $constraint): void
+    {
+        if (!$constraint instanceof Iban) {
+            return;
+        }
+
+        $this->context->buildViolation($constraint->message)->addViolation();
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-custom-constraints.js', app)).toContain('IbanChecker');
+  });
+
+  test('rate limits read in an application with no src directory', async () => {
+    const app = appWith('rate-limits-no-src', {
+      'docker/nginx.conf': `http {
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+
+    server {
+        location /api/ {
+            limit_req zone=api burst=20 nodelay;
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('api-rate-limits.js', app)).toContain('zone: api');
+  });
+});

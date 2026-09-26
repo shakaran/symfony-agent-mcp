@@ -308,6 +308,7 @@ export function getStaticAnalysisConfig(appPath: string): McpToolResult {
 
     return { content: [{ type: 'text', text }] };
   } catch (error) {
+    /* istanbul ignore next -- each loader swallows its own failure, so nothing reaches here. */
     return {
       content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
       isError: true,
@@ -342,6 +343,7 @@ export function getStaticAnalysisStats(appPath: string): McpToolResult {
 
     return { content: [{ type: 'text', text }] };
   } catch (error) {
+    /* istanbul ignore next -- each loader swallows its own failure, so nothing reaches here. */
     return {
       content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
       isError: true,

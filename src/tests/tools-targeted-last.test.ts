@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { clearMcpCache, inspectMcpCache } from '../tools/cache-inspector.js';
+import { listTables, searchTables } from '../tools/database.js';
 import { cacheManager } from '../utils/cache-manager.js';
 
 let root: string;
@@ -91,6 +92,38 @@ describe('the remaining corners', () => {
       expect(cleared.content[0]?.text).toContain('the cache is gone');
     } finally {
       stats.mockRestore();
+    }
+  });
+
+  test('a database whose cache fails, with an Error and with a string', async () => {
+    const app = appWith('database-cache-failure', {});
+
+    const failing = jest.spyOn(cacheManager, 'get').mockImplementation(() => {
+      throw new Error('the cache is unavailable');
+    });
+    try {
+      const listed = await listTables(app);
+      expect(listed.isError).toBe(true);
+      expect(listed.content[0]?.text).toContain('the cache is unavailable');
+
+      const searched = await searchTables(app, 'order');
+      expect(searched.isError).toBe(true);
+      expect(searched.content[0]?.text).toContain('the cache is unavailable');
+    } finally {
+      failing.mockRestore();
+    }
+
+    const throwingString = jest.spyOn(cacheManager, 'get').mockImplementation(() => {
+      throw 'no cache at all';
+    });
+    try {
+      const listed = await listTables(app);
+      expect(listed.content[0]?.text).toContain('no cache at all');
+
+      const searched = await searchTables(app, 'order');
+      expect(searched.content[0]?.text).toContain('no cache at all');
+    } finally {
+      throwingString.mockRestore();
     }
   });
 
