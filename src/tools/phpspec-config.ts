@@ -73,8 +73,11 @@ function buildPhpspecConfigInfos(appPath: string): PhpspecConfigInfo[] {
     const suitesMatch = configContent.match(/^suites:([\s\S]*?)(?:^[a-z]|$(?![\s\S]))/m);
     if (suitesMatch) {
       const suitesContent = suitesMatch[1];
+      // The indentation has to be read from the whole file: the captured
+      // section starts after "suites:", so looking for that key inside it
+      // always fell back to two spaces and a four-space file listed nothing.
       const suiteNames = suitesContent.match(
-      new RegExp(`^ {${indentUnder(suitesContent, 'suites')}}(?! )\\w[\\w_-]*:`, 'gm')
+      new RegExp(`^ {${indentUnder(configContent, 'suites')}}(?! )\\w[\\w_-]*:`, 'gm')
     );
       if (suiteNames) {
         for (const suiteName of suiteNames) {
