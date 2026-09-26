@@ -67473,3 +67473,146 @@ sleep(1);
     expect(await runModule('symfony-console-daemon.js', app)).toContain('daemon');
   });
 });
+
+describe('batch 262: CSRF, collectors, migrations and renderers', () => {
+  test('a CSRF cookie that lasts for the session', async () => {
+    const app = appWith('csrf-session-cookie', {
+      'config/packages/framework.yaml': `framework:
+    csrf_protection: true
+    session:
+        cookie_secure: auto
+        cookie_samesite: lax
+        cookie_httponly: true
+        cookie_lifetime: 0
+`,
+    });
+
+    expect(await runModule('symfony-csrf.js', app)).toContain('session (0)');
+  });
+
+  test('a data collector whose template is where it says', async () => {
+    const app = appWith('data-collector-template-found', {
+      'src/DataCollector/QueueCollector.php': `<?php
+
+namespace App\\DataCollector;
+
+use Symfony\\Component\\HttpKernel\\DataCollector\\DataCollector;
+
+class QueueCollector extends DataCollector
+{
+    public function collect($request, $response, ?\\Throwable $exception = null): void
+    {
+        $this->data = ['queued' => 0];
+    }
+
+    public function reset(): void
+    {
+        $this->data = [];
+    }
+
+    public function getName(): string
+    {
+        return 'app.queue';
+    }
+
+    public function getTemplate(): string
+    {
+        return 'data_collector/queue';
+    }
+}
+`,
+      'templates/data_collector/queue.html.twig': `{% block toolbar %}{% endblock %}
+`,
+    });
+
+    expect(await runModule('symfony-data-collectors.js', app)).toContain('QueueCollector');
+  });
+
+  test('a lazy-ghost candidate declared without a namespace', async () => {
+    const app = appWith('lazy-ghost-without-namespace', {
+      'src/LegacyReportBuilder.php': `<?php
+
+use Symfony\\Component\\DependencyInjection\\Attribute\\Autoconfigure;
+
+#[Autoconfigure(lazy: true)]
+class LegacyReportBuilder
+{
+    public function __construct($connection, $logger, $cache, $mailer, $translator)
+    {
+        $this->pdo = new PDO('sqlite::memory:');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-di-lazy-ghost.js', app)).toContain('LegacyReportBuilder');
+  });
+
+  test('a rollback that copies the column away before dropping it', async () => {
+    const app = appWith('migration-rollback-preserves-data', {
+      'migrations/Version20250101000000.php': `<?php
+
+namespace DoctrineMigrations;
+
+use Doctrine\\DBAL\\Schema\\Schema;
+use Doctrine\\Migrations\\AbstractMigration;
+
+final class Version20250101000000 extends AbstractMigration
+{
+    public function up(Schema $schema): void
+    {
+        $this->addSql('ALTER TABLE orders ADD COLUMN legacy_ref VARCHAR(32)');
+    }
+
+    public function down(Schema $schema): void
+    {
+        $this->addSql('SELECT id, legacy_ref FROM orders');
+        $schema->getTable('orders')->dropColumn('legacy_ref');
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-doctrine-migration-rollback.js', app)).toContain('Migrations found: 1');
+  });
+
+  test('an emoji filter with the package installed', async () => {
+    const app = appWith('emoji-package-installed', {
+      'composer.json': JSON.stringify({
+        require: { 'symfony/emoji': '^7.1' },
+        autoload: { 'psr-4': { 'App\\\\': 'src/' } },
+      }, null, 2),
+      'templates/reaction.html.twig': `<p>{{ reaction|emoji_to_text }}</p>
+`,
+    });
+
+    expect(await runModule('symfony-emoji.js', app)).toContain('emoji_to_text');
+  });
+
+  test('an error renderer that names the format it produces', async () => {
+    const app = appWith('error-renderer-with-format', {
+      'src/ErrorRenderer/ProblemJsonRenderer.php': `<?php
+
+namespace App\\ErrorRenderer;
+
+use Symfony\\Component\\ErrorHandler\\ErrorRenderer\\ErrorRendererInterface;
+use Symfony\\Component\\ErrorHandler\\Exception\\FlattenException;
+
+class ProblemJsonRenderer implements ErrorRendererInterface
+{
+    public function getFormat(): string
+    {
+        return 'json';
+    }
+
+    public function render(\\Throwable $exception): FlattenException
+    {
+        return FlattenException::createFromThrowable($exception);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-error-renderer.js', app)).toContain('json');
+  });
+});

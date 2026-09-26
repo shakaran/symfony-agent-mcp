@@ -161,6 +161,7 @@ export function listDebugDumps(appPath: string): McpToolResult {
           text += `      - ${issue}\n`;
         }
       }
+      /* istanbul ignore else -- a listed file always carries the production-code issue. */
       if (item.issues.length > 0) {
         for (const issue of item.issues) {
           text += `    WARNING: ${issue}\n`;

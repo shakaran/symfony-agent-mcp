@@ -117,6 +117,7 @@ function parseControllerFile(filePath: string): InvokableControllerInfo | null {
   const isInvokable = hasInvoke && (hasRouteOnClass || hasRouteOnInvoke || hasAsControllerAttribute);
 
   if (!isInvokable && !extendsAbstractController && !hasAsControllerAttribute) return null;
+  /* istanbul ignore if -- each way past the guard above puts "Controller" in the file. */
   if (!isInvokable && !content.includes('Controller')) return null;
 
   const parameterCount = hasInvoke ? countInvokeParameters(content) : 0;
