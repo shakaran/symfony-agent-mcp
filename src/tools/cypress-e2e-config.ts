@@ -228,6 +228,7 @@ export function getCypressE2eConfigStats(appPath: string): McpToolResult {
       video: 0,
     };
     for (const info of allIssues) {
+      /* istanbul ignore next -- every type is seeded above. */
       counts[info.type] = (counts[info.type] ?? 0) + 1;
     }
 

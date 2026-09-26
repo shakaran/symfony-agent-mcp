@@ -42,10 +42,11 @@ function analyseFile(content: string, relFile: string): DomXpathInfo[] {
     if (!hasEntityDisable && !hasNoNet) {
       // Find the line of first loadXML(
       const firstLoadXmlLine = lines.findIndex((l) => l.includes('loadXML('));
+      /* istanbul ignore next -- the file was selected because it contains the call. */
+      const loadXmlLine = firstLoadXmlLine >= 0 ? firstLoadXmlLine + 1 : 0;
       infos.push({
         file: relFile,
-        /* istanbul ignore next -- the file was selected because it contains the call. */
-        line: firstLoadXmlLine >= 0 ? firstLoadXmlLine + 1 : 0,
+        line: loadXmlLine,
         fn: 'loadXML',
         issue: 'xxe-risk: file uses loadXML() without libxml_disable_entity_loader() or LIBXML_NONET — external entity injection (XXE) is possible if user-supplied XML is parsed; add libxml_disable_entity_loader(true) before loading (PHP < 8.0) or use LIBXML_NONET flag',
         severity: 'high',

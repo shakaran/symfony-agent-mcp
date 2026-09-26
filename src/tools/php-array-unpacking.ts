@@ -50,7 +50,7 @@ function countVarsInList(segment: string): number {
   for (const ch of segment) {
     if (ch === '(' || ch === '[') depth++;
     /* istanbul ignore next -- the pattern stops at the first ")", so the segment never closes more than it opens. */
-    else if (ch === ')' || ch === ']') { depth--; if (depth < 0) break; }
+    else if (ch === ')' || ch === ']') { depth--; /* istanbul ignore if */ if (depth < 0) break; }
     else if (ch === ',' && depth === 0) count++;
   }
   return count;

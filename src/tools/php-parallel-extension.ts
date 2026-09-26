@@ -105,11 +105,13 @@ function analyseFile(filePath: string, base: string): ParallelFinding[] {
         if (!bufMatch) {
           issue = 'Unbuffered channel — parallel\\Channel() with no capacity blocks sender until receiver is ready';
         }
-      /* istanbul ignore else -- the chain covers every label in the list. */
-      } else if (label === 'parallel\\Future') {
-        // Mutable state check: passing objects by reference in closures
-        if (/use\s*\([^)]{0,200}&\$/.test(line)) {
-          issue = 'Object passed by reference into parallel closure — sharing mutable state across runtimes causes data races';
+      } else {
+        /* istanbul ignore else -- the chain covers every label in the list. */
+        if (label === 'parallel\\Future') {
+          // Mutable state check: passing objects by reference in closures
+          if (/use\s*\([^)]{0,200}&\$/.test(line)) {
+            issue = 'Object passed by reference into parallel closure — sharing mutable state across runtimes causes data races';
+          }
         }
       }
 

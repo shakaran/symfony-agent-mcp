@@ -66806,3 +66806,124 @@ class IbanChecker extends ConstraintValidator
     expect(await runModule('api-rate-limits.js', app)).toContain('zone: api');
   });
 });
+
+describe('batch 257: deployment specs, mappings and PHP idioms', () => {
+  test('a DigitalOcean spec describing a static site', async () => {
+    const app = appWith('digitalocean-static-site', {
+      '.do/app.yaml': `name: symfony-app
+region: ams
+static_sites:
+  - name: frontend
+    github:
+      repo: acme/frontend
+      branch: main
+    build_command: npm run build
+    output_dir: dist
+`,
+    });
+
+    expect(await runModule('digitalocean-app-platform.js', app)).toContain('frontend');
+  });
+
+  test('an entity whose listener class is where it says it is', async () => {
+    const app = appWith('entity-listener-found', {
+      'src/Entity/Invoice.php': `<?php
+
+namespace App\\Entity;
+
+use Doctrine\\ORM\\Mapping as ORM;
+
+#[ORM\\Entity]
+#[ORM\\EntityListeners(['App\\Entity\\Listener\\InvoiceListener'])]
+class Invoice
+{
+    private ?int $id = null;
+}
+`,
+      'src/Entity/Listener/InvoiceListener.php': `<?php
+
+namespace App\\Entity\\Listener;
+
+use App\\Entity\\Invoice;
+use Doctrine\\Bundle\\DoctrineBundle\\Attribute\\AsEntityListener;
+use Doctrine\\ORM\\Event\\PrePersistEventArgs;
+use Doctrine\\ORM\\Events;
+
+#[AsEntityListener(event: Events::prePersist, entity: Invoice::class)]
+class InvoiceListener
+{
+    public function prePersist(Invoice $invoice, PrePersistEventArgs $args): void
+    {
+    }
+}
+`,
+    });
+
+    expect(await runModule('doctrine-entity-listeners.js', app)).toContain('InvoiceListener');
+  });
+
+  test('a mapping directory given as an absolute path', async () => {
+    const app = appWith('mapping-format-absolute-dir', {
+      'config/packages/doctrine.yaml': `doctrine:
+    orm:
+        mappings:
+            App:
+                type: attribute
+                is_bundle: false
+                dir: /srv/app/src/Entity
+                prefix: 'App\\Entity'
+`,
+    });
+
+    expect(await runModule('doctrine-mapping-format.js', app)).toContain('attribute');
+  });
+
+  test('a query parameter with no requirement at all', async () => {
+    const app = appWith('fos-rest-without-requirements', {
+      'src/Controller/ListController.php': `<?php
+
+namespace App\\Controller;
+
+use FOS\\RestBundle\\Controller\\Annotations as Rest;
+
+class ListController
+{
+    #[Rest\\QueryParam(name: 'page', description: 'Page number')]
+    public function list($paramFetcher): array
+    {
+        return [];
+    }
+}
+`,
+    });
+
+    expect(await runModule('fos-rest-bundle.js', app)).toContain('QueryParam');
+  });
+
+  test('a tryFrom result that is checked before use', async () => {
+    const app = appWith('backed-enum-tryfrom-checked', {
+      'src/Enum/Channel.php': `<?php
+
+namespace App\\Enum;
+
+enum Channel: string
+{
+    case Email = 'email';
+    case Sms = 'sms';
+
+    public static function parse(string $raw): self
+    {
+        $channel = Channel::tryFrom($raw);
+        if (null === $channel) {
+            throw new \\InvalidArgumentException('unknown channel');
+        }
+
+        return $channel;
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-backed-enum-patterns.js', app)).toContain('Channel');
+  });
+});
