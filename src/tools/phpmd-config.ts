@@ -58,6 +58,11 @@ function buildPhpmdInfos(appPath: string): PhpmdInfo[] {
   const excludedPaths: string[] = [];
   const exclMatches = content.matchAll(/exclude[^>]{0,50}=\s*["']([^"']{1,200})["']/gi);
   for (const m of exclMatches) excludedPaths.push(m[1]);
+  // A path is excluded with an <exclude-pattern> element, which carries no
+  // attribute: only the rule-level "exclude name=" form was being read.
+  for (const m of content.matchAll(/<exclude-pattern>([^<]{1,200})<\/exclude-pattern>/gi)) {
+    excludedPaths.push(m[1]);
+  }
 
   if (!rulesets.includes('unusedcode')) {
     issues.push('UnusedCode ruleset not configured — dead code and unused variables will not be detected');
