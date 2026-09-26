@@ -67,7 +67,11 @@ function loadCsrfConfig(appPath: string): CsrfConfig {
   const cookieSameSite  = sessionRaw['cookie_samesite'] ? String(sessionRaw['cookie_samesite']) : undefined;
   const cookieSecure    = sessionRaw['cookie_secure'] === true || sessionRaw['cookie_secure'] === 'auto';
   const cookieHttpOnly  = sessionRaw['cookie_httponly'] !== false;
-  const cookieLifetime  = sessionRaw['cookie_lifetime'] ? parseInt(String(sessionRaw['cookie_lifetime']), 10) : undefined;
+  // cookie_lifetime: 0 means "until the browser closes", and reading it as a
+  // truthy value dropped it, so that configuration reported nothing.
+  const cookieLifetime  = sessionRaw['cookie_lifetime'] !== undefined
+    ? parseInt(String(sessionRaw['cookie_lifetime']), 10)
+    : undefined;
 
   return { globallyEnabled, cookieSameSite, cookieSecure, cookieHttpOnly, cookieLifetime };
 }
