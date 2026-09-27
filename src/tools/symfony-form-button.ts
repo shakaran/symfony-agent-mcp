@@ -19,7 +19,6 @@ interface FormButton {
   name: string;
   type: 'submit' | 'button';
   label: string | null;
-  issues: string[];
 }
 
 interface FormButtonInfo {
@@ -70,7 +69,6 @@ function analyzeFormButtons(content: string): FormButton[] {
       name: fieldName,
       type: typePart,
       label,
-      issues: [],
     });
   }
 
@@ -182,9 +180,6 @@ export function listFormButtons(appPath: string): McpToolResult {
         text += `  [${btn.type}] ${btn.name}`;
         if (btn.label) text += `  label: "${btn.label}"`;
         text += '\n';
-        for (const issue of btn.issues) {
-          text += `    ⚠ ${issue}\n`;
-        }
       }
       for (const issue of info.issues) {
         text += `  ⚠ ${issue}\n`;

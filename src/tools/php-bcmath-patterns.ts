@@ -32,13 +32,9 @@ function collectPhpFiles(dir: string, base: string): string[] {
 
 const BC_FUNCTIONS = ['bcadd', 'bcsub', 'bcmul', 'bcdiv', 'bcmod', 'bcsqrt', 'bcpow', 'bccomp', 'bcscale'];
 
+// Only called once a bc* call is known to be in the file, so a line is found.
 function firstBcLine(lines: string[]): number {
-  for (let i = 0; i < lines.length; i++) {
-    for (const fn of BC_FUNCTIONS) {
-      if (lines[i].includes(fn + '(')) return i;
-    }
-  }
-  return 0;
+  return lines.findIndex((line) => BC_FUNCTIONS.some((fn) => line.includes(fn + '(')));
 }
 
 function analyseFile(content: string, relFile: string): BcmathPatternInfo[] {

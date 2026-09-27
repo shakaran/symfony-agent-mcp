@@ -114,15 +114,13 @@ function parseDataMapperFile(filePath: string): FormDataMapperInfo | null {
 
 function readFrameworkDataMapperConfig(appPath: string): string | null {
   const configPath = path.join(appPath, 'config', 'packages', 'framework.yaml');
-  try {
-    const yaml = parseYamlFile(configPath) as Record<string, unknown> | null;
-    if (!yaml) return null;
-    const framework = yaml['framework'] as Record<string, unknown> | undefined;
-    if (!framework) return null;
-    const form = framework['form'] as Record<string, unknown> | undefined;
-    if (!form) return null;
-    return (form['data_mapper'] as string | undefined) ?? null;
-  } catch { return null; }
+  const yaml = parseYamlFile(configPath) as Record<string, unknown> | null;
+  if (!yaml) return null;
+  const framework = yaml['framework'] as Record<string, unknown> | undefined;
+  if (!framework) return null;
+  const form = framework['form'] as Record<string, unknown> | undefined;
+  if (!form) return null;
+  return (form['data_mapper'] as string | undefined) ?? null;
 }
 
 function loadDataMapperInfos(appPath: string): FormDataMapperInfo[] {

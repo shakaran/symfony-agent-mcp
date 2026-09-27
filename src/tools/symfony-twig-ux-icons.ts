@@ -110,12 +110,7 @@ function loadUxIconConfig(appPath: string): UxIconConfig {
   ];
 
   for (const candidate of candidates) {
-    let raw: Record<string, unknown> | null = null;
-    try {
-      raw = parseYamlFile(candidate) as Record<string, unknown> | null;
-    } catch {
-      continue;
-    }
+    const raw = parseYamlFile(candidate) as Record<string, unknown> | null;
     if (!raw) continue;
 
     const uxIcons = (raw['ux_icons'] ?? raw) as Record<string, unknown>;

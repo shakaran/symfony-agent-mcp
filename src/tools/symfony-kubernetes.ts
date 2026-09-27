@@ -246,10 +246,7 @@ function buildKubernetesConfigInfos(appPath: string): KubernetesConfigInfo[] {
   const results: KubernetesConfigInfo[] = [];
 
   for (const filePath of files) {
-    let raw: Record<string, unknown> | null = null;
-    try {
-      raw = parseYamlFile(filePath) as Record<string, unknown> | null;
-    } catch { continue; }
+    const raw = parseYamlFile(filePath) as Record<string, unknown> | null;
 
     if (!raw) continue;
 
