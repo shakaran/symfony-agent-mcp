@@ -68728,3 +68728,32 @@ formatter.name: pretty
     expect(await runModule('phpspec-config.js', app)).toContain('PHPSpec');
   });
 });
+
+describe('findings, batch 267', () => {
+  test('two attribute listeners with arguments at the same priority', async () => {
+    const listener = (name: string): string => `<?php
+
+namespace App\\EventListener;
+
+use Symfony\\Component\\EventDispatcher\\Attribute\\AsEventListener;
+
+#[AsEventListener(event: 'kernel.request', priority: 20)]
+class ${name}
+{
+    public function __invoke(): void
+    {
+    }
+}
+`;
+    const app = appWith('event-priority-attributes', {
+      'src/EventListener/LocaleListener.php': listener('LocaleListener'),
+      'src/EventListener/ThemeListener.php': listener('ThemeListener'),
+    });
+
+    const text = await runModule('event-priority-conflicts.js', app);
+
+    expect(text).toContain('Conflicts: 1');
+    expect(text).toContain('LocaleListener');
+    expect(text).toContain('ThemeListener');
+  });
+});

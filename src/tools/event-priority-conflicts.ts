@@ -29,7 +29,7 @@ function getAllPhpFiles(dir: string): string[] {
 function parseListeners(filePath: string, appPath: string): ListenerEntry[] {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf-8'); } catch { return []; }
-  if (!content.includes('getSubscribedEvents') && !content.includes('#[AsEventListener]') && !content.includes('#[AsKernelListener]')) return [];
+  if (!content.includes('getSubscribedEvents') && !content.includes('#[AsEventListener') && !content.includes('#[AsKernelListener')) return [];
   if (content.includes('namespace Symfony\\')) return [];
   const classM = /class\s+(\w{1,120})/.exec(content);
   if (!classM) return [];
