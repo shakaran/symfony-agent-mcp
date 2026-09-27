@@ -68757,3 +68757,103 @@ class ${name}
     expect(text).toContain('ThemeListener');
   });
 });
+
+describe('findings, batch 268', () => {
+  test('an http client base_uri that is not a URL is shown as written', async () => {
+    const app = appWith('http-client-env-base-uri', {
+      'config/packages/framework.yaml': `framework:
+    http_client:
+        default_options:
+            base_uri: '%env(API_URL)%'
+`,
+    });
+
+    expect(await runModule('http-client.js', app)).toContain('%env(API_URL)%');
+  });
+
+  test('a discriminator mapping built in code rather than declared as an attribute', async () => {
+    const app = appWith('serializer-discriminator-in-code', {
+      'src/Serializer/PaymentMapping.php': `<?php
+
+namespace App\\Serializer;
+
+use Symfony\\Component\\Serializer\\Mapping\\ClassDiscriminatorMapping;
+
+class PaymentMapping
+{
+    public function mapping(): ClassDiscriminatorMapping
+    {
+        return new ClassDiscriminatorMapping('kind', ['card' => CardPayment::class, 'bank' => BankPayment::class]);
+    }
+}
+`,
+    });
+
+    expect(await runModule('symfony-serializer-discriminator.js', app)).toContain('CardPayment');
+  });
+
+  test('a twig extension that lists its filters by name', async () => {
+    const app = appWith('twig-extensions-by-name', {
+      'src/Twig/LegacyExtension.php': `<?php
+
+namespace App\\Twig;
+
+use Twig\\Extension\\AbstractExtension;
+
+class LegacyExtension extends AbstractExtension
+{
+    public function getFilters(): array
+    {
+        return $this->build(['price_tag', 'money_format']);
+    }
+}
+`,
+    });
+
+    expect(await runModule('twig-extensions.js', app)).toContain('price_tag');
+  });
+
+  test('vite entrypoints given as a list of files', async () => {
+    const app = appWith('vite-input-list', {
+      'composer.json': JSON.stringify({ require: { 'pentatrion/vite-bundle': '^6.0' } }),
+      'vite.config.js': `import { defineConfig } from 'vite';
+import symfonyPlugin from 'vite-plugin-symfony';
+
+export default defineConfig({
+    plugins: [symfonyPlugin()],
+    build: {
+        rollupOptions: {
+            input: ['assets/app.js', 'assets/admin.js'],
+        },
+    },
+});
+`,
+    });
+
+    expect(await runModule('vite-bundle.js', app)).toContain('assets/admin.js');
+  });
+
+  test('a get hook longer than the window read around the property', async () => {
+    const body = Array.from({ length: 150 }, (_, i) => `            $parts[] = strtoupper($this->first . ' ${i}');`).join('\n');
+    const app = appWith('property-hook-long-get', {
+      'src/Entity/Person.php': `<?php
+
+namespace App\\Entity;
+
+class Person
+{
+    public string $fullName {
+        get {
+            $parts = [];
+${body}
+
+            return implode(' ', $parts);
+        }
+    }
+}
+`,
+    });
+
+    expect(await runModule('php-property-hooks.js', app)).toContain('fullName');
+  });
+});
