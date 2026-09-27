@@ -15,5 +15,15 @@ allowBuilds:
 # selectors are range-scoped so this cannot touch the js-yaml 5 that this
 # project depends on directly.
 overrides:
-  js-yaml@3: ^3.15.1
+  js-yaml@3: ^3.15.2
   brace-expansion@1: ^1.1.18
+
+# Transitive advisories from tooling dependencies (Dependabot, 2026-09-27). Each
+# pin stays inside the major its dependents already accept; smol-toml is pinned
+# exactly by its parent, so the override lifts it past the fixed release.
+  baseline-browser-mapping@2: ^2.11.0
+  browserslist@4: ^4.28.7
+  fast-uri@3: ^3.1.6
+  hono@4: ^4.13.5
+  qs@6: ^6.16.0
+  smol-toml@1: ^1.7.1
